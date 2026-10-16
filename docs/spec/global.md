@@ -60,15 +60,14 @@
     - `GIT_DREV_ROOT`: Absolute path to the repository working tree root.
 - **Git context & path resolution:**
   - **Repository validation assertions:**
-    - Client subcommands (`create`, `get`, `info`, `name`, `put`, `select`, `update`, `usage`) require a non-bare Git working tree (`git rev-parse --is-inside-work-tree` == `true`). Invoking inside a bare repository or inside the `.git/` directory itself fails immediately with `ErrNotRepository` (exit code `3`).
-    - Server-side `cleanup` accepts an explicit `<git-dir>` positional argument (which MAY be a bare repository, verified via `git --git-dir=<path> rev-parse --is-bare-repository` or `--git-dir`).
+    - All subcommands (`create`, `get`, `info`, `name`, `put`, `select`, `update`, `usage`) require a non-bare Git working tree (`git rev-parse --is-inside-work-tree` == `true`). Invoking inside a bare repository or inside the `.git/` directory itself fails immediately with `ErrNotRepository` (exit code `3`).
     - Subcommands that mutate branch state or require an upstream tracking branch (`put`, `update`) assert that `HEAD` is a symbolic reference (`git symbolic-ref -q HEAD`). If `HEAD` is detached, they fail with `ErrDetachedHead` (exit code `4`) and emit the remediation hint: `Use "git drev select <branch>" to select a branch first.`
   - **Handling of `GIT_PREFIX`, `GIT_DIR`, and `GIT_WORK_TREE`:**
     - When invoked as `git drev <subcommand>` from a subdirectory, Git changes the process `PWD` to the top-level working tree root and sets `GIT_PREFIX` to the caller's original relative subdirectory (with trailing slash).
     - When invoked directly as `git-drev <subcommand>` from a subdirectory, `GIT_PREFIX` is unset. `git-drev` MUST normalize both invocation modes at startup by querying `git rev-parse --show-toplevel` and `git rev-parse --show-prefix`, computing `CallerDir = filepath.Join(RepoRoot, Prefix)`, and chdir'ing the process to `RepoRoot` after resolving user-supplied paths.
   - **Working directory enforcement:**
     - Repository metadata files (`.drev.json`, `.drev-put-hook`, `.drev-info-hook`) and the configured `workDir` (default `data`) ALWAYS resolve relative to `RepoRoot`.
-    - User-supplied CLI path arguments (`<target_directory>` in `get`, `<source_directory>` in `put`, `<git-dir>` and `<storage-dir>` in `cleanup`) ALWAYS resolve relative to `CallerDir` (the user's `PWD` at invocation time) before changing directory to `RepoRoot`.
+    - User-supplied CLI path arguments (`<target_directory>` in `get`, `<source_directory>` in `put`) ALWAYS resolve relative to `CallerDir` (the user's `PWD` at invocation time) before changing directory to `RepoRoot`.
   - **Built-in help integration:**
     - When a user runs `git drev --help` or `git help drev`, the `git` wrapper binary intercepts `--help` before invoking `git-drev` and attempts to display the `git-drev(1)` man page (`man git-drev`).
     - Passing `-h` (`git drev -h` or `git drev <subcommand> -h`), `git drev help [<subcommand>]`, or invoking the binary directly (`git-drev --help` / `git-drev <subcommand> --help`) bypasses Git's man-page interceptor and prints the built-in CLI help directly to `stdout` with exit code `0`.
@@ -80,11 +79,11 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
 | :--- | :--- | :--- | :--- |
 | `0` | `nil` | Success | Command completed cleanly; `--help` or `--version` displayed; `put` dropped older revision due to newer sequence on remote. |
 | `1` | `ErrRuntime` | General Runtime Error | Unhandled I/O error, filesystem permission failure, hook script non-zero exit. |
-| `2` | `ErrUsage` | CLI Usage / Validation Error | Unknown flag, missing mandatory argument (`<branch>`, `<git-dir>`), mutually exclusive flags (`-v` and `-q`), invalid integer/sequence format. |
+| `2` | `ErrUsage` | CLI Usage / Validation Error | Unknown flag, missing mandatory argument (`<branch>`), mutually exclusive flags (`-v` and `-q`), invalid integer/sequence format. |
 | `3` | `ErrConfig` / `ErrNotRepository` | Repository or Configuration Error | Not inside a Git working tree, missing or malformed `.drev.json`, missing required `remote.host` or `remote.path` keys. |
 | `4` | `ErrGitState` / `ErrDetachedHead` | Invalid Git State | Detached `HEAD` during `put` or `update`, missing revision UUID in `HEAD` commit message, empty branch marker encountered on `get`, target UUID/branch not found in history. |
 | `5` | `ErrGitExec` | Git Subprocess Failure | `git fetch`, `git checkout`, `git switch`, `git commit`, `git reset`, `git rebase`, or non-stale `git push` failure. |
-| `6` | `ErrRemoteNotFound` | Remote Revision Missing | Target revision directory `<path>/<uuid>` does not exist on remote server during `get` (e.g., purged by retention policy) or remote base path missing during `usage`. |
+| `6` | `ErrRemoteNotFound` | Remote Revision Missing | Target revision directory `<path>/<uuid>` does not exist on remote server during `get` or remote base path missing during `usage`. |
 | `7` | `ErrTransport` | SSH / Rsync Transport Error | SSH connection failure, host key verification error, `rsync` transfer failure, or missing `ssh`/`rsync`/`git` binary on `$PATH`. |
 | `130` | `ErrInterrupted` | Process Interrupted (`SIGINT` / `SIGTERM`) | Context canceled via `Ctrl+C` (`SIGINT`) or `SIGTERM` during execution. |
 
@@ -96,7 +95,7 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
     - Branch existence (local): `git show-ref --verify --quiet refs/heads/<branch>`.
     - Branch existence (remote): `git ls-remote --exit-code --heads origin refs/heads/<branch>`.
     - Ref enumeration: `git for-each-ref --format=%(refname)%00%(objectname) -z refs/heads/ refs/remotes/` (using NUL-byte `-z` / `%00` delimiters to prevent whitespace/newline injection).
-    - Commit log scanning: `git log --all -z --format=%H%x00%h%x00%ad%x00%D%x00%s --date=unix` (NUL-delimited fields and records so commit subjects containing pipes `|` or newlines cannot corrupt parsing, fixing legacy `IFS='|'` bugs in `usage.sh` and line-splitting bugs in `cleanup.sh`).
+    - Commit log scanning: `git log --all -z --format=%H%x00%h%x00%ad%x00%D%x00%s --date=unix` (NUL-delimited fields and records so commit subjects containing pipes `|` or newlines cannot corrupt parsing, fixing legacy `IFS='|'` bugs in `usage.sh`).
   - Always pass `--` before positional ref or path arguments where supported to prevent leading-dash argument injection (e.g., branch names starting with `-`).
   - Always enforce `LC_ALL=C` in subprocess environments.
 - **Interruption & signal handling:**
@@ -111,7 +110,6 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
     - Mutating Git commands (`git checkout -b`, `git switch`, `git reset --hard`, `git add`, `git commit`, `git rebase`, `git push`, `git config` mutations) are NOT executed; instead, `git-drev` logs `[drev] [DRY RUN] Would execute: git ...` to `stderr`.
     - Mutating remote SSH commands (`cp -R -a` baseline cloning in `put`) are skipped and logged as `[drev] [DRY RUN] Would clone baseline revision <last_uuid> to <uuid>`.
     - `rsync` executions in `get` and `put` append `--dry-run` (`-n`) so `rsync` connects and reports transfer deltas without writing files, or skip `rsync` entirely if the target remote UUID directory was only virtually created in dry-run mode.
-    - `cleanup` logs `[drev] [DRY RUN] Would delete: <dir_path>` without calling `os.RemoveAll`.
 
 ## 5. Persistent Storage, Config Schema & Shared Domain Models
 - **Metadata & storage format:**
@@ -168,8 +166,6 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
   ├── internal/
   │   ├── cli/                     # Root dispatcher, global flags, subcommand handlers
   │   │   ├── root.go
-  │   │   ├── check.go             # git drev check (prerequisite validation)
-  │   │   ├── cleanup.go           # git drev cleanup (server retention purge)
   │   │   ├── create.go            # git drev create
   │   │   ├── get.go               # git drev get
   │   │   ├── info.go              # git drev info
@@ -291,7 +287,6 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
       PushForceWithLease(ctx context.Context, branch string, setUpstream bool) (stale bool, output string, err error)
       FindCommitByUUID(ctx context.Context, uuid string) (commitHash string, err error)
       ScanAllCommits(ctx context.Context, includeFetchHead bool) ([]CommitRecord, error)
-      KeepSetCommits(ctx context.Context, maxCommits int, maxDays int) (map[string]bool, error)
   }
   ```
   ```go
@@ -326,7 +321,7 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
   ```
 
 ## 6. Subcommand Registry
-All legacy scripts are consolidated into subcommands of the single `git-drev` binary:
+All core legacy commands are consolidated into subcommands of the single `git-drev` binary:
 
 | Subcommand | Legacy Source / Function | Target Go Package | Core Responsibility |
 | :--- | :--- | :--- | :--- |
@@ -338,10 +333,6 @@ All legacy scripts are consolidated into subcommands of the single `git-drev` bi
 | `info` | `legacy/info.sh` | `internal/cli` (`info.go`) | Executes the repository's `.drev-info-hook` to display project-specific revision metadata. |
 | `name` | `legacy/name.sh` | `internal/cli` (`name.go`) | Prints the current local branch name (or detached `HEAD` status) to `stdout`. |
 | `usage` | `legacy/usage.sh` | `internal/cli` (`usage.go`) | Queries the remote host via SSH for total storage consumption and (`-v`) correlates remote UUID directories against local Git history to display active vs. `[orphaned]` revisions. |
-| `cleanup` | `legacy/cleanup.sh` | `internal/cli` (`cleanup.go`) | Server-side retention command that scans a local or bare `<git-dir>` and purges obsolete UUID directories from `<storage-dir>` based on tag protection, commit count (`--commits`), and age (`--days`). |
-| `check` | `legacy/check-client-prerequisites.sh` | `internal/cli` (`check.go`) | Verifies that required external client tools (`git`, `ssh`, `rsync`) are installed, executable, and meet minimum version requirements (replaces legacy `jq` check). |
-
-*(Note: `legacy/install.sh` is retired as a standalone script because placing `git-drev` on `$PATH` natively enables `git drev <subcommand>` without requiring `.git/config` alias injection.)*
 
 ## 7. Legacy Discrepancies, Anti-Patterns & Modernization Decisions
 - **Legacy quirks & fixes:**
@@ -372,26 +363,21 @@ All legacy scripts are consolidated into subcommands of the single `git-drev` bi
   7. **Redundant & Fragile UUID Search in `select.sh` (`select.sh:50-67`):**
      - *Legacy flaw:* `select.sh` ran `git log --all --format=%H --grep="$1"`, then looped over each commit running `git log --format=%B -n 1 "$commit"`, and then ran a dead code line `commit=$(git log --all --format=%H --grep="$1" -n 1)` on line 62 whose result was never used. Furthermore, `--grep` matched substring regexes rather than parsing the JSON `uuid` field.
      - *Modernized Go behavior:* Single-pass `git log --all -z --format=%H%x00%s` scan that unmarshals the JSON commit subject (`domain.RevisionMeta`), checks `strings.EqualFold(meta.UUID, targetUUID)` and `!meta.IsMarker()`, and stops at the first matching commit.
-  8. **Fragile Delimiter Parsing in `usage.sh` and `cleanup.sh` (`usage.sh:179`, `cleanup.sh:124`, `cleanup.sh:195`):**
+  8. **Fragile Delimiter Parsing & Permissive UUID Regex (`usage.sh:179`, `common.sh:9`):**
      - *Legacy flaw:*
        - `usage.sh` used `IFS='|' read -r hash short_hash commit_date refs msg` on `git log --format="%H|%h|%ad|%D|%s"`. Any commit message containing `|` shifted columns or corrupted the message.
-       - `cleanup.sh:195` used `for dir_path in "${storage_dir}"/*` without `shopt -s nullglob`; in an empty storage directory, literal `"${storage_dir}/*"` was evaluated.
-       - `cleanup.sh:26` restricted `UUID_REGEX` to hex `[0-9a-fA-F]`, whereas `common.sh:9` used `[A-Z0-9a-z]`.
+       - `common.sh:9` defined `DRS_UUID_REGEX` with `[A-Z0-9a-z]` instead of hex `[0-9a-fA-F]`.
      - *Modernized Go behavior:*
        - Standardize UUID validation across all commands to case-insensitive RFC 4122 hex (`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`, normalized to lowercase on generation).
-       - Use `os.ReadDir(storageDir)` in Go for `cleanup` (immune to empty-directory glob pitfalls).
        - Use NUL-byte (`\x00`) delimiters in `git log` formatting.
   9. **Missing `check_repository` Precondition in Most Commands (`common.sh:67`):**
      - *Legacy flaw:* `drs::common::read_repository` was only called in `name.sh`; all other commands only checked `[[ ! -f "drs.json" ]]`, which failed if the user ran a command from a subdirectory of the repository or outside Git entirely with an unhelpful `"No configuration file 'drs.json' found"` message.
-     - *Modernized Go behavior:* All client subcommands first verify the Git repository and resolve `RepoRoot` via `git rev-parse --show-toplevel`, locating `.drev.json` at `RepoRoot` even when invoked from a subdirectory.
+     - *Modernized Go behavior:* All subcommands first verify the Git repository and resolve `RepoRoot` via `git rev-parse --show-toplevel`, locating `.drev.json` at `RepoRoot` even when invoked from a subdirectory.
 
 - **Legacy-to-Modern identifier map:**
   | Category | Legacy (`drs`) Identifier | Modern (`git-drev`) Identifier | Notes |
   | :--- | :--- | :--- | :--- |
   | **Binary / Invocation** | `git drs-<cmd>` / `$DRS_HOME/<cmd>.sh` | `git drev <cmd>` / `git-drev <cmd>` | Single self-contained Go binary on `$PATH` |
-  | **Prerequisite Script** | `$DRS_HOME/check-client-prerequisites.sh` | `git drev check` | Built-in subcommand; `jq` no longer required |
-  | **Cleanup Script** | `cleanup.sh <git-dir> <storage-dir>` | `git drev cleanup <git-dir> <storage-dir>` | Built-in subcommand of `git-drev` |
-  | **Install Script** | `. $DRS_HOME/install.sh` (`alias.drs-*`) | *(Retired / Not Needed)* | Git natively dispatches `git drev` to `git-drev` in `$PATH` |
   | **Config File** | `drs.json` (`DRS_CONFIG_FILE`) | `.drev.json` (`GIT_DREV_CONFIG`) | Dotfile at `<repo-root>/.drev.json` |
   | **Put Hook File** | `drs-put-hook.sh` (`DRS_PUT_HOOK_FILE`) | `.drev-put-hook` | Supports executable script or `put_hook()` shell function |
   | **Info Hook File** | `drs-info-hook.sh` (`DRS_INFO_HOOK_FILE`) | `.drev-info-hook` | Supports executable script or `info_hook()` shell function |
