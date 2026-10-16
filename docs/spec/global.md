@@ -125,7 +125,7 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
       ```
     - Validation rules:
       - `remote.host` (required, non-empty string): SSH host alias or hostname; must not start with `-` (prevents SSH option injection).
-      - `remote.path` (required, non-empty string): Absolute POSIX path on remote host; trailing slashes are stripped automatically; must not be `/` or contain shell metacharacters (`` ` ``, `$`, `;`, `&`, `|`, `\n`, `\x00`).
+      - `remote.path` (required, non-empty string): Absolute POSIX path on remote host; trailing slashes are stripped automatically; must not be `/` or contain shell metacharacters (`` ` ``, `$`, `;`, `&`, `|`, `\n`, `\x00`). Supports `{repo}` and `{project}` template placeholders (e.g. `/var/drev/{repo}`) which expand to the repository name (derived from `origin` remote URL slug or working tree basename). To guarantee repository storage isolation, if `remote.path` is sourced from global configuration (Tier 1 or Tier 2) and not explicitly overridden in repository configuration (Tier 3), `git-drev` automatically appends `/{repo}` if no placeholder is present.
       - `workdir` (optional, default `"data"`): Relative path within `<repo-root>`; must not escape `<repo-root>` (`..` traversal rejected).
       - `branch.default` (optional, default `"main"`): Default branch name for `select` when no argument is provided.
       - `remote.rsync.get` / `remote.rsync.put` (optional, default `""`): Space-separated custom `rsync` flags appended after implicit flags (`-a --delete-during` and verbosity/progress flags) so user flags take precedence.

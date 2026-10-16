@@ -21,6 +21,7 @@
      - **Tier 1:** User Global (`~/.config/git-drev/config.yaml`, `~/.config/git-drev/config.yml`, `~/.git-drev.yaml`, `~/.git-drev.yml`, `~/.git-drev/config.yaml`, `~/.git-drev/config.yml`).
      - **Tier 2:** Shared Global (`GIT_DREV_CONFIG` environment variable).
      - **Tier 3:** Repo Local (`.git-drev.yaml`, `.git-drev.yml`, `.git-drev/config.yaml`, `.git-drev/config.yml` in repo root).
+   - If `remote.path` is sourced from global configuration without a repo-level override, automatically appends `/{repo}` to ensure repository storage isolation. Expands `{repo}` and `{project}` variables using the detected repository name.
 3. **Provenance Annotation:**
    - Prepend the Source hierarchy header as YAML comments via `config.FormatReport(report, opts.Sources)`:
      ```yaml
@@ -30,7 +31,7 @@
      #   Tier 3 (Repo local [.git-drev.yaml, .git-drev/config.yaml]):             <path or "none">
      ```
    - If `--sources` is specified, emit only the Source hierarchy header and exit cleanly with Exit Code `0`.
-   - Otherwise, serialize the effective configuration to YAML and annotate defaulted fields inline with YAML comments (`# default convention`).
+   - Otherwise, serialize the effective configuration to YAML and annotate defaulted and inferred fields inline with YAML comments (`# default convention`, `# expanded {repo} -> <name>`, `# appended /{repo} for repository isolation`).
 4. **Standard Output Protocol:**
    - Output directly to `stdout`. The resulting output is 100% valid YAML and safe to redirect directly into a `.git-drev.yaml` file (`git-drev config > .git-drev.yaml`).
 

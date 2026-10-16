@@ -110,11 +110,15 @@ func Inspect(workDir string) (*ConfigReport, error) {
 	}
 
 	// Tier 3: Repository Local
+	repoDefinedRemotePath := false
 	if repoPath := FindRepoConfigFile(workDir); repoPath != "" {
 		report.RepoConfigPath = repoPath
 		repoCfg, err := loadConfigFile(repoPath)
 		if err != nil {
 			return nil, err
+		}
+		if repoCfg != nil && strings.TrimSpace(repoCfg.Remote.Path) != "" {
+			repoDefinedRemotePath = true
 		}
 		cfg = MergeConfigs(cfg, repoCfg)
 		foundAnyConfig = true
@@ -127,6 +131,29 @@ func Inspect(workDir string) (*ConfigReport, error) {
 
 	if cfg == nil {
 		cfg = &domain.ProjectConfig{}
+	}
+
+	// Detect repository name for template expansion ({repo} / {project}) and isolation.
+	repoName := DetectRepoName(workDir)
+
+	// If remote.path was sourced from global configuration (Tier 1 or Tier 2) and NOT
+	// explicitly overridden in repository configuration (Tier 3), enforce repository
+	// isolation by automatically appending /{repo} if no template placeholder was provided.
+	if !repoDefinedRemotePath && strings.TrimSpace(cfg.Remote.Path) != "" {
+		hasRepoVar := strings.Contains(cfg.Remote.Path, "{repo}") || strings.Contains(cfg.Remote.Path, "{project}")
+		if !hasRepoVar {
+			cfg.Remote.Path = strings.TrimRight(cfg.Remote.Path, "/") + "/{repo}"
+			report.InferredFields["remote.path"] = "appended /{repo} for repository isolation"
+		}
+	}
+
+	// Expand {repo} and {project} template placeholders in remote.path.
+	if strings.Contains(cfg.Remote.Path, "{repo}") || strings.Contains(cfg.Remote.Path, "{project}") {
+		cfg.Remote.Path = strings.ReplaceAll(cfg.Remote.Path, "{repo}", repoName)
+		cfg.Remote.Path = strings.ReplaceAll(cfg.Remote.Path, "{project}", repoName)
+		if report.InferredFields["remote.path"] == "" {
+			report.InferredFields["remote.path"] = "expanded {repo} -> " + repoName
+		}
 	}
 
 	// Default workdir
@@ -202,6 +229,14 @@ func NormalizeAndValidate(cfg *domain.ProjectConfig) error {
 	if rawPath == "" {
 		return errcode.NewError(errcode.ErrConfig, "missing required configuration key 'remote.path'")
 	}
+
+	// Expand {repo} and {project} template placeholders if still unexpanded.
+	if strings.Contains(rawPath, "{repo}") || strings.Contains(rawPath, "{project}") {
+		repoName := DetectRepoName("")
+		rawPath = strings.ReplaceAll(rawPath, "{repo}", repoName)
+		rawPath = strings.ReplaceAll(rawPath, "{project}", repoName)
+	}
+
 	if !strings.HasPrefix(rawPath, "/") {
 		return errcode.NewError(errcode.ErrConfig, "invalid remote.path %q: must be an absolute POSIX path starting with '/'", rawPath)
 	}

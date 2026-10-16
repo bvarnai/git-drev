@@ -101,7 +101,7 @@ func TestLoader_UserGlobalDotfileFallback(t *testing.T) {
 	dotfileContent := `
 remote:
   host: dotfile-host
-  path: /var/drev/dotfile-repo
+  path: /var/drev/{repo}
 `
 	require.NoError(t, os.WriteFile(filepath.Join(fakeHome, ".git-drev.yaml"), []byte(dotfileContent), 0644))
 
@@ -109,7 +109,77 @@ remote:
 	cfg, err := config.Load(repoDir)
 	require.NoError(t, err)
 	assert.Equal(t, "dotfile-host", cfg.Remote.Host)
-	assert.Equal(t, "/var/drev/dotfile-repo", cfg.Remote.Path)
+	assert.Equal(t, "/var/drev/"+filepath.Base(repoDir), cfg.Remote.Path)
+}
+
+func TestLoader_RepoIsolation_GlobalPathAutoAppendsRepo(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("GIT_DREV_CONFIG", "")
+
+	globalConfigDir := filepath.Join(fakeHome, ".config", "git-drev")
+	require.NoError(t, os.MkdirAll(globalConfigDir, 0755))
+	content := `
+remote:
+  host: global-host
+  path: /var/drev
+`
+	require.NoError(t, os.WriteFile(filepath.Join(globalConfigDir, "config.yaml"), []byte(content), 0644))
+
+	repoDir := t.TempDir()
+	report, err := config.Inspect(repoDir)
+	require.NoError(t, err)
+
+	expectedPath := "/var/drev/" + filepath.Base(repoDir)
+	assert.Equal(t, expectedPath, report.Config.Remote.Path)
+	assert.Equal(t, "appended /{repo} for repository isolation", report.InferredFields["remote.path"])
+}
+
+func TestLoader_RepoIsolation_RepoConfigOverridesWithoutAppend(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("GIT_DREV_CONFIG", "")
+
+	globalConfigDir := filepath.Join(fakeHome, ".config", "git-drev")
+	require.NoError(t, os.MkdirAll(globalConfigDir, 0755))
+	globalContent := `
+remote:
+  host: global-host
+  path: /var/drev
+`
+	require.NoError(t, os.WriteFile(filepath.Join(globalConfigDir, "config.yaml"), []byte(globalContent), 0644))
+
+	repoDir := t.TempDir()
+	repoContent := `
+remote:
+  path: /custom/isolated-path
+`
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".git-drev.yaml"), []byte(repoContent), 0644))
+
+	report, err := config.Inspect(repoDir)
+	require.NoError(t, err)
+	assert.Equal(t, "/custom/isolated-path", report.Config.Remote.Path)
+	assert.Empty(t, report.InferredFields["remote.path"])
+}
+
+func TestLoader_RepoIsolation_RepoConfigExpandsTemplate(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("GIT_DREV_CONFIG", "")
+
+	repoDir := t.TempDir()
+	repoContent := `
+remote:
+  host: custom-host
+  path: /srv/storage/{project}/data
+`
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".git-drev.yaml"), []byte(repoContent), 0644))
+
+	report, err := config.Inspect(repoDir)
+	require.NoError(t, err)
+	expectedPath := "/srv/storage/" + filepath.Base(repoDir) + "/data"
+	assert.Equal(t, expectedPath, report.Config.Remote.Path)
+	assert.Equal(t, "expanded {repo} -> "+filepath.Base(repoDir), report.InferredFields["remote.path"])
 }
 
 func TestLoader_RepoSubdirConfigFileFallback(t *testing.T) {
