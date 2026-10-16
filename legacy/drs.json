@@ -1,0 +1,6 @@
+{
+    "remote": {
+        "host": "drs",
+        "path": "/volume1/storage/project"
+    }
+}
