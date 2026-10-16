@@ -108,12 +108,12 @@ remote:
 				_ = os.Remove(filepath.Join(dir, ".git", "index.lock"))
 			},
 			mockGit: map[string]mockGitResponse{
-				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix":        {out: "true\n" + tempDir + "\n"},
-				"symbolic-ref --quiet --short HEAD":                                    {out: "main"},
-				"log -n 1 --format=%s HEAD --":                                         {out: `{"uuid":"11111111-1111-4111-8111-111111111111","seq":"50"}`},
-				"add --all":                                                            {out: ""},
-				"commit --allow-empty -m *":                                            {out: "[main a1b2c3d] revision"},
-				"push --force-with-lease origin refs/heads/main":                       {out: "Everything up-to-date"},
+				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
+				"symbolic-ref --quiet --short HEAD":                             {out: "main"},
+				"log -n 1 --format=%s HEAD --":                                  {out: `{"uuid":"11111111-1111-4111-8111-111111111111","seq":"50"}`},
+				"add --all":                                                     {out: ""},
+				"commit --allow-empty -m *":                                     {out: "[main a1b2c3d] revision"},
+				"push --force-with-lease origin refs/heads/main":                {out: "Everything up-to-date"},
 			},
 			mockRemote: &transport.MockRemoteRunner{
 				CloneBaselineFn: func(ctx context.Context, host, srcPath, dstPath string) error {
@@ -151,18 +151,18 @@ remote:
 				_ = os.Remove(filepath.Join(dir, ".git", "index.lock"))
 			},
 			mockGit: map[string]mockGitResponse{
-				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix":        {out: "true\n" + tempDir + "\n"},
-				"symbolic-ref --quiet --short HEAD":                                    {out: "main"},
-				"log -n 1 --format=%s HEAD --":                                         {out: `{"uuid":"11111111-1111-4111-8111-111111111111","seq":"40"}`},
-				"add --all":                                                            {out: ""},
-				"commit --allow-empty -m *":                                            {out: "[main a1b2c3d] revision"},
-				"push --force-with-lease origin refs/heads/main":                       {err: &git.CommandError{Stderr: "stale info", ExitCode: 1}},
-				"config --local --get-all remote.origin.fetch":                         {out: git.WildcardFetchRefspec},
-				"fetch --all --prune":                                                  {out: ""},
-				"log -n 1 --format=%s refs/remotes/origin/main --":                     {out: `{"uuid":"22222222-2222-4222-8222-222222222222","seq":"80"}`},
-				"reset --hard refs/remotes/origin/main --":                             {out: "HEAD is now at 2222222"},
+				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
+				"symbolic-ref --quiet --short HEAD":                             {out: "main"},
+				"log -n 1 --format=%s HEAD --":                                  {out: `{"uuid":"11111111-1111-4111-8111-111111111111","seq":"40"}`},
+				"add --all":                                                     {out: ""},
+				"commit --allow-empty -m *":                                     {out: "[main a1b2c3d] revision"},
+				"push --force-with-lease origin refs/heads/main":                {err: &git.CommandError{Stderr: "stale info", ExitCode: 1}},
+				"config --local --get-all remote.origin.fetch":                  {out: git.WildcardFetchRefspec},
+				"fetch --all --prune":                                           {out: ""},
+				"log -n 1 --format=%s refs/remotes/origin/main --":              {out: `{"uuid":"22222222-2222-4222-8222-222222222222","seq":"80"}`},
+				"reset --hard refs/remotes/origin/main --":                      {out: "HEAD is now at 2222222"},
 			},
-			mockRemote: &transport.MockRemoteRunner{},
+			mockRemote:   &transport.MockRemoteRunner{},
 			expectedCode: errcode.ExitSuccess,
 			checkExecuted: func(t *testing.T, executed []string, remoteCalls []string) {
 				assert.Contains(t, executed, "fetch --all --prune")

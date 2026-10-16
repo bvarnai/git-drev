@@ -48,8 +48,8 @@ remote:
 			errSubstr:    "Too many arguments",
 		},
 		{
-			name:         "argument starting with dash returns usage error",
-			args:         []string{"select", "--", "-invalid"},
+			name: "argument starting with dash returns usage error",
+			args: []string{"select", "--", "-invalid"},
 			mockResponses: map[string]mockGitResponse{
 				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
 			},
@@ -62,8 +62,8 @@ remote:
 			mockResponses: map[string]mockGitResponse{
 				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
 				"config --local --get-all remote.origin.fetch":                  {out: git.WildcardFetchRefspec},
-				"fetch --all --prune":                                           {out: ""},
-				"-c advice.detachedHead=false checkout trunk":                   {out: "Switched to branch 'trunk'"},
+				"fetch --all --prune":                         {out: ""},
+				"-c advice.detachedHead=false checkout trunk": {out: "Switched to branch 'trunk'"},
 			},
 			expectedCode: errcode.ExitSuccess,
 			checkExecuted: func(t *testing.T, executed []string) {
@@ -76,8 +76,8 @@ remote:
 			mockResponses: map[string]mockGitResponse{
 				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
 				"config --local --get-all remote.origin.fetch":                  {out: git.WildcardFetchRefspec},
-				"fetch --all --prune":                                           {out: ""},
-				"-c advice.detachedHead=false checkout feature/my-feat":         {out: "Switched to branch 'feature/my-feat'"},
+				"fetch --all --prune": {out: ""},
+				"-c advice.detachedHead=false checkout feature/my-feat": {out: "Switched to branch 'feature/my-feat'"},
 			},
 			expectedCode: errcode.ExitSuccess,
 			checkExecuted: func(t *testing.T, executed []string) {
@@ -90,7 +90,7 @@ remote:
 			mockResponses: map[string]mockGitResponse{
 				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
 				"config --local --get-all remote.origin.fetch":                  {out: git.WildcardFetchRefspec},
-				"fetch --all --prune":                                           {out: ""},
+				"fetch --all --prune": {out: ""},
 				"log --all -z -F -i --grep=" + validUUID + " --format=%H%x00%s": {
 					out: "3333333333333333333333333333333333333333\x00" + `{"uuid":"` + validUUID + `","seq":"10"}` + "\x00",
 				},
@@ -107,7 +107,7 @@ remote:
 			mockResponses: map[string]mockGitResponse{
 				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
 				"config --local --get-all remote.origin.fetch":                  {out: git.WildcardFetchRefspec},
-				"fetch --all --prune":                                           {out: ""},
+				"fetch --all --prune": {out: ""},
 				"log --all -z -F -i --grep=" + missingUUID + " --format=%H%x00%s": {
 					out: "",
 				},

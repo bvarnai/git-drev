@@ -44,7 +44,7 @@ func TestNameCommand_UnitTable(t *testing.T) {
 			args: []string{"name"},
 			mockResponses: map[string]mockGitResponse{
 				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n/repo\n"},
-				"symbolic-ref --quiet --short HEAD":                                  {out: "feature/alpha"},
+				"symbolic-ref --quiet --short HEAD":                             {out: "feature/alpha"},
 			},
 			expectedCode: errcode.ExitSuccess,
 			expectStdout: "feature/alpha\n",
@@ -54,7 +54,7 @@ func TestNameCommand_UnitTable(t *testing.T) {
 			args: []string{"name"},
 			mockResponses: map[string]mockGitResponse{
 				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n/repo\n"},
-				"symbolic-ref --quiet --short HEAD":                                  {err: &git.CommandError{ExitCode: 1}},
+				"symbolic-ref --quiet --short HEAD":                             {err: &git.CommandError{ExitCode: 1}},
 			},
 			expectedCode: errcode.ExitSuccess,
 			expectStdout: cli.DetachedHeadDisplay + "\n",

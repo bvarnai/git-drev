@@ -32,13 +32,13 @@ remote:
 	require.NoError(t, os.WriteFile(configPath, []byte(cfgContent), 0o644))
 
 	tests := []struct {
-		name          string
-		args          []string
-		mockGit       map[string]mockGitResponse
-		mockRemote    *transport.MockRemoteRunner
-		expectedCode  int
-		errSubstr     string
-		validateOut   func(t *testing.T, stdout string, stderr string)
+		name         string
+		args         []string
+		mockGit      map[string]mockGitResponse
+		mockRemote   *transport.MockRemoteRunner
+		expectedCode int
+		errSubstr    string
+		validateOut  func(t *testing.T, stdout string, stderr string)
 	}{
 		{
 			name:         "excess arguments returns usage error",

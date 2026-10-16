@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Verify Dependencies & Tests
+        run: |
+          go mod verify
+          go test -race ./...
+
+      - name: Build Matrix & Create Archives
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          COMMIT=$(git rev-parse --short=7 HEAD)
+          BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          DIST_DIR="dist"
+          mkdir -p "$DIST_DIR"
+
+          TARGETS=(
+            "linux/amd64/git-drev"
+            "linux/arm64/git-drev"
+            "darwin/amd64/git-drev"
+            "darwin/arm64/git-drev"
+            "windows/amd64/git-drev.exe"
+            "windows/arm64/git-drev.exe"
+          )
+
+          LDFLAGS="-s -w -X 'git-drev/internal/version.Version=v${VERSION}' -X 'git-drev/internal/version.Commit=${COMMIT}' -X 'git-drev/internal/version.Date=${BUILD_DATE}'"
+
+          for TARGET in "${TARGETS[@]}"; do
+            IFS="/" read -r GOOS GOARCH BIN_NAME <<< "$TARGET"
+            echo "==> Building for ${GOOS}/${GOARCH}..."
+
+            STAGE_DIR="build_${GOOS}_${GOARCH}"
+            mkdir -p "$STAGE_DIR"
+
+            CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -buildvcs=false -ldflags "$LDFLAGS" -trimpath -o "${STAGE_DIR}/${BIN_NAME}" ./cmd/git-drev
+
+            # Copy docs and license to package staging
+            cp LICENSE README.md "$STAGE_DIR/"
+
+            ARCHIVE_NAME="git-drev_${TAG}_${GOOS}_${GOARCH}"
+            if [ "$GOOS" = "windows" ]; then
+              ARCHIVE_FILE="${DIST_DIR}/${ARCHIVE_NAME}.zip"
+              (cd "$STAGE_DIR" && zip -r "../${ARCHIVE_FILE}" .)
+            else
+              ARCHIVE_FILE="${DIST_DIR}/${ARCHIVE_NAME}.tar.gz"
+              tar -czf "$ARCHIVE_FILE" -C "$STAGE_DIR" .
+            fi
+
+            # Generate individual .sha256 file (checksum filename format)
+            (cd "$DIST_DIR" && sha256sum "$(basename "$ARCHIVE_FILE")" > "$(basename "$ARCHIVE_FILE").sha256")
+
+            rm -rf "$STAGE_DIR"
+          done
+
+          # Generate aggregated checksums.txt
+          (cd "$DIST_DIR" && sha256sum git-drev_${TAG}_*.* > checksums.txt)
+          echo "Build and packaging complete. Distribution files:"
+          ls -la "$DIST_DIR"
+
+      - name: Create GitHub Draft Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" \
+            dist/* \
+            --title "git-drev $TAG" \
+            --draft \
+            --generate-notes
