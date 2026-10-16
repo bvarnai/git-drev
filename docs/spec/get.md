@@ -14,7 +14,7 @@
   | `--latest` | `-l` | `bool` | `false` | No | Fetch all remote refs and hard-reset the active branch to `origin/<branch>` (equivalent to running `git drev update`) before synchronizing the directory revision. |
   | `--stats` | — | `bool` | `false` | No | Pass `--stats` to `rsync` to print detailed file-transfer statistics at the end of the synchronization. |
 
-  *(Global flags `--verbose` / `-v`, `--quiet` / `-q`, `--dry-run` / `-n`, `--no-color`, `--help` / `-h`, and `--version` are inherited from `docs/spec/global.md` Section 1.)*
+  *(Global flags `--verbose` / `-v`, `--quiet` / `-q`, `--no-color`, `--help` / `-h`, and `--version` are inherited from `docs/spec/global.md` Section 1.)*
 
 - **Positional arguments:**
   1. `[<target_directory>]` (** optional**, cardinality `0..1`):
@@ -70,10 +70,6 @@ type GetOptions struct {
 
 	// Quiet suppresses informational stderr logs and passes --quiet to rsync.
 	Quiet bool
-
-	// DryRun simulates git mutations and passes --dry-run (-n) to rsync without
-	// creating local directories or writing files.
-	DryRun bool
 }
 
 // GetResult captures the outcome of a completed `get` execution for testing and telemetry.
@@ -81,14 +77,11 @@ type GetResult struct {
 	// UUID is the normalized lowercase RFC 4122 UUID of the synchronized revision.
 	UUID string
 
-	// TargetDir is the canonical absolute path where the revision was (or would be) synchronized.
+	// TargetDir is the canonical absolute path where the revision was synchronized.
 	TargetDir string
 
 	// UpdatedBranch is the branch name reset to origin/<branch> when Latest is true, or "" otherwise.
 	UpdatedBranch string
-
-	// DryRun reports whether the operation was executed in simulation mode.
-	DryRun bool
 }
 
 // FS abstracts local filesystem mutations required by `get` for deterministic unit testing.
@@ -99,7 +92,8 @@ type FS interface {
 
 // GetDeps bundles external boundary interfaces injected into RunGet.
 type GetDeps struct {
-	Git    git.Runner
+	Insp   *git.Inspector
+	Ops    *git.Operations
 	Remote transport.RemoteRunner
 	FS     FS
 	Logger *term.Logger
@@ -121,7 +115,7 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
    - Start execution timer via `timer := term.StartTimer()`.
    - Verify global flag mutual exclusion (`opts.Verbose && opts.Quiet` returns `ErrUsage`, exit code `2`).
    - Verify positional argument count (`len(args) <= 1`; if `> 1`, return `ErrUsage`, exit code `2`).
-   - Query `deps.Git.RepoRoot(ctx)` to obtain `repoRoot`, `prefix`, and validate that the caller is inside a non-bare working tree.
+   - Query `deps.Insp.RepoRoot(ctx, dir)` to obtain `repoRoot`, `prefix`, and validate that the caller is inside a non-bare working tree.
    - Compute `callerDir := filepath.Join(repoRoot, prefix)` and resolve `<target_directory>` via `ResolveGetTargetDir`:
      - If positional argument `targetDirArg` is provided, resolve `absTarget = filepath.Clean(filepath.Join(callerDir, targetDirArg))` (or `filepath.Clean(targetDirArg)` if already absolute).
      - If omitted, resolve `absTarget = filepath.Clean(filepath.Join(repoRoot, deps.Config.WorkDir))`.
@@ -130,16 +124,15 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
 
 2. **Core algorithm:**
    - **Step 2.1: Ensure remote fetch refspec configuration:**
-     - Call `deps.Git.EnsureRemoteFetchConfig(ctx)` to ensure `remote.origin.fetch` includes `+refs/heads/*:refs/remotes/origin/*` (skipping actual `git config` write if `opts.DryRun` is true).
+     - Call `deps.Ops.EnsureRemoteFetchConfig(ctx, repoRoot)` to ensure `remote.origin.fetch` includes `+refs/heads/*:refs/remotes/origin/*`.
    - **Step 2.2: Optional branch update (`opts.Latest == true`):**
-     - Call `deps.Git.CurrentBranch(ctx)` (`git symbolic-ref --quiet --short HEAD`).
+     - Call `deps.Insp.CurrentBranch(ctx, repoRoot)` (`git symbolic-ref --quiet --short HEAD`).
      - If `detached == true`, abort with `ErrDetachedHead` (exit code `4`) and hint `Use "git drev select <branch>" to select a branch first.`
-     - Call `deps.Git.FetchAll(ctx)` (`git fetch --all --prune`). On failure, return `ErrGitExec` (exit code `5`).
+     - Call `deps.Ops.FetchAll(ctx, repoRoot, opts.Quiet && !opts.Verbose)` (`git fetch --all --prune`). On failure, return `ErrGitExec` (exit code `5`).
      - Verify `origin/<branch>` exists locally (`refs/remotes/origin/<branch>`). If missing, return `ErrGitState` (exit code `4`).
-     - Call `deps.Git.ResetHard(ctx, "origin/"+branch)` (`git reset --hard origin/<branch>`). On failure, return `ErrGitExec` (exit code `5`).
+     - Call `deps.Ops.ResetHard(ctx, repoRoot, "refs/remotes/origin/"+branch)` (`git reset --hard refs/remotes/origin/<branch> --`). On failure, return `ErrGitExec` (exit code `5`).
    - **Step 2.3: Read and validate `HEAD` revision metadata:**
-     - Call `deps.Git.HeadCommitMeta(ctx)` (`git log -1 --format=%s HEAD`) and unmarshal JSON into `domain.RevisionMeta`.
-     - Note: When `opts.Latest && opts.DryRun` is active (so `git reset --hard origin/<branch>` was simulated rather than executed), ` deps.Git.BranchCommitMeta(ctx, "refs/remotes/origin/"+branch)` is read instead of local `HEAD` so the dry-run inspects the actual latest remote revision metadata!
+     - Call `deps.Insp.HeadCommitMeta(ctx, repoRoot)` (`git log -1 --format=%s HEAD --`) and unmarshal JSON into `domain.RevisionMeta`.
      - If JSON unmarshaling fails or `meta.UUID` is empty: return `ErrGitState` (exit code `4`) with message `Unable to read directory metadata (missing uuid)`.
      - Check `meta.IsMarker()` (`meta.Marker == "true"`) BEFORE or alongside UUID validation: if `meta.IsMarker()` is `true` (or `meta.UUID == domain.ZeroUUID`), return `ErrGitState` (exit code `4`) with message `No directory revision available yet on current branch`.
      - Validate `meta.UUID` against the RFC 4122 UUID v4 regex (`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`) and normalize to lowercase (`uuid = strings.ToLower(meta.UUID)`). If invalid, return `ErrGitState` (exit code `4`).
@@ -155,8 +148,7 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
      - Inspect `opts.TargetDir` via `deps.FS.Stat(opts.TargetDir)`.
      - If it exists and `!info.IsDir()`, return `ErrRuntime` (exit code `1`) with message `Target path '<path>' exists and is not a directory`.
      - If it does not exist (`errors.Is(err, fs.ErrNotExist)`):
-       - When `!opts.DryRun`, create it via `deps.FS.MkdirAll(opts.TargetDir, 0o755)`. If creation fails, return `ErrRuntime` (exit code `1`) with message `Failed to create target directory '<path>'`.
-       - When `opts.DryRun` is `true`, log `[drev] [DRY RUN] Would create target directory: <path>` to `stderr` without modifying the filesystem.
+       - Create it via `deps.FS.MkdirAll(opts.TargetDir, 0o755)`. If creation fails, return `ErrRuntime` (exit code `1`) with message `Failed to create target directory '<path>'`.
    - **Step 2.6: Synchronize payload via `rsync`:**
      - Log to `stderr`: `[drev] Getting directory revision from remote host (this might take a while)`.
      - Invoke `deps.Remote.RsyncGet(ctx, transport.SyncRequest{...})` with:
@@ -166,23 +158,13 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
        - `Verbose`: `opts.Verbose`
        - `Quiet`: `opts.Quiet`
        - `Stats`: `opts.Stats`
-       - `DryRun`: `opts.DryRun`
        - `UserOptions`: `deps.Config.Remote.RsyncOptions.Get`
      - If `RsyncGet` fails, return `ErrTransport` (exit code `7`) with message `Unable to get directory revision`.
    - **Step 2.7: Completion logging:**
      - Emit elapsed duration to `stderr` via `deps.Logger.Info(timer.String())` (`[drev] Took X min Y sec`, suppressed under `--quiet`).
-     - Return `GetResult{UUID: uuid, TargetDir: opts.TargetDir, UpdatedBranch: updatedBranch, DryRun: opts.DryRun}, nil`.
+     - Return `GetResult{UUID: uuid, TargetDir: opts.TargetDir, UpdatedBranch: updatedBranch}, nil`.
 
-3. **Dry-run behavior (`--dry-run` / `-n`):**
-   - Precondition checks, `.drev.json` validation, `CurrentBranch`, and `CheckDirExists` (read-only SSH probe) execute normally against the live repository and remote host.
-   - If `EnsureRemoteFetchConfig` detects a missing fetch refspec, it logs `[drev] [DRY RUN] Would execute: git config --local --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/*` instead of mutating `.git/config`.
-   - When `--latest` (`-l`) is combined with `--dry-run`:
-     - `git fetch --all --prune` is NOT executed if avoiding all local `.git` mutations is required, OR if remote ref inspection is needed: `git-drev` logs `[drev] [DRY RUN] Would execute: git fetch --all --prune` and `[drev] [DRY RUN] Would execute: git reset --hard origin/<branch>` without mutating `HEAD` or local refs, reading commit metadata from `HEAD` (or `refs/remotes/origin/<branch>` if already fetched).
-   - If `<target_directory>` does not exist locally:
-     - `os.MkdirAll` is skipped and `[drev] [DRY RUN] Would create target directory: <target_directory>` is logged to `stderr`.
-     - Because `rsync --dry-run` requires the destination parent path or directory to be addressable without failing on missing intermediate directories, if `<target_directory>` does not exist on disk during `--dry-run`, `RsyncGet` logs `[drev] [DRY RUN] Would execute: rsync ...` rather than failing on a missing local destination directory; if `<target_directory>` already exists on disk, `rsync` is invoked with `--dry-run` (`-n`) appended so the user sees the exact transfer delta (`--itemize-changes` / `--stats`) without modifying any local files.
-
-4. **Interruption, cleanup & rollback:**
+3. **Interruption, cleanup & rollback:**
    - All subprocesses (`git`, `ssh`, `rsync`) are bound to the signal-aware `ctx` (`SIGINT` / `SIGTERM`).
    - On context cancellation:
      - Active `ssh` or `rsync` child processes receive `SIGTERM` followed by `SIGKILL` after the 3-second grace period (`cmd.WaitDelay`).
@@ -211,13 +193,11 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
        - Else: `--info=progress2` (if `stderr` is a TTY) and, if `--verbose` (`-v`) is set, `-v --itemize-changes`
     2. Statistics flag:
        - If `--stats`: `--stats`
-    3. Dry-run flag:
-       - If `--dry-run` (`-n`): `--dry-run`
-    4. Core archive & deletion flags:
+    3. Core archive & deletion flags:
        - `-a --delete-during`
-    5. User-configured flags (appended last so user overrides win):
+    4. User-configured flags (appended last so user overrides win):
        - Tokenized `remote.rsyncOptions.get` (or `drev.remote.rsyncGetOptions`).
-    6. Transport & path arguments:
+    5. Transport & path arguments:
        - `-e`, `<resolved-ssh-command>` (default `ssh -T` or `$GIT_DREV_SSH_COMMAND`)
        - `--`
        - `<host>:<remote.path>/<uuid>/`
@@ -231,7 +211,7 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
     - Synchronized in-place by `rsync -a --delete-during`: extraneous local files inside `<target_directory>` not present in `<remote.path>/<uuid>/` are deleted, and remote files, symlinks, permissions, and modification times are replicated locally.
 
 - **Standard output (`stdout`):**
-  - `git drev get` produces **no output on `stdout`** during normal, verbose, quiet, or dry-run execution (all operational logs, `rsync` progress/stats, and timer summaries are routed to `stderr` per `docs/spec/global.md` Section 1).
+  - `git drev get` produces **no output on `stdout`** during normal, verbose, or quiet execution (all operational logs, `rsync` progress/stats, and timer summaries are routed to `stderr` per `docs/spec/global.md` Section 1).
   - Only `git drev get -h` / `git-drev get --help` writes usage documentation to `stdout`.
 
 - **Standard error (`stderr`):**
@@ -306,4 +286,3 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
 | `TC-04` | Repository is in detached `HEAD` state (e.g., after `git drev select v1.0`). | `git drev get --latest` | **Exit Code:** `4` (`ErrDetachedHead`)<br>**`stdout`:** Empty<br>**`stderr`:** `[drev] ! Detached HEAD state detected, aborting` and `[drev] Hint: Use "git drev select <branch>" to select a branch first.`<br>**Repo & FS State:** `HEAD` and `data/` remain completely unchanged; no network calls made. |
 | `TC-05` | Current branch was just created via `git drev create feat` (`HEAD` commit subject is `{"uuid":"00000000-0000-0000-0000-000000000000","marker":"true"}`). | `git drev get` | **Exit Code:** `4` (`ErrGitState`)<br>**`stdout`:** Empty<br>**`stderr`:** `[drev] ! No directory revision available yet on current branch`<br>**FS State:** No SSH connection opened; `data/` not created or modified. |
 | `TC-06` | `HEAD` points to valid commit `{"uuid":"deadbeef-7f34-4f4c-9a76-05e3297b2a23","seq":"50"}`, but `<remote.path>/deadbeef-...` was purged by `git drev cleanup` on the remote server; local `out_dir` does not exist. | `git drev get out_dir` | **Exit Code:** `6` (`ErrRemoteNotFound`)<br>**`stdout`:** Empty<br>**`stderr`:** `[drev] ! Unable to find revision 'deadbeef-7f34-4f4c-9a76-05e3297b2a23' on remote host` and retention policy hint.<br>**FS State:** `out_dir` is **not** created on the local filesystem. |
-| `TC-07` | Valid repo and remote revision `c1ca82b1-...`; local `data/` exists with `old.bin`. | `git drev get --dry-run --verbose --stats` | **Exit Code:** `0`<br>**`stdout`:** Empty<br>**`stderr`:** Contains `rsync --dry-run -v --itemize-changes --stats` preview output.<br>**FS State:** `data/old.bin` is still present and `data/app.bin` is not written to disk. |

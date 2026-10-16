@@ -7,7 +7,6 @@
   | :--- | :--- | :--- | :--- | :--- |
   | `--verbose` | `-v` | `bool` | `false` | Enable verbose diagnostic logging and detailed command/transfer output (e.g., `rsync --itemize-changes` or detailed table breakdowns). Mutually exclusive with `--quiet`. |
   | `--quiet` | `-q` | `bool` | `false` | Suppress informational progress and status logs, emitting only errors or strict porcelain output. Mutually exclusive with `--verbose`. |
-  | `--dry-run` | `-n` | `bool` | `false` | Simulate mutating operations (remote SSH/rsync mutations, directory deletions, Git commits/pushes/resets) without modifying local or remote state. |
   | `--no-color` | — | `bool` | `false` | Disable ANSI color escape sequences on `stdout` and `stderr` regardless of TTY status. |
   | `--version` | — | `bool` | `false` | Print `git-drev version <semver> (<commit> <os>/<arch>)` to `stdout` and exit `0`. |
   | `--help` | `-h` | `bool` | `false` | Print usage and flag reference for `git-drev` or the active subcommand to `stdout` and exit `0` (replaces legacy positional `help` argument which exited `1` to `stderr`). |
@@ -104,12 +103,6 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
     - Child `ssh`, `rsync`, or `git` processes receive `SIGTERM` (followed by `SIGKILL` after a 3-second grace period via `cmd.WaitDelay` / `cmd.Cancel`).
     - If `put` is interrupted during remote baseline copy (`cp -R -a`) or `rsync` upload before the metadata commit is pushed, a deferred cleanup handler attempts a best-effort remote removal of the incomplete `<path>/<uuid>` staging directory.
     - If `put` fails or is interrupted during a `git rebase` in the stale-push retry loop, `git rebase --abort` is executed via `defer` to restore the repository to a clean state.
-- **Dry-run guarantees (`--dry-run` / `-n`):**
-  - When `--dry-run` is active across any subcommand:
-    - Read-only precondition checks, local config validation, and read-only remote probes (`git ls-remote`, `ssh` directory existence checks in `get`/`usage`) execute normally.
-    - Mutating Git commands (`git checkout -b`, `git switch`, `git reset --hard`, `git add`, `git commit`, `git rebase`, `git push`, `git config` mutations) are NOT executed; instead, `git-drev` logs `[drev] [DRY RUN] Would execute: git ...` to `stderr`.
-    - Mutating remote SSH commands (`cp -R -a` baseline cloning in `put`) are skipped and logged as `[drev] [DRY RUN] Would clone baseline revision <last_uuid> to <uuid>`.
-    - `rsync` executions in `get` and `put` append `--dry-run` (`-n`) so `rsync` connects and reports transfer deltas without writing files, or skip `rsync` entirely if the target remote UUID directory was only virtually created in dry-run mode.
 
 ## 5. Persistent Storage, Config Schema & Shared Domain Models
 - **Metadata & storage format:**
@@ -254,6 +247,7 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
 
   import (
       "context"
+      "io"
       "git-drev/internal/domain"
   )
 
@@ -267,26 +261,26 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
       Meta      *domain.RevisionMeta
   }
 
-  // Runner abstracts all Git subprocess operations.
+  // Runner represents the direct Git execution boundary interface.
   type Runner interface {
-      RepoRoot(ctx context.Context) (root string, prefix string, err error)
-      CurrentBranch(ctx context.Context) (branch string, detached bool, err error)
-      HeadCommitMeta(ctx context.Context) (domain.RevisionMeta, error)
-      BranchCommitMeta(ctx context.Context, ref string) (domain.RevisionMeta, error)
-      EnsureRemoteFetchConfig(ctx context.Context) error
-      LocalBranchExists(ctx context.Context, branch string) (bool, error)
-      RemoteBranchExists(ctx context.Context, branch string) (bool, error)
-      FetchAll(ctx context.Context) error
-      Checkout(ctx context.Context, ref string, detachAdvice bool) error
-      CheckoutNewBranch(ctx context.Context, branch string) error
-      Switch(ctx context.Context, branch string) error
-      ResetHard(ctx context.Context, ref string) error
-      StageAll(ctx context.Context) error
-      CommitAllowEmpty(ctx context.Context, message string) error
-      RebaseTheirs(ctx context.Context, upstream string) error
-      PushForceWithLease(ctx context.Context, branch string, setUpstream bool) (stale bool, output string, err error)
-      FindCommitByUUID(ctx context.Context, uuid string) (commitHash string, err error)
-      ScanAllCommits(ctx context.Context, includeFetchHead bool) ([]CommitRecord, error)
+      // Run executes a git command in dir and returns combined stdout, or an error.
+      Run(ctx context.Context, dir string, args ...string) (string, error)
+      // RunLines executes a git command in dir and returns stdout split into lines.
+      RunLines(ctx context.Context, dir string, args ...string) ([]string, error)
+      // RunWithEnv executes a git command in dir with additional environment variables.
+      RunWithEnv(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error)
+      // RunStream executes a git command streaming stdout and stderr to the provided writers.
+      RunStream(ctx context.Context, dir string, stdout, stderr io.Writer, extraEnv []string, args ...string) error
+  }
+
+  // Inspector provides read-only repository inspection methods using Git plumbing.
+  type Inspector struct {
+      runner Runner
+  }
+
+  // Operations provides safe Git mutating methods.
+  type Operations struct {
+      runner Runner
   }
   ```
   ```go
@@ -305,7 +299,6 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
       Verbose     bool
       Quiet       bool
       Stats       bool
-      DryRun      bool
       UserOptions string
   }
 

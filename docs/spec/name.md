@@ -11,7 +11,7 @@
 - **Subcommand-specific flags:**
   | Flag | Short | Go Type | Default | Required | Description |
   | :--- | :--- | :--- | :--- | :--- | :--- |
-  | *(None)* | — | — | — | — | `name` accepts only the global flags defined in `docs/spec/global.md` (`--verbose`, `--quiet`, `--dry-run`, `--no-color`, `--help`). |
+  | *(None)* | — | — | — | — | `name` accepts only the global flags defined in `docs/spec/global.md` (`--verbose`, `--quiet`, `--no-color`, `--help`). |
 
 - **Positional arguments:**
   - **Cardinality:** Exact `0` positional arguments.
@@ -43,8 +43,7 @@ const DetachedHeadDisplay = "No branch (detached HEAD state)"
 
 // NameOptions encapsulates the validated parameters for the `name` subcommand.
 type NameOptions struct {
-	Quiet  bool
-	DryRun bool
+	Quiet bool
 }
 
 // NameResult captures the resolved branch state of the local working tree.
@@ -67,27 +66,24 @@ func (r NameResult) String() string {
 }
 
 // RunName executes the domain logic for `git drev name` in isolation from CLI flag parsing.
-func RunName(ctx context.Context, gitRunner git.Runner, logger *term.Logger, stdout io.Writer, opts NameOptions) (NameResult, error)
+func RunName(ctx context.Context, insp *git.Inspector, logger *term.Logger, stdout io.Writer, opts NameOptions) (NameResult, error)
 ```
 
 ## 4. Execution Flow (Step-by-Step Domain Logic)
 1. **Input normalization & validation:**
    - Parse global flags via the CLI dispatcher. Reject any mutually exclusive flag combinations (`--verbose` with `--quiet`) or unknown flags with `ErrUsage` (exit code `2`).
-   - Assert `len(args) == 0`. If one or more positional arguments are provided, return a wrapped `errcode.ErrUsage` error (`"name takes no positional arguments (got %d)"`) which logs `[drev] ! This command takes no arguments` to `stderr` and exits with code `2`.
+   - Assert `len(args) == 0`. If one or more positional arguments are provided, return `errcode.NewError(errcode.ErrUsage, "This command takes no arguments (got: %q)", args[0])` which logs `[drev] ! This command takes no arguments` to `stderr` and exits with code `2`.
    - Verify that `ctx.Err()` is nil; if already canceled, return `errcode.ErrInterrupted` (exit code `130`).
 
 2. **Core algorithm:**
-   - **Step 2.1 — Repository validation:** Call `gitRunner.RepoRoot(ctx)` (backed by `git rev-parse --is-inside-work-tree`, `--show-toplevel`, and `--show-prefix`) to verify the process is executing inside a non-bare Git working tree. If this check fails, return `errcode.ErrNotRepository` (exit code `3`).
-   - **Step 2.2 — Symbolic reference resolution:** Call `gitRunner.CurrentBranch(ctx)`, which executes `git symbolic-ref --quiet --short HEAD`:
+   - **Step 2.1 — Repository validation:** Call `insp.RepoRoot(ctx, dir)` (backed by `git rev-parse --is-inside-work-tree`, `--show-toplevel`, and `--show-prefix`) to verify the process is executing inside a non-bare Git working tree. If this check fails, return `errcode.ErrNotRepository` (exit code `3`).
+   - **Step 2.2 — Symbolic reference resolution:** Call `insp.CurrentBranch(ctx, repoRoot)`, which executes `git symbolic-ref --quiet --short HEAD`:
      - **Case A (Exit Code `0` — Attached Branch):** Read stdout, trim trailing `\r\n` or `\n`, and return `NameResult{Branch: branchName, Detached: false}`. Note that `git symbolic-ref --quiet --short HEAD` succeeds even on an unborn branch (`git init` before any commit), returning the configured initial branch name (e.g., `main`).
      - **Case B (Exit Code `1` — Detached `HEAD`):** Verify that `HEAD` resolves to a valid commit object via `git rev-parse --verify --quiet HEAD^{commit}` (or confirm `symbolic-ref` exited `1` with empty stderr). Return `NameResult{Branch: "", Detached: true}`.
      - **Case C (Exit Code `128` or other non-zero exit code / I/O failure):** Wrap and return `errcode.ErrGitExec` (exit code `5`).
    - **Step 2.3 — Output emission:** Write `result.String() + "\n"` to `stdout`. If writing to `stdout` fails (e.g., broken pipe `EPIPE`), return `errcode.ErrRuntime` (exit code `1`).
 
-3. **Dry-run behavior:**
-   - Because `git drev name` is strictly read-only and performs zero local or remote mutations, passing `--dry-run` (`-n`) executes the exact same read-only Git plumbing inspection and prints the resolved branch name (or detached `HEAD` status) to `stdout` without emitting simulated mutation logs.
-
-4. **Interruption, cleanup & rollback:**
+3. **Interruption, cleanup & rollback:**
    - `name` creates no temporary files, acquires no Git index locks, and performs no filesystem or remote mutations.
    - If `ctx.Done()` fires (`SIGINT` / `SIGTERM`) while the child `git` process is running, `exec.CommandContext` terminates the subprocess and `RunName` immediately returns `errcode.ErrInterrupted` (exit code `130`) with no rollback required.
 
@@ -104,7 +100,7 @@ func RunName(ctx context.Context, gitRunner git.Runner, logger *term.Logger, std
 - **Standard output (`stdout`):**
   - On attached branch (committed or unborn): `<branch-name>\n` (e.g., `main\n`), with LF (`\n`) line ending across all platforms (Linux, macOS, Windows).
   - On detached `HEAD`: `No branch (detached HEAD state)\n`.
-  - Output is identical regardless of `--verbose`, `--quiet`, or `--dry-run` flags so scripts and pipelines (`branch=$(git drev name)`) receive clean porcelain output.
+  - Output is identical regardless of `--verbose` or `--quiet` flags so scripts and pipelines (`branch=$(git drev name)`) receive clean porcelain output.
 
 - **Standard error (`stderr`):**
   - Empty (`0` bytes) on success.
@@ -152,7 +148,7 @@ func RunName(ctx context.Context, gitRunner git.Runner, logger *term.Logger, std
 | :--- | :--- | :--- | :--- |
 | `TC-01` | Valid Git repository on branch `feature/build-42` with at least one commit; no `.drev.json` present. | `git drev name` | **Exit Code:** `0`<br>**`stdout`:** `feature/build-42\n`<br>**`stderr`:** *(empty)*<br>**Repo/FS State:** Unchanged. |
 | `TC-02` | Valid Git repository in detached `HEAD` state (e.g., after `git checkout --detach HEAD` or `git drev select <uuid>`). | `git drev name` | **Exit Code:** `0`<br>**`stdout`:** `No branch (detached HEAD state)\n`<br>**`stderr`:** *(empty)*<br>**Repo/FS State:** Remains in detached `HEAD` state. |
-| `TC-03` | Newly initialized Git repository (`git init -b main`) with an unborn `HEAD` (zero commits) and a nested subdirectory `sub/dir` as caller `PWD`. | `git drev name --dry-run` (executed from `sub/dir`) | **Exit Code:** `0`<br>**`stdout`:** `main\n`<br>**`stderr`:** *(empty)*<br>**Repo/FS State:** Unchanged. |
+| `TC-03` | Newly initialized Git repository (`git init -b main`) with an unborn `HEAD` (zero commits) and a nested subdirectory `sub/dir` as caller `PWD`. | `git drev name` (executed from `sub/dir`) | **Exit Code:** `0`<br>**`stdout`:** `main\n`<br>**`stderr`:** *(empty)*<br>**Repo/FS State:** Unchanged. |
 | `TC-04` | Valid Git repository on branch `main`. | `git drev name unexpected-arg` | **Exit Code:** `2` (`ErrUsage`)<br>**`stdout`:** *(empty)*<br>**`stderr`:** Contains `[drev] !` and message indicating `name` takes no arguments.<br>**Repo/FS State:** Unchanged. |
 | `TC-05` | Caller `PWD` is `/tmp/non-git-dir` (outside any Git repository) or inside a bare repository (`repo.git`). | `git drev name` | **Exit Code:** `3` (`ErrNotRepository`)<br>**`stdout`:** *(empty)*<br>**`stderr`:** `[drev] ! Not inside a Git working tree\n`<br>**Repo/FS State:** Unchanged. |
 | `TC-06` | Valid Git repository on branch `main`. | `git drev name --unknown-flag` | **Exit Code:** `2` (`ErrUsage`)<br>**`stdout`:** *(empty)*<br>**`stderr`:** Contains `[drev] !` and unknown flag diagnostic.<br>**Repo/FS State:** Unchanged. |

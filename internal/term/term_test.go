@@ -115,24 +115,20 @@ func TestLoggerOutputFormatsAndQuiet(t *testing.T) {
 
 		logger.Infof("Checking branch '%s'", "main")
 		logger.Debug("Verbose diagnostic")
-		logger.DryRunExec("git fetch --all --prune")
 		logger.Warn("Something minor")
 		logger.Hint("Use -v for details")
 
-		err := errcode.WithHint(
-			errcode.Wrap(errcode.ErrDetachedHead, "Detached HEAD state detected, aborting"),
-			`Use "git drev select <branch>" to select a branch first.`,
-		)
+		err := errcode.NewError(errcode.ErrDetachedHead, "Detached HEAD state detected, aborting").
+			WithHint(`Use "git drev select <branch>" to select a branch first.`)
 		logger.LogError(err)
 
 		lines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 		wantLines := []string{
 			"[drev] Checking branch 'main'",
 			"[drev] Verbose diagnostic",
-			"[drev] [DRY RUN] Would execute: git fetch --all --prune",
 			"[drev] WARN: Something minor",
 			"[drev] Hint: Use -v for details",
-			"[drev] ! detached HEAD state: Detached HEAD state detected, aborting",
+			"[drev] ! Detached HEAD state detected, aborting",
 			`[drev] Hint: Use "git drev select <branch>" to select a branch first.`,
 		}
 		if len(lines) != len(wantLines) {
@@ -145,7 +141,7 @@ func TestLoggerOutputFormatsAndQuiet(t *testing.T) {
 		}
 	})
 
-	t.Run("quiet mode suppresses Info, Debug, and DryRun but keeps Warn and Error", func(t *testing.T) {
+	t.Run("quiet mode suppresses Info and Debug but keeps Warn and Error", func(t *testing.T) {
 		var buf bytes.Buffer
 		logger := term.New(term.Options{
 			Stderr:    &buf,
@@ -156,7 +152,6 @@ func TestLoggerOutputFormatsAndQuiet(t *testing.T) {
 
 		logger.Info("suppressed info")
 		logger.Debug("suppressed debug")
-		logger.DryRun("suppressed dryrun")
 		logger.Hint("suppressed informational hint")
 		logger.Error("fatal failure")
 

@@ -1,5 +1,5 @@
-// Package errcode defines sentinel error categories and deterministic exit code
-// mapping for git-drev CLI commands.
+// Package errcode defines sentinel error categories, structured application
+// errors, and deterministic exit code mapping for git-drev CLI commands.
 package errcode
 
 import (
@@ -59,67 +59,88 @@ var (
 	ErrInterrupted = errors.New("operation interrupted")
 )
 
-// HintError attaches an optional actionable remediation hint to an error.
-type HintError struct {
-	Err  error
-	Hint string
+// AppError is a structured application error associated with a sentinel category,
+// a clean user-facing message, an optional underlying cause, and an optional hint.
+type AppError struct {
+	Category error
+	Message  string
+	Hint     string
+	Err      error
 }
 
-// Error returns the underlying error message.
-func (e *HintError) Error() string {
-	if e.Err == nil {
-		return ""
+// Error returns the user-facing message (and underlying cause if present)
+// without polluting the output with the internal sentinel category name.
+func (e *AppError) Error() string {
+	if e.Err != nil {
+		if e.Message == "" {
+			return e.Err.Error()
+		}
+		return fmt.Sprintf("%s: %v", e.Message, e.Err)
 	}
-	return e.Err.Error()
-}
-
-// Unwrap returns the underlying error for errors.Is / errors.As matching.
-func (e *HintError) Unwrap() error {
-	return e.Err
-}
-
-// WithHint wraps err with an actionable remediation hint to be emitted on stderr.
-func WithHint(err error, hint string) error {
-	if err == nil || hint == "" {
-		return err
+	if e.Message != "" {
+		return e.Message
 	}
-	return &HintError{
-		Err:  err,
-		Hint: hint,
-	}
-}
-
-// Hint extracts the remediation hint from err if present, or returns "".
-func Hint(err error) string {
-	var he *HintError
-	if errors.As(err, &he) {
-		return he.Hint
+	if e.Category != nil {
+		return e.Category.Error()
 	}
 	return ""
 }
 
-// Wrap wraps sentinel with a descriptive message while preserving errors.Is matching.
-func Wrap(sentinel error, msg string) error {
-	if sentinel == nil {
-		return errors.New(msg)
+// Unwrap returns both the sentinel Category and the underlying Err so that
+// errors.Is and errors.As traverse both chains.
+func (e *AppError) Unwrap() []error {
+	var errs []error
+	if e.Category != nil {
+		errs = append(errs, e.Category)
 	}
-	return fmt.Errorf("%w: %s", sentinel, msg)
+	if e.Err != nil {
+		errs = append(errs, e.Err)
+	}
+	return errs
 }
 
-// Wrapf wraps sentinel with a formatted message while preserving errors.Is matching.
-func Wrapf(sentinel error, format string, args ...any) error {
-	return Wrap(sentinel, fmt.Sprintf(format, args...))
+// WithHint sets an actionable remediation hint on the AppError and returns it for chaining.
+func (e *AppError) WithHint(format string, args ...any) *AppError {
+	if len(args) == 0 {
+		e.Hint = format
+	} else {
+		e.Hint = fmt.Sprintf(format, args...)
+	}
+	return e
 }
 
-// Join wraps cause under sentinel so errors.Is matches both sentinel and cause.
-func Join(sentinel error, msg string, cause error) error {
-	if cause == nil {
-		return Wrap(sentinel, msg)
+// NewError creates a new AppError with a sentinel category and formatted user message.
+func NewError(category error, format string, args ...any) *AppError {
+	msg := format
+	if len(args) > 0 {
+		msg = fmt.Sprintf(format, args...)
 	}
-	if msg == "" {
-		return fmt.Errorf("%w: %w", sentinel, cause)
+	return &AppError{
+		Category: category,
+		Message:  msg,
 	}
-	return fmt.Errorf("%w: %s: %w", sentinel, msg, cause)
+}
+
+// WrapError wraps an existing error with a sentinel category and formatted context message.
+func WrapError(category error, err error, format string, args ...any) *AppError {
+	msg := format
+	if len(args) > 0 {
+		msg = fmt.Sprintf(format, args...)
+	}
+	return &AppError{
+		Category: category,
+		Message:  msg,
+		Err:      err,
+	}
+}
+
+// Hint extracts the remediation hint from err if it wraps an *AppError, or returns "".
+func Hint(err error) string {
+	var appErr *AppError
+	if errors.As(err, &appErr) {
+		return appErr.Hint
+	}
+	return ""
 }
 
 // ExitCode maps any error to its canonical CLI exit code per docs/spec/global.md Section 3.

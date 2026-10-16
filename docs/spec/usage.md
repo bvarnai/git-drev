@@ -44,7 +44,6 @@ type UsageOptions struct {
 	Config  config.Config
 	Verbose bool
 	Quiet   bool
-	DryRun  bool
 }
 
 // UsageRow represents a single formatted row in the verbose revisions breakdown table.
@@ -70,7 +69,8 @@ type UsageResult struct {
 
 // UsageService coordinates remote storage probing and local Git commit correlation.
 type UsageService struct {
-	Git    git.Runner
+	Insp   *git.Inspector
+	Ops    *git.Operations
 	Remote transport.RemoteRunner
 	Logger *term.Logger
 	Stdout io.Writer
@@ -87,13 +87,13 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
 1. **Input normalization & validation:**
    - Reject any positional arguments with `errcode.ErrUsage` (exit code `2`).
    - Verify global flag constraints (e.g., `--verbose` and `--quiet` are not both set).
-   - Resolve `RepoRoot` and `Prefix` via `GitRunner.RepoRoot(ctx)` (`git rev-parse --show-toplevel` and `--show-prefix`). If not inside a non-bare working tree, return `errcode.ErrNotRepository` (exit code `3`).
+   - Resolve `RepoRoot` and `Prefix` via `Insp.RepoRoot(ctx, dir)` (`git rev-parse --show-toplevel` and `--show-prefix`). If not inside a non-bare working tree, return `errcode.ErrNotRepository` (exit code `3`).
    - Change the process working directory to `RepoRoot`.
    - Load and validate `config.Config` from `<repo-root>/.drev.json` (or `GIT_DREV_CONFIG`) merged with `git config drev.*` overrides. Strip any trailing slashes from `Config.Remote.Path`. If `Remote.Host` or `Remote.Path` is missing or invalid, return `errcode.ErrConfig` (exit code `3`).
 
 2. **Core algorithm:**
    - **Step 2.1: Ensure remote fetch configuration:**
-     - If `!opts.DryRun`, invoke `GitRunner.EnsureRemoteFetchConfig(ctx)` to idempotently ensure `+refs/heads/*:refs/remotes/origin/*` is present in local `.git/config` without destructive unsetting or network calls.
+     - Invoke `Ops.EnsureRemoteFetchConfig(ctx, repoRoot)` to idempotently ensure `+refs/heads/*:refs/remotes/origin/*` is present in local `.git/config` without destructive unsetting or network calls.
    - **Step 2.2: Query remote storage via SSH:**
      - Emit operational progress log to `stderr` (unless `--quiet` is active):
        `[drev] Connecting to remote host '<host>' to retrieve storage usage...`
@@ -122,7 +122,7 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
          `[drev] Hint: Use -v/--verbose to view the detailed breakdown of revisions.`
        - Return `UsageResult` with `nil` error (exit code `0`).
    - **Step 2.4: Correlate with local Git commit history (`--verbose` only):**
-     - Invoke `GitRunner.ScanAllCommits(ctx, false)` which executes `git log --all -z --format=%H%x00%h%x00%ad%x00%D%x00%s --date=unix`.
+     - Invoke `Insp.ScanAllCommits(ctx, repoRoot)` which executes `git log --all -z --format=%H%x00%h%x00%ad%x00%D%x00%s --date=unix`.
      - Build a lookup map `byUUID map[string]git.CommitRecord` keyed by lowercase UUID string:
        - For each `CommitRecord`:
          1. Attempt to unmarshal `record.Subject` as JSON into `domain.RevisionMeta`. If valid JSON and `meta.UUID != ""` (and `meta.UUID != domain.ZeroUUID` and `!meta.IsMarker()`), use `strings.ToLower(meta.UUID)`.
@@ -151,13 +151,7 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
        ```
        Format string per row: `fmt.Fprintf(stdout, "%-36s  %8s  %-19s  %-10s  %-20s  %s\n", row.UUID, row.SizeHuman, row.Created, row.Commit, row.BranchTag, row.Message)`.
 
-3. **Dry-run behavior (`--dry-run` / `-n`):**
-   - Per Section 4 of `docs/spec/global.md`, `usage` is a read-only inspection subcommand.
-   - When `--dry-run` is active:
-     - If `EnsureRemoteFetchConfig` would need to mutate `.git/config` to add `+refs/heads/*:refs/remotes/origin/*`, it skips the `git config --add` mutation and logs `[drev] [DRY RUN] Would execute: git config --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/*` to `stderr`.
-     - The read-only SSH storage probe (`QueryUsage`) and local `git log` scan (`ScanAllCommits`) execute normally and print the usage summary (and verbose breakdown table if `-v` is set) to `stdout`.
-
-4. **Interruption, cleanup & rollback:**
+3. **Interruption, cleanup & rollback:**
    - `usage` performs no local or remote filesystem mutations and creates no temporary files.
    - If `ctx.Done()` fires (`SIGINT` / `SIGTERM`) while the SSH subprocess or `git log` subprocess is running, `exec.CommandContext` sends `SIGTERM` to the child process (escalating to `SIGKILL` after the 3-second grace period), aborts output rendering immediately, and exits with code `130` (`errcode.ErrInterrupted`).
 
@@ -167,12 +161,12 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
   | :--- | :--- | :--- | :--- |
   | `git rev-parse --is-inside-work-tree --show-toplevel --show-prefix` | Caller `PWD` | 3 newline-separated lines (`true`, `<abs-root>`, `<rel-prefix>`) | Non-zero exit or `false` maps to `errcode.ErrNotRepository` (exit `3`). |
   | `git config --get-regexp ^drev\.` | `RepoRoot` | Newline-separated `<key> <value>` pairs | Exit code `1` (no matches) is treated as empty overrides; other non-zero exits map to `errcode.ErrConfig` (exit `3`). |
-  | `git config --local --get-all remote.origin.fetch` | `RepoRoot` | Newline-separated refspec strings | Non-zero exit (key absent) triggers `git config --local --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/*` (unless `--dry-run`). |
+  | `git config --local --get-all remote.origin.fetch` | `RepoRoot` | Newline-separated refspec strings | Non-zero exit (key absent) triggers `git config --local --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/*`. |
   | `git log --all -z --format=%H%x00%h%x00%ad%x00%D%x00%s --date=unix` | `RepoRoot` | NUL-delimited records (`\x00` between fields and `\x00` between commits); only executed when `--verbose` is active and remote revisions exist | Empty repository (`HEAD` unborn) or non-zero exit is treated gracefully as zero known commits (all remote revisions marked `[orphaned]`). |
 
 - **Filesystem & metadata mutations:**
   - None on remote host (strictly read-only `du` and `stat` over SSH).
-  - Local `.git/config` is only updated if `remote.origin.fetch` lacks `+refs/heads/*:refs/remotes/origin/*` and `--dry-run` is `false`.
+  - Local `.git/config` is only updated if `remote.origin.fetch` lacks `+refs/heads/*:refs/remotes/origin/*`.
 
 - **Standard output (`stdout`):**
   - Default mode (`--verbose=false`):
@@ -210,7 +204,7 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
 ## 6. Error Matrix & Exit Code Mapping
 | Failure Condition | Go Error Sentinel / Type | Exit Code | Expected `stderr` Message Pattern |
 | :--- | :--- | :--- | :--- |
-| Unknown flag, unexpected positional argument, or `--verbose` combined with `--quiet` | `errcode.ErrUsage` | `2` | `[drev] ! usage error: <details>` |
+| Unknown flag, unexpected positional argument, or `--verbose` combined with `--quiet` | `errcode.ErrUsage` | `2` | `[drev] ! <details>` |
 | Invoked outside a Git worktree or inside a bare repository | `errcode.ErrNotRepository` | `3` | `[drev] ! not a git repository (or any of the parent directories)` |
 | Missing/malformed `.drev.json` | `errcode.ErrConfig` | `3` | `[drev] ! configuration file '.drev.json' not found or invalid: <details>` |
 | Missing or invalid `remote.host` or `remote.path` in configuration | `errcode.ErrConfig` | `3` | `[drev] ! remote host or storage path is not configured in .drev.json` |
@@ -255,7 +249,7 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
 | :--- | :--- | :--- | :--- |
 | `TC-01` | Valid repo with `.drev.json` (`host: "store"`, `path: "/data/repo"`); remote `/data/repo` occupies `2.5G` and contains 2 UUID directories (`uuid-1`, `uuid-2`). | `git drev usage` | **Exit Code:** `0`<br>**`stdout`:** Contains `Summary:` and `Total space used:  2.5G` (no table).<br>**`stderr`:** Contains `[drev] Connecting to remote host 'store'...`, `[drev] Found 2 revision directory(ies) on remote storage.`, and `[drev] Hint: Use -v/--verbose...`. |
 | `TC-02` | Same state as `TC-01`; `uuid-1` matches local `HEAD` commit `a1b2c3d` on `main` (`{"uuid":"<uuid-1>","seq":"1700000000"}`), while `uuid-2` has no matching commit in `git log --all`. | `git drev usage --verbose` | **Exit Code:** `0`<br>**`stdout`:** Contains `Summary:` followed by `Revisions breakdown:` table where `uuid-1` shows commit `a1b2c3d`, branch `main`, message `seq: 1700000000`, and `uuid-2` shows commit `[orphaned]`, branch `-`, message `-`. |
-| `TC-03` | Valid repo with `.drev.json`, invoked from nested subdirectory `src/pkg/`; `.git/config` is missing the wildcard fetch refspec. | `git drev usage --dry-run` | **Exit Code:** `0`<br>**`stdout`:** Prints `Summary:` with remote total space.<br>**`stderr`:** Logs `[drev] [DRY RUN] Would execute: git config --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/*`.<br>**Repo State:** `.git/config` remains unmodified. |
+| `TC-03` | Valid repo with `.drev.json`, invoked from nested subdirectory `src/pkg/`; `.git/config` is missing the wildcard fetch refspec. | `git drev usage` | **Exit Code:** `0`<br>**`stdout`:** Prints `Summary:` with remote total space.<br>**Repo State:** `.git/config` contains `+refs/heads/*:refs/remotes/origin/*`. |
 | `TC-04` | Valid repo with `.drev.json` pointing to `path: "/data/nonexistent"`, which does not exist on the remote server. | `git drev usage` | **Exit Code:** `6` (`ErrRemoteNotFound`)<br>**`stdout`:** Empty.<br>**`stderr`:** Contains `[drev] ! Remote path '/data/nonexistent' does not exist.` |
 | `TC-05` | Valid repo with `.drev.json`; remote `/data/repo` exists and occupies `4.0K` but contains zero UUID subdirectories (only a `.keep` file). | `git drev usage -v` | **Exit Code:** `0`<br>**`stdout`:** Contains `Summary:` and `Total space used:  4.0K` (no `Revisions breakdown:` table printed).<br>**`stderr`:** Contains `[drev] No revision directories found on remote storage.` |
 | `TC-06` | Valid repo with `.drev.json`; caller passes an unexpected positional argument or conflicting flags. | `git drev usage extra-arg` | **Exit Code:** `2` (`ErrUsage`)<br>**`stdout`:** Empty.<br>**`stderr`:** Contains `[drev] !` usage error diagnostic rejecting positional arguments. |

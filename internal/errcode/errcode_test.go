@@ -25,7 +25,7 @@ func TestExitCode(t *testing.T) {
 		},
 		{
 			name:     "ErrRuntime maps to 1",
-			err:      errcode.Wrap(errcode.ErrRuntime, "io failure"),
+			err:      errcode.NewError(errcode.ErrRuntime, "io failure"),
 			wantCode: errcode.ExitRuntime,
 		},
 		{
@@ -35,47 +35,47 @@ func TestExitCode(t *testing.T) {
 		},
 		{
 			name:     "ErrUsage maps to 2",
-			err:      errcode.Wrapf(errcode.ErrUsage, "unexpected arg %q", "foo"),
+			err:      errcode.NewError(errcode.ErrUsage, "unexpected arg %q", "foo"),
 			wantCode: errcode.ExitUsage,
 		},
 		{
 			name:     "ErrConfig maps to 3",
-			err:      errcode.Wrap(errcode.ErrConfig, "missing .drev.json"),
+			err:      errcode.NewError(errcode.ErrConfig, "missing .drev.json"),
 			wantCode: errcode.ExitConfig,
 		},
 		{
 			name:     "ErrNotRepository maps to 3",
-			err:      errcode.Wrap(errcode.ErrNotRepository, "not inside a working tree"),
+			err:      errcode.NewError(errcode.ErrNotRepository, "not inside a working tree"),
 			wantCode: errcode.ExitConfig,
 		},
 		{
 			name:     "ErrGitState maps to 4",
-			err:      errcode.Wrap(errcode.ErrGitState, "missing uuid"),
+			err:      errcode.NewError(errcode.ErrGitState, "missing uuid"),
 			wantCode: errcode.ExitGitState,
 		},
 		{
 			name:     "ErrDetachedHead maps to 4",
-			err:      errcode.WithHint(errcode.ErrDetachedHead, `Use "git drev select <branch>" to select a branch first.`),
+			err:      errcode.NewError(errcode.ErrDetachedHead, "Detached HEAD").WithHint(`Use "git drev select <branch>" to select a branch first.`),
 			wantCode: errcode.ExitGitState,
 		},
 		{
 			name:     "ErrGitExec maps to 5",
-			err:      errcode.Join(errcode.ErrGitExec, "fetch failed", errors.New("exit status 128")),
+			err:      errcode.WrapError(errcode.ErrGitExec, errors.New("exit status 128"), "fetch failed"),
 			wantCode: errcode.ExitGitExec,
 		},
 		{
 			name:     "ErrRemoteNotFound maps to 6",
-			err:      errcode.Wrap(errcode.ErrRemoteNotFound, "remote path missing"),
+			err:      errcode.NewError(errcode.ErrRemoteNotFound, "remote path missing"),
 			wantCode: errcode.ExitRemoteNotFound,
 		},
 		{
 			name:     "ErrTransport maps to 7",
-			err:      errcode.Wrap(errcode.ErrTransport, "ssh connection refused"),
+			err:      errcode.NewError(errcode.ErrTransport, "ssh connection refused"),
 			wantCode: errcode.ExitTransport,
 		},
 		{
 			name:     "ErrInterrupted maps to 130",
-			err:      errcode.Wrap(errcode.ErrInterrupted, "received SIGINT"),
+			err:      errcode.NewError(errcode.ErrInterrupted, "received SIGINT"),
 			wantCode: errcode.ExitInterrupted,
 		},
 		{
@@ -95,26 +95,31 @@ func TestExitCode(t *testing.T) {
 	}
 }
 
-func TestHintAndJoin(t *testing.T) {
+func TestAppErrorFormattingAndHint(t *testing.T) {
 	t.Parallel()
 
-	joined := errcode.Join(errcode.ErrDetachedHead, "Detached HEAD state detected, aborting", io.EOF)
-	withHint := errcode.WithHint(joined, `Use "git drev select <branch>" to select a branch first.`)
+	err := errcode.NewError(errcode.ErrUsage, "Invalid branch name '%s'", "bad..branch")
+	if err.Error() != "Invalid branch name 'bad..branch'" {
+		t.Errorf("err.Error() = %q, want clean message without category prefix", err.Error())
+	}
+	if !errors.Is(err, errcode.ErrUsage) {
+		t.Errorf("expected errors.Is to match ErrUsage")
+	}
 
-	if !errors.Is(withHint, errcode.ErrDetachedHead) {
+	wrapped := errcode.WrapError(errcode.ErrDetachedHead, io.EOF, "Detached HEAD state detected, aborting").
+		WithHint(`Use "git drev select <branch>" to select a branch first.`)
+
+	if !errors.Is(wrapped, errcode.ErrDetachedHead) {
 		t.Errorf("expected errors.Is to match ErrDetachedHead")
 	}
-	if !errors.Is(withHint, io.EOF) {
-		t.Errorf("expected errors.Is to match joined cause io.EOF")
+	if !errors.Is(wrapped, io.EOF) {
+		t.Errorf("expected errors.Is to match wrapped cause io.EOF")
 	}
 	wantHint := `Use "git drev select <branch>" to select a branch first.`
-	if got := errcode.Hint(withHint); got != wantHint {
+	if got := errcode.Hint(wrapped); got != wantHint {
 		t.Errorf("Hint() = %q, want %q", got, wantHint)
 	}
 	if got := errcode.Hint(errors.New("plain")); got != "" {
 		t.Errorf("Hint(plain) = %q, want empty", got)
-	}
-	if got := errcode.WithHint(nil, "ignored"); got != nil {
-		t.Errorf("WithHint(nil) = %v, want nil", got)
 	}
 }

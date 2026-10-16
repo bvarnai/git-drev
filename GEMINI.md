@@ -5,14 +5,14 @@
 - **CLI Framework:** `github.com/spf13/cobra`.
 - **Package Layout:**
   - `cmd/git-drev/main.go`: Thin entrypoint only (signal context `SIGINT`/`SIGTERM`, exit code mapping).
-  - `internal/cli/`: Root dispatcher, global flags (`-v`, `-q`, `-n`, `--no-color`, `--version`, `-h`), and subcommand handlers (`create`, `get`, `put`, `select`, `update`, `info`, `name`, `usage`).
+  - `internal/cli/`: Root dispatcher, global flags (`-v`, `-q`, `--no-color`, `--version`, `-h`), and subcommand handlers (`create`, `get`, `put`, `select`, `update`, `info`, `name`, `usage`).
   - `internal/domain/`: Pure Go value types (`RevisionMeta`, `RemoteRevision`, `ZeroUUID`). Depends only on Go stdlib.
   - `internal/errcode/`: Sentinel error categories (`ErrRuntime`=1, `ErrUsage`=2, `ErrConfig`/`ErrNotRepository`=3, `ErrGitState`/`ErrDetachedHead`=4, `ErrGitExec`=5, `ErrRemoteNotFound`=6, `ErrTransport`=7, `ErrInterrupted`=130). Depends only on Go stdlib.
   - `internal/config/`: `.drev.json` and `git config drev.*` loader and schema validator.
-  - `internal/git/`: `Runner` interface, read-only plumbing inspection, and mutating Git operations.
+  - `internal/git/`: Thin `Runner` interface (`Run`, `RunLines`, `RunWithEnv`, `RunStream`), `Inspector` (read-only plumbing inspection), and `Operations` (mutating Git operations).
   - `internal/transport/`: `RemoteRunner` interface and SSH/rsync execution engine.
   - `internal/hook/`: Project hook runner (`.drev-put-hook`, `.drev-info-hook`) with timeout (`GIT_DREV_HOOK_TIMEOUT`, default `5m`) and `GIT_DREV_*` environment injection.
-  - `internal/term/`: Structured `stderr` logger, TTY/`NO_COLOR`/`GIT_DREV_COLOR` detection, and execution timers.
+  - `internal/term/`: Structured `stderr` logger, TTY/`NO_COLOR`/`GIT_DREV_COLOR` detection, and decoupled `Timer`.
   - `test/integration/`: End-to-end integration tests using isolated Git repositories in `t.TempDir()`.
 - **Dependency Boundaries:** `internal/config`, `internal/git`, `internal/transport`, and `internal/hook` may depend on `domain`, `errcode`, and `term`, but NEVER on `internal/cli`.
 
@@ -25,7 +25,6 @@ In accordance with the [Google Go Style Guide](https://google.github.io/stylegui
   - Sanitize subprocess environments with `LC_ALL=C`, `LANG=C`, `GIT_TERMINAL_PROMPT=0`, and `GIT_ADVICE=0`.
   - Prefer deterministic Git plumbing (`rev-parse`, `symbolic-ref`, `show-ref`, `ls-remote`, `for-each-ref -z`, `log -z` with `\x00` delimiters) over porcelain.
   - Prevent injection: always pass `--` before positional refs/paths, strictly validate UUIDs (RFC 4122 hex) and `remote.path`, and tokenize `rsyncOptions` without shell `eval` or glob expansion.
-  - Honor `--dry-run` (`-n`): skip mutating Git/SSH commands and log `[drev] [DRY RUN] Would execute: ...` to `stderr`; pass `--dry-run` to `rsync`.
 - **Context, Cancellation & Cleanup:**
   - Every external execution must accept a `context.Context` (`exec.CommandContext`) bound to `SIGINT`/`SIGTERM` (`SIGTERM` followed by `SIGKILL` after 3s grace).
   - Ensure transactional cleanup via `defer` on failure or interruption (e.g., `git rebase --abort` on stale-push rebase failure, best-effort remote staging directory removal on interrupted `put`).
@@ -34,7 +33,7 @@ In accordance with the [Google Go Style Guide](https://google.github.io/stylegui
   - Resolve user CLI path arguments (`<target_directory>`, `<source_directory>`) relative to `CallerDir` before changing directory to `RepoRoot`. Resolve `.drev.json`, hooks, and `workDir` relative to `RepoRoot`.
 - **Error Handling:**
   - Never call `log.Fatal()`, `panic()`, or `os.Exit()` inside `internal/`. Return explicit `error` values up to `main.go`.
-  - Wrap errors with `fmt.Errorf("action: %w", err)` and wrap/match against `internal/errcode` sentinels (`errors.Is`) for deterministic exit code mapping at the CLI boundary.
+  - Construct categorized errors with `errcode.NewError(category, ...)` / `errcode.WrapError(category, err, ...)` and optional `.WithHint(...)` for deterministic exit code mapping at the CLI boundary.
 - **Libraries & Dependencies:**
   - Use the Go standard library (`encoding/json`, `crypto/rand`, `time`, `os`, `path/filepath`, `regexp`, `strings`, `context`)—never shell out to legacy utilities (`jq`, `uuidgen`, `sed`, `awk`, `grep`, `du`, `stat`, `rm`).
   - Allowed third-party dependencies: `github.com/spf13/cobra`, `github.com/stretchr/testify`. Do NOT import heavyweight Git libraries (`go-git`).

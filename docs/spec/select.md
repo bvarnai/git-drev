@@ -56,8 +56,8 @@ type SelectOptions struct {
 	// Target is the raw optional positional argument (<branch>|<tag>|<uuid>).
 	// Empty when invoked with no positional arguments.
 	Target string
-	// DryRun mirrors the global --dry-run (-n) flag.
-	DryRun bool
+	Quiet  bool
+	Verbose bool
 }
 
 // SelectResult captures the outcome of a select execution for testing and reporting.
@@ -73,7 +73,8 @@ type SelectResult struct {
 // RunSelect executes the domain logic for `git drev select`.
 func RunSelect(
 	ctx context.Context,
-	gitRunner git.Runner,
+	insp *git.Inspector,
+	ops *git.Operations,
 	cfg *config.Config,
 	logger *term.Logger,
 	opts SelectOptions,
@@ -86,15 +87,15 @@ func RunSelect(
    - Handle `--` end-of-options delimiter per POSIX conventions.
    - Verify positional argument count is `0` or `1`. If `len(args) > 1`, return `errcode.ErrUsage` (exit code `2`) with `[drev] ! Too many arguments: expected at most 1 target (<branch>|<tag>|<uuid>), got <N>`.
    - If `len(args) == 1` and `strings.HasPrefix(args[0], "-")` (possible when passed after `--`), reject with `errcode.ErrUsage` (exit code `2`) to prevent invalid ref or option injection.
-   - Resolve `RepoRoot` and `Prefix` via `gitRunner.RepoRoot(ctx)` and change the process working directory to `RepoRoot`. If not inside a non-bare working tree, return `errcode.ErrNotRepository` (exit code `3`).
+   - Resolve `RepoRoot` and `Prefix` via `insp.RepoRoot(ctx, dir)` and change the process working directory to `RepoRoot`. If not inside a non-bare working tree, return `errcode.ErrNotRepository` (exit code `3`).
    - Load and validate `cfg` from `.drev.json` (or `GIT_DREV_CONFIG`) merged with `git config drev.*` overrides. On failure, return `errcode.ErrConfig` (exit code `3`).
 
 2. **Core algorithm:**
    - **Step 2.1 — Ensure remote fetch refspec configuration:**
-     - Invoke `gitRunner.EnsureRemoteFetchConfig(ctx)`. This inspects `git config --local --get-all remote.origin.fetch` and idempotently adds `+refs/heads/*:refs/remotes/origin/*` only if missing (without unsetting existing fetch refspecs or performing per-branch `ls-remote` network calls).
+     - Invoke `ops.EnsureRemoteFetchConfig(ctx, repoRoot)`. This inspects `git config --local --get-all remote.origin.fetch` and idempotently adds `+refs/heads/*:refs/remotes/origin/*` only if missing (without unsetting existing fetch refspecs or performing per-branch `ls-remote` network calls).
    - **Step 2.2 — Synchronize remote refs (`FetchAll`):**
-     - Invoke `gitRunner.FetchAll(ctx)` (`git fetch --all --prune`) so that remote branches, tags, and newly pushed revision commits on `origin` are present in the local object database before UUID commit resolution or branch checkout.
-     - If `FetchAll` fails, return `errcode.ErrGitExec` (exit code `5`) with `[drev] ! Fetch failed (gitish: 'git fetch --all --prune' failed)`.
+     - Invoke `ops.FetchAll(ctx, repoRoot, opts.Quiet && !opts.Verbose)` (`git fetch --all --prune`) so that remote branches, tags, and newly pushed revision commits on `origin` are present in the local object database before UUID commit resolution or branch checkout.
+     - If `FetchAll` fails, return `errcode.ErrGitExec` (exit code `5`) with `[drev] ! Fetch failed (git fetch --all --prune)`.
    - **Step 2.3 — Resolve target reference:**
      - **Case A: `opts.Target == ""` (no positional argument):**
        - Set `requested = cfg.DefaultBranch` (guaranteed non-empty, defaulting to `"main"`).
@@ -103,7 +104,7 @@ func RunSelect(
      - **Case B: `opts.Target` matches UUID format (`domain.ParseUUID(opts.Target)` succeeds):**
        - Normalize `targetUUID` by stripping optional `{}` braces and lowercasing.
        - Log `[drev] Searching for commit with uuid '<opts.Target>'` to `stderr`.
-       - Invoke `commitHash, err := gitRunner.FindCommitByUUID(ctx, targetUUID)`:
+       - Invoke `commitHash, err := insp.FindCommitByUUID(ctx, repoRoot, targetUUID)`:
          - Executes `git log --all -z --format=%H%x00%s`.
          - Streams NUL-delimited records; for each record, splits `<hash>\x00<subject>` and unmarshals `<subject>` into `domain.RevisionMeta`.
          - Selects the first commit (in topological/reverse-chronological order) where `strings.EqualFold(meta.UUID, targetUUID)` and `!meta.IsMarker()`.
@@ -113,19 +114,12 @@ func RunSelect(
      - **Case C: `opts.Target` does not match UUID format (branch or tag name):**
        - Set `requested = opts.Target`, `resolvedRef = opts.Target`, and `kind = SelectTargetRef`.
    - **Step 2.4 — Checkout resolved reference:**
-     - Invoke `gitRunner.Checkout(ctx, resolvedRef, false)` (`git -c advice.detachedHead=false checkout <resolvedRef>`).
-     - If `Checkout` fails (e.g., branch/tag does not exist locally or on `origin`, or conflicting local tracked changes), log `[drev] ! Checkout failed (gitish: 'git checkout <resolvedRef>' failed)` to `stderr` and return `errcode.ErrGitExec` (exit code `5`).
+     - Invoke `ops.Checkout(ctx, repoRoot, resolvedRef, false)` (`git -c advice.detachedHead=false checkout <resolvedRef>`).
+     - If `Checkout` fails (e.g., branch/tag does not exist locally or on `origin`, or conflicting local tracked changes), log `[drev] ! Checkout failed (git checkout <resolvedRef>)` to `stderr` and return `errcode.ErrGitExec` (exit code `5`).
    - **Step 2.5 — Return result:**
      - Return `SelectResult{Kind: kind, RequestedTarget: requested, ResolvedRef: resolvedRef}, nil`.
 
-3. **Dry-run behavior (`--dry-run` / `-n`):**
-   - Precondition checks (`RepoRoot`, `.drev.json` validation) execute normally.
-   - If `EnsureRemoteFetchConfig` detects that `+refs/heads/*:refs/remotes/origin/*` is missing, it does NOT mutate `.git/config`; instead, it logs `[drev] [DRY RUN] Would execute: git config --local --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/*` to `stderr`.
-   - `FetchAll` is skipped as a mutating ref-update operation and logged as `[drev] [DRY RUN] Would execute: git fetch --all --prune` to `stderr`.
-   - Target resolution executes normally against existing local refs/history (including `FindCommitByUUID` read-only `git log --all -z --format=%H%x00%s` when a UUID is provided). If a UUID is not found locally, it still returns `errcode.ErrGitState` (exit code `4`).
-   - `Checkout` is NOT executed; instead, `git-drev` logs `[drev] [DRY RUN] Would execute: git -c advice.detachedHead=false checkout <resolvedRef>` to `stderr` and exits `0`.
-
-4. **Interruption, cleanup & rollback:**
+3. **Interruption, cleanup & rollback:**
    - All `git` subprocesses are bound to the signal-aware `ctx` (`SIGINT` / `SIGTERM`).
    - If interrupted during `git fetch --all --prune` or `git checkout`, the child `git` process receives `SIGTERM` (and `SIGKILL` after the 3-second grace period), and `git-drev` returns `errcode.ErrInterrupted` (exit code `130`).
    - Git natively manages `.git/index.lock` atomicity during `git checkout`; no custom temporary files or staging directories are created by `select`.
@@ -137,10 +131,10 @@ func RunSelect(
   | `git rev-parse --is-inside-work-tree --show-toplevel --show-prefix` | Caller `PWD` | Newline-separated boolean (`true`), absolute repo root path, and relative prefix | Non-zero exit or `false` returns `errcode.ErrNotRepository` (exit code `3`). |
   | `git config --get-regexp ^drev\.` | `RepoRoot` | Newline-separated `drev.<key> <value>` pairs (exit code `1` if no keys match) | Exit code `1` treated as empty override set; other non-zero exits return `errcode.ErrConfig` (exit code `3`). |
   | `git config --local --get-all remote.origin.fetch` | `RepoRoot` | Newline-separated fetch refspec strings | Exit code `1` (unset) triggers adding wildcard fetch refspec; other errors return `errcode.ErrGitExec` (exit code `5`). |
-  | `git config --local --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/*` | `RepoRoot` | Empty (`stdout`) | Executed only if wildcard refspec is missing and not `--dry-run`. Non-zero exit returns `errcode.ErrGitExec` (exit code `5`). |
-  | `git fetch --all --prune` | `RepoRoot` | Standard `git fetch` progress/summary on `stderr` | Executed unless `--dry-run`. Non-zero exit returns `errcode.ErrGitExec` (exit code `5`). |
+  | `git config --local --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/*` | `RepoRoot` | Empty (`stdout`) | Executed only if wildcard refspec is missing. Non-zero exit returns `errcode.ErrGitExec` (exit code `5`). |
+  | `git fetch --all --prune` | `RepoRoot` | Standard `git fetch` progress/summary on `stderr` | Non-zero exit returns `errcode.ErrGitExec` (exit code `5`). |
   | `git log --all -z --format=%H%x00%s` | `RepoRoot` | NUL-delimited records of `<40-hex-hash>\x00<subject>\x00` | Executed only when `<target>` is a UUID. Non-zero exit (e.g., unborn repository with no commits) returns `errcode.ErrGitState` (exit code `4`) if no commit matches. |
-  | `git -c advice.detachedHead=false checkout <resolvedRef>` | `RepoRoot` | Standard `git checkout` status message | Executed unless `--dry-run`. Non-zero exit returns `errcode.ErrGitExec` (exit code `5`). |
+  | `git -c advice.detachedHead=false checkout <resolvedRef>` | `RepoRoot` | Standard `git checkout` status message | Non-zero exit returns `errcode.ErrGitExec` (exit code `5`). |
 
 - **Filesystem & metadata mutations:**
   - `.git/config`: Updated via `git config --local --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/*` only if the wildcard fetch refspec was absent.
@@ -148,7 +142,7 @@ func RunSelect(
   - `<repo-root>/<workDir>`: Untouched by `select` (remains ignored by Git until `git drev get` is invoked).
 
 - **Standard output (`stdout`):**
-  - Emits nothing (`0` bytes) during normal operation, `--verbose`, `--quiet`, or `--dry-run`. (Only `--help` / `-h` or `--version` writes to `stdout`).
+  - Emits nothing (`0` bytes) during normal operation, `--verbose`, or `--quiet`. (Only `--help` / `-h` or `--version` writes to `stdout`).
 
 - **Standard error (`stderr`):**
   - Default branch selection log (when `<target>` is omitted and `--quiet` is false):
@@ -156,9 +150,6 @@ func RunSelect(
   - UUID search logs (when `<target>` is a UUID and `--quiet` is false):
     `[drev] Searching for commit with uuid '<target>'`
     `[drev] Found commit '<commitHash>'`
-  - Dry-run logs (when `--dry-run` is active and `--quiet` is false):
-    `[drev] [DRY RUN] Would execute: git fetch --all --prune`
-    `[drev] [DRY RUN] Would execute: git -c advice.detachedHead=false checkout <resolvedRef>`
   - Error messages (always emitted regardless of `--quiet`):
     `[drev] ! <error message>`
 
@@ -173,8 +164,8 @@ func RunSelect(
 | Missing, unreadable, or malformed `.drev.json` | `errcode.ErrConfig` | `3` | `[drev] ! Configuration file '.drev.json' not found or invalid: <details>` |
 | Target UUID not found in any non-marker commit in repository history | `errcode.ErrGitState` | `4` | `[drev] ! No commit was found with uuid '<uuid>'` |
 | `git config` refspec update fails | `errcode.ErrGitExec` | `5` | `[drev] ! Failed to configure remote.origin.fetch: <details>` |
-| `git fetch --all --prune` fails (network/auth error or invalid remote) | `errcode.ErrGitExec` | `5` | `[drev] ! Fetch failed (gitish: 'git fetch --all --prune' failed)` |
-| `git checkout <resolvedRef>` fails (missing branch/tag or dirty tracked files) | `errcode.ErrGitExec` | `5` | `[drev] ! Checkout failed (gitish: 'git checkout <resolvedRef>' failed)` |
+| `git fetch --all --prune` fails (network/auth error or invalid remote) | `errcode.ErrGitExec` | `5` | `[drev] ! Fetch failed (git fetch --all --prune)` |
+| `git checkout <resolvedRef>` fails (missing branch/tag or dirty tracked files) | `errcode.ErrGitExec` | `5` | `[drev] ! Checkout failed (git checkout <resolvedRef>)` |
 | `git` binary missing from `$PATH` | `errcode.ErrTransport` | `7` | `[drev] ! Required binary 'git' not found in $PATH` |
 | Context canceled via `SIGINT` or `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[drev] ! Operation interrupted` |
 
@@ -215,6 +206,5 @@ func RunSelect(
 | `TC-02` | Valid repo on `main`; remote `origin` has branch `release/1.0` not yet checked out locally. | `git drev select release/1.0` | Exit code `0`; `stdout` is empty; `git fetch --all --prune` fetches `origin/release/1.0` and `git checkout release/1.0` switches `HEAD` to local tracking branch `release/1.0`. |
 | `TC-03` | Valid repo where commit `a1b2c3d4...` has subject `{"uuid":"c1ca82b1-7f34-4f4c-9a76-05e3297b2a23","seq":"100"}` and child branch `feat` has marker commit `e5f6a7b8...` with subject `{"uuid":"c1ca82b1-7f34-4f4c-9a76-05e3297b2a23","marker":"true"}`. | `git drev select c1ca82b1-7f34-4f4c-9a76-05e3297b2a23` | Exit code `0`; `stdout` is empty; `stderr` contains `[drev] Searching for commit with uuid 'c1ca82b1-7f34-4f4c-9a76-05e3297b2a23'` and `[drev] Found commit 'a1b2c3d4...'`; `HEAD` is detached at `a1b2c3d4...` (marker commit `e5f6a7b8...` is ignored). |
 | `TC-04` | Valid repo with no commit matching UUID `ffffffff-ffff-4fff-bfff-ffffffffffff`. | `git drev select ffffffff-ffff-4fff-bfff-ffffffffffff` | Exit code `4` (`ErrGitState`); `stdout` is empty; `stderr` contains `[drev] ! No commit was found with uuid 'ffffffff-ffff-4fff-bfff-ffffffffffff'`; `HEAD` remains unchanged. |
-| `TC-05` | Valid repo on branch `main`; `.drev.json` configured; branch `develop` exists. | `git drev select --dry-run develop` | Exit code `0`; `stdout` is empty; `stderr` contains `[drev] [DRY RUN] Would execute: git fetch --all --prune` and `[drev] [DRY RUN] Would execute: git -c advice.detachedHead=false checkout develop`; `HEAD` remains on `main`. |
-| `TC-06` | Valid repo; user invokes command from nested subdirectory `sub/dir` with an nonexistent branch `no-such-branch`. | `git drev select no-such-branch` | Exit code `5` (`ErrGitExec`); `stdout` is empty; `stderr` contains `[drev] ! Checkout failed (gitish: 'git checkout no-such-branch' failed)`; `HEAD` remains on original branch. |
-| `TC-07` | Valid repo; user passes unsupported flag `--invalid` or two positional arguments `main develop`. | `git drev select --invalid` / `git drev select main develop` | Exit code `2` (`ErrUsage`); `stdout` is empty; `stderr` contains `[drev] ! Unsupported option '--invalid'` or `[drev] ! Too many arguments...`; no Git fetch or checkout is executed. |
+| `TC-05` | Valid repo; user invokes command from nested subdirectory `sub/dir` with an nonexistent branch `no-such-branch`. | `git drev select no-such-branch` | Exit code `5` (`ErrGitExec`); `stdout` is empty; `stderr` contains `[drev] ! Checkout failed (git checkout no-such-branch)`; `HEAD` remains on original branch. |
+| `TC-06` | Valid repo; user passes unsupported flag `--invalid` or two positional arguments `main develop`. | `git drev select --invalid` / `git drev select main develop` | Exit code `2` (`ErrUsage`); `stdout` is empty; `stderr` contains `[drev] ! Unsupported option '--invalid'` or `[drev] ! Too many arguments...`; no Git fetch or checkout is executed. |

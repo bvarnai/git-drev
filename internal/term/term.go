@@ -20,7 +20,6 @@ const (
 	ansiReset  = "\x1b[0m"
 	ansiRed    = "\x1b[31m"
 	ansiYellow = "\x1b[33m"
-	ansiCyan   = "\x1b[36m"
 )
 
 // Options configures a Logger instance.
@@ -33,8 +32,8 @@ type Options struct {
 	IsTTY       bool
 }
 
-// Logger emits structured operational diagnostics, warnings, hints, dry-run
-// notices, and errors to stderr.
+// Logger emits structured operational diagnostics, warnings, hints, and errors
+// to stderr.
 type Logger struct {
 	mu       sync.Mutex
 	stderr   io.Writer
@@ -187,31 +186,6 @@ func (l *Logger) Debugf(format string, args ...any) {
 		return
 	}
 	l.Debug(fmt.Sprintf(format, args...))
-}
-
-// DryRun emits `[drev] [DRY RUN] <msg>` to stderr unless Quiet is enabled.
-func (l *Logger) DryRun(msg string) {
-	if l.quiet {
-		return
-	}
-	tag := "[DRY RUN]"
-	if l.useColor {
-		tag = ansiCyan + tag + ansiReset
-	}
-	l.writeLine(fmt.Sprintf("%s %s %s", Prefix, tag, msg))
-}
-
-// DryRunf emits a formatted `[drev] [DRY RUN] <msg>` line to stderr unless Quiet is enabled.
-func (l *Logger) DryRunf(format string, args ...any) {
-	if l.quiet {
-		return
-	}
-	l.DryRun(fmt.Sprintf(format, args...))
-}
-
-// DryRunExec emits `[drev] [DRY RUN] Would execute: <cmd>` to stderr unless Quiet is enabled.
-func (l *Logger) DryRunExec(cmd string) {
-	l.DryRun("Would execute: " + cmd)
 }
 
 // Warn emits `[drev] WARN: <msg>` to stderr.

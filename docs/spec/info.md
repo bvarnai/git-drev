@@ -94,7 +94,6 @@ import (
 type InfoOptions struct {
 	RepoRoot    string
 	Version     string
-	DryRun      bool
 	Quiet       bool
 	Verbose     bool
 	HookTimeout time.Duration
@@ -110,7 +109,7 @@ type InfoResult struct {
 
 // InfoService coordinates repository inspection and .drev-info-hook execution.
 type InfoService struct {
-	Git    git.Runner
+	Insp   *git.Inspector
 	Hooks  hook.Runner
 	Logger *term.Logger
 	Stdout io.Writer
@@ -124,10 +123,10 @@ func (s *InfoService) RunInfo(ctx context.Context, cfg config.Config, opts InfoO
 ## 4. Execution Flow (Step-by-Step Domain Logic)
 
 1. **Input normalization & validation:**
-   1. Reject any positional arguments passed to `info`. If `len(args) > 0`, return a wrapped `errcode.ErrUsage` (`"this command takes no arguments (got %d)"`).
+   1. Reject any positional arguments passed to `info`. If `len(args) > 0`, return `errcode.NewError(errcode.ErrUsage, "this command takes no arguments (got %d)", len(args))`.
    2. Validate mutual exclusivity of global `--verbose` and `--quiet` flags (`errcode.ErrUsage`).
-   3. Parse `GIT_DREV_HOOK_TIMEOUT` from the environment if set (defaulting to `5 * time.Minute` per Section 2 of `docs/spec/global.md`). If invalid or `<= 0`, return a wrapped `errcode.ErrConfig` / `errcode.ErrUsage` (`exit code 2`).
-   4. Query `Git.RepoRoot(ctx)` to verify the process is inside a non-bare Git working tree (`git rev-parse --is-inside-work-tree`, `--show-toplevel`, `--show-prefix`) and ensure the working directory is `RepoRoot`.
+   3. Parse `GIT_DREV_HOOK_TIMEOUT` from the environment if set (defaulting to `5 * time.Minute` per Section 2 of `docs/spec/global.md`). If invalid or `<= 0`, return `errcode.NewError(errcode.ErrUsage, ...)` (`exit code 2`).
+   4. Query `Insp.RepoRoot(ctx, dir)` to verify the process is inside a non-bare Git working tree (`git rev-parse --is-inside-work-tree`, `--show-toplevel`, `--show-prefix`) and ensure the working directory is `RepoRoot`.
    5. Load and validate `config.Config` from `<repo-root>/.drev.json` (or `GIT_DREV_CONFIG`) merged with `git config drev.*` overrides.
 
 2. **Core algorithm:**
@@ -136,15 +135,15 @@ func (s *InfoService) RunInfo(ctx context.Context, cfg config.Config, opts InfoO
         - Log `[drev] No info hook found` via `s.Logger.Info("No info hook found")` (which writes to `stderr` and respects `--quiet`).
         - Return `InfoResult{HookFound: false, HookExecuted: false, HookPath: hookPath}, nil`.
       - If `err != nil`:
-        - Return a wrapped `errcode.ErrRuntime` (`"failed to stat info hook %q: %w"`).
+        - Return `errcode.WrapError(errcode.ErrRuntime, err, "failed to stat info hook %q", hookPath)`.
       - If `fi.IsDir()`:
-        - Return a wrapped `errcode.ErrRuntime` (`"info hook path %q is a directory, expected file"`).
+        - Return `errcode.NewError(errcode.ErrRuntime, "info hook path %q is a directory, expected file", hookPath)`.
    2. **Resolve Git context for hook environment (`hook.Env`):**
-      - Query `Git.CurrentBranch(ctx)` (`git symbolic-ref --quiet --short HEAD`):
+      - Query `Insp.CurrentBranch(ctx, opts.RepoRoot)` (`git symbolic-ref --quiet --short HEAD`):
         - If symbolic ref succeeds, set `Branch = branch`.
         - If detached `HEAD`, set `Branch = "HEAD"`.
-        - If unexpected Git execution error, return wrapped `errcode.ErrGitExec`.
-      - Query `Git.HeadCommitMeta(ctx)` (`git log -1 --format=%s HEAD`):
+        - If unexpected Git execution error, return `errcode.ErrGitExec`.
+      - Query `Insp.HeadCommitMeta(ctx, opts.RepoRoot)` (`git log -1 --format=%s HEAD --`):
         - If `HEAD` points to a valid `git-drev` commit subject (`{"uuid":"...","seq":"..."}` or `{"uuid":"...","marker":"true"}`), populate `Env.UUID = meta.UUID` and `Env.Seq = meta.Seq`.
         - If `HEAD` is an unborn branch or a non-`drev` commit (e.g., initial repository setup commit prior to `create` or `put`), `HeadCommitMeta` gracefully falls back to `Env.UUID = ""` and `Env.Seq = ""` (logging a verbose diagnostic if `--verbose` is enabled) so `.drev-info-hook` scripts that inspect committed files (like `env.json`) can still run.
       - Set `Env.Version = opts.Version`, `Env.Root = opts.RepoRoot`, and `Env.WorkDir = filepath.Join(opts.RepoRoot, cfg.WorkDir)`.
@@ -165,17 +164,11 @@ func (s *InfoService) RunInfo(ctx context.Context, cfg config.Config, opts InfoO
           - `GIT_DREV_ROOT=<abs-repo-root>`
         - **Stream binding:** Connect subprocess `Stdout` directly to `s.Stdout` (`os.Stdout`) and subprocess `Stderr` directly to `s.Stderr` (`os.Stderr`). `Stdin` is bound to `os.DevNull` (`/dev/null`) to guarantee non-interactive, deterministic execution.
       - If the hook exits with code `0`, return `InfoResult{HookFound: true, HookExecuted: true, HookPath: hookPath, Env: env}, nil`.
-      - If `hookCtx.Err() == context.DeadlineExceeded` (and parent `ctx.Err() == nil`), return a wrapped `errcode.ErrRuntime` reporting that `.drev-info-hook` timed out after `opts.HookTimeout`.
+      - If `hookCtx.Err() == context.DeadlineExceeded` (and parent `ctx.Err() == nil`), return `errcode.NewError(errcode.ErrRuntime, ...)` reporting that `.drev-info-hook` timed out after `opts.HookTimeout`.
       - If `ctx.Err() != nil`, return `errcode.ErrInterrupted` (exit code `130`).
-      - If the hook exits with a non-zero exit status, return a wrapped `errcode.ErrRuntime` (exit code `1`).
+      - If the hook exits with a non-zero exit status, return `errcode.NewError(errcode.ErrRuntime, ...)` (exit code `1`).
 
-3. **Dry-run behavior:**
-   - When `--dry-run` (`-n`) is enabled:
-     - All repository precondition checks, `.drev.json` validation, `.drev-info-hook` existence verification, and `HEAD` commit metadata resolution execute normally.
-     - Because `.drev-info-hook` is an arbitrary user-supplied script that could perform external network requests or side effects, `RunInfo` does **not** execute the hook subprocess when `--dry-run` is active. Instead, it logs `[drev] [DRY RUN] Would execute info hook: <hookPath>` to `stderr` and returns `InfoResult{HookFound: true, HookExecuted: false, HookPath: hookPath, Env: env}, nil` with exit code `0`.
-     - If `.drev-info-hook` does not exist during `--dry-run`, it logs `[drev] No info hook found` to `stderr` and exits `0`.
-
-4. **Interruption, cleanup & rollback:**
+3. **Interruption, cleanup & rollback:**
    - `info` performs no Git ref mutations, index staging, or remote SSH/rsync operations; therefore, no repository or remote rollback is required.
    - If `ctx.Done()` fires (`SIGINT` / `SIGTERM`) while `.drev-info-hook` is running, `exec.CommandContext` sends `SIGTERM` to the hook process group (escalating to `SIGKILL` after a 3-second `WaitDelay`), and `git-drev` exits with code `130` (`errcode.ErrInterrupted`).
 
@@ -198,8 +191,6 @@ func (s *InfoService) RunInfo(ctx context.Context, cfg config.Config, opts InfoO
 - **Standard error (`stderr`):**
   - When `.drev-info-hook` is absent and `--quiet` is false:
     `[drev] No info hook found\n`
-  - When `--dry-run` is active and `.drev-info-hook` exists:
-    `[drev] [DRY RUN] Would execute info hook: <repo-root>/.drev-info-hook\n`
   - When `--verbose` is active:
     `[drev] Executing info hook: <repo-root>/.drev-info-hook (branch=<branch>, uuid=<uuid>, seq=<seq>)\n`
   - Any `stderr` output written by `.drev-info-hook` itself is forwarded directly to `stderr`.
@@ -254,8 +245,7 @@ func (s *InfoService) RunInfo(ctx context.Context, cfg config.Config, opts InfoO
 | `TC-01` | Valid Git repo with `.drev.json`, on branch `main` at commit `{"uuid":"c1ca82b1-7f34-4f4c-9a76-05e3297b2a23","seq":"1622824489"}`, and `.drev-info-hook` defining `info_hook() { echo "uuid=${GIT_DREV_UUID} seq=${GIT_DREV_SEQ} branch=${GIT_DREV_BRANCH}"; }`. | `git drev info` | Exit code `0`.<br>`stdout`: `uuid=c1ca82b1-7f34-4f4c-9a76-05e3297b2a23 seq=1622824489 branch=main\n`.<br>`stderr`: empty.<br>No repo/FS mutations. |
 | `TC-02` | Valid Git repo with `.drev.json`, executable `.drev-info-hook` (`0755`, `#!/bin/sh\necho "build: ok"`), invoked from subdirectory `sub/dir/`. | `git drev info` | Exit code `0`.<br>`stdout`: `build: ok\n`.<br>`stderr`: empty.<br>Hook executes with `PWD == <repo-root>`. |
 | `TC-03` | Valid Git repo with `.drev.json`, but no `.drev-info-hook` file exists. | `git drev info` | Exit code `0`.<br>`stdout`: empty (`0` bytes).<br>`stderr`: `[drev] No info hook found\n`. |
-| `TC-04` | Valid Git repo with `.drev.json` and `.drev-info-hook` that writes `touch side-effect.txt && echo "ran"`. | `git drev info --dry-run` | Exit code `0`.<br>`stdout`: empty.<br>`stderr`: `[drev] [DRY RUN] Would execute info hook: <repo-root>/.drev-info-hook\n`.<br>`side-effect.txt` is NOT created. |
-| `TC-05` | Valid Git repo with `.drev.json` and `.drev-info-hook`. | `git drev info unexpected-arg` | Exit code `2` (`ErrUsage`).<br>`stdout`: empty.<br>`stderr`: `[drev] ! info takes no arguments (got: unexpected-arg)\n`.<br>Hook is NOT executed. |
-| `TC-06` | Valid Git repo with `.drev.json` and `.drev-info-hook` containing `info_hook() { echo "err" >&2; exit 42; }`. | `git drev info` | Exit code `1` (`ErrRuntime`).<br>`stdout`: empty.<br>`stderr`: `err\n[drev] ! info hook ".drev-info-hook" failed with exit code 42\n`. |
-| `TC-07` | Valid Git repo with `.drev.json` and `.drev-info-hook` containing `sleep 10`, with `GIT_DREV_HOOK_TIMEOUT=100ms`. | `git drev info` | Exit code `1` (`ErrRuntime`).<br>`stdout`: empty.<br>`stderr`: `[drev] ! info hook ".drev-info-hook" timed out after 100ms\n`.<br>Child process is terminated. |
-| `TC-08` | Directory outside any Git repository (or missing `.drev.json`). | `git drev info` | Exit code `3` (`ErrNotRepository` or `ErrConfig`).<br>`stdout`: empty.<br>`stderr`: `[drev] ! ...` diagnostic message. |
+| `TC-04` | Valid Git repo with `.drev.json` and `.drev-info-hook`. | `git drev info unexpected-arg` | Exit code `2` (`ErrUsage`).<br>`stdout`: empty.<br>`stderr`: `[drev] ! info takes no arguments (got: unexpected-arg)\n`.<br>Hook is NOT executed. |
+| `TC-05` | Valid Git repo with `.drev.json` and `.drev-info-hook` containing `info_hook() { echo "err" >&2; exit 42; }`. | `git drev info` | Exit code `1` (`ErrRuntime`).<br>`stdout`: empty.<br>`stderr`: `err\n[drev] ! info hook ".drev-info-hook" failed with exit code 42\n`. |
+| `TC-06` | Valid Git repo with `.drev.json` and `.drev-info-hook` containing `sleep 10`, with `GIT_DREV_HOOK_TIMEOUT=100ms`. | `git drev info` | Exit code `1` (`ErrRuntime`).<br>`stdout`: empty.<br>`stderr`: `[drev] ! info hook ".drev-info-hook" timed out after 100ms\n`.<br>Child process is terminated. |
+| `TC-07` | Directory outside any Git repository (or missing `.drev.json`). | `git drev info` | Exit code `3` (`ErrNotRepository` or `ErrConfig`).<br>`stdout`: empty.<br>`stderr`: `[drev] ! ...` diagnostic message. |
