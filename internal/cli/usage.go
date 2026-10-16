@@ -1,0 +1,258 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"regexp"
+	"strings"
+
+	"git-drev/internal/config"
+	"git-drev/internal/domain"
+	"git-drev/internal/errcode"
+	"git-drev/internal/git"
+	"git-drev/internal/term"
+	"git-drev/internal/transport"
+	"github.com/spf13/cobra"
+)
+
+var uuidRegex = regexp.MustCompile(`(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
+
+// UsageOptions holds options for `git-drev usage`.
+type UsageOptions struct {
+	Verbose   bool
+	Quiet     bool
+	CallerDir string
+}
+
+// UsageResult captures the parsed outcome of `git-drev usage`.
+type UsageResult struct {
+	TotalSize     string
+	RevisionCount int
+	Revisions     []UsageRevisionRow
+}
+
+// UsageRevisionRow describes a single revision in the verbose table.
+type UsageRevisionRow struct {
+	UUID      string
+	SizeHuman string
+	Created   string
+	Commit    string
+	BranchTag string
+	Message   string
+	Orphaned  bool
+}
+
+// RunUsage queries storage usage on the remote server and correlates with Git history.
+func RunUsage(
+	ctx context.Context,
+	insp *git.Inspector,
+	ops *git.Operations,
+	remote transport.RemoteRunner,
+	cfg *domain.ProjectConfig,
+	logger *term.Logger,
+	stdout io.Writer,
+	opts UsageOptions,
+) (UsageResult, error) {
+	if err := ctx.Err(); err != nil {
+		return UsageResult{}, errcode.WrapError(errcode.ErrInterrupted, err, "Operation interrupted")
+	}
+
+	repoRoot, _, err := insp.RepoRoot(ctx, opts.CallerDir)
+	if err != nil {
+		return UsageResult{}, err
+	}
+
+	if cfg == nil {
+		loadedCfg, loadErr := config.Load(repoRoot)
+		if loadErr != nil {
+			return UsageResult{}, loadErr
+		}
+		cfg = loadedCfg
+	}
+
+	if cfg.Remote.Host == "" {
+		return UsageResult{}, errcode.NewError(errcode.ErrConfig, "remote host is not configured")
+	}
+	if cfg.Remote.Path == "" {
+		return UsageResult{}, errcode.NewError(errcode.ErrConfig, "remote path is not configured")
+	}
+
+	if err := ops.EnsureRemoteFetchConfig(ctx, repoRoot); err != nil {
+		return UsageResult{}, err
+	}
+
+	if logger != nil {
+		logger.Infof("Connecting to remote host '%s' to retrieve storage usage...", cfg.Remote.Host)
+	}
+
+	basePath := strings.TrimRight(cfg.Remote.Path, "/")
+	totalSize, revisions, queryErr := remote.QueryUsage(ctx, cfg.Remote.Host, basePath)
+	if queryErr != nil {
+		return UsageResult{}, queryErr
+	}
+
+	if logger != nil {
+		logger.Infof("Remote storage usage for host:%s path:%s", cfg.Remote.Host, cfg.Remote.Path)
+	}
+
+	// Render summary to stdout
+	fmt.Fprintf(stdout, "\nSummary:\n  Total space used:  %s\n\n", totalSize)
+
+	res := UsageResult{
+		TotalSize:     totalSize,
+		RevisionCount: len(revisions),
+	}
+
+	if len(revisions) == 0 {
+		if logger != nil {
+			logger.Info("No revision directories found on remote storage.")
+		}
+		return res, nil
+	}
+
+	if !opts.Verbose {
+		if logger != nil {
+			logger.Infof("Found %d revision directory(ies) on remote storage.", len(revisions))
+			logger.HintAlways(`Use -v/--verbose to view the detailed breakdown of revisions.`)
+		}
+		return res, nil
+	}
+
+	// Correlate with Git history
+	commits, _ := insp.ScanAllCommits(ctx, repoRoot, false)
+	byUUID := make(map[string]git.CommitRecord)
+
+	for _, rec := range commits {
+		var matchedUUID string
+		if rec.Meta != nil && rec.Meta.UUID != "" && rec.Meta.UUID != domain.ZeroUUID && !rec.Meta.IsMarker() {
+			matchedUUID = strings.ToLower(rec.Meta.UUID)
+		} else {
+			if sub := uuidRegex.FindString(rec.Subject); sub != "" {
+				matchedUUID = strings.ToLower(sub)
+			}
+		}
+
+		if matchedUUID != "" {
+			if _, exists := byUUID[matchedUUID]; !exists {
+				byUUID[matchedUUID] = rec
+			}
+		}
+	}
+
+	var rows []UsageRevisionRow
+	for _, rev := range revisions {
+		created := "-"
+		if !rev.ModTime.IsZero() {
+			created = rev.ModTime.Format("2006-01-02 15:04:05")
+		}
+
+		normUUID := strings.ToLower(rev.UUID)
+		rec, found := byUUID[normUUID]
+
+		var commitStr, branchTagStr, msgStr string
+		var orphaned bool
+
+		if found {
+			orphaned = false
+			commitStr = rec.ShortHash
+			branchTagStr = formatRefs(rec.Refs)
+			if rec.Meta != nil && rec.Meta.Seq != "" {
+				msgStr = "seq: " + rec.Meta.Seq
+			} else {
+				msgStr = rec.Subject
+				if msgStr == "" {
+					msgStr = "-"
+				}
+			}
+		} else {
+			orphaned = true
+			commitStr = "[orphaned]"
+			branchTagStr = "-"
+			msgStr = "-"
+		}
+
+		rows = append(rows, UsageRevisionRow{
+			UUID:      normUUID,
+			SizeHuman: rev.SizeHuman,
+			Created:   created,
+			Commit:    commitStr,
+			BranchTag: branchTagStr,
+			Message:   msgStr,
+			Orphaned:  orphaned,
+		})
+	}
+
+	res.Revisions = rows
+
+	// Write verbose breakdown table
+	fmt.Fprintln(stdout, "Revisions breakdown:")
+	fmt.Fprintf(stdout, "%-36s  %8s  %-19s  %-10s  %-20s  %s\n", "UUID", "Size", "Created", "Commit", "Branch/Tag", "Message")
+	fmt.Fprintf(stdout, "%-36s  %8s  %-19s  %-10s  %-20s  %s\n",
+		"------------------------------------",
+		"--------",
+		"-------------------",
+		"----------",
+		"--------------------",
+		"----------------------")
+
+	for _, row := range rows {
+		fmt.Fprintf(stdout, "%-36s  %8s  %-19s  %-10s  %-20s  %s\n",
+			row.UUID, row.SizeHuman, row.Created, row.Commit, row.BranchTag, row.Message)
+	}
+
+	return res, nil
+}
+
+func formatRefs(refs []string) string {
+	var clean []string
+	for _, r := range refs {
+		r = strings.TrimSpace(r)
+		r = strings.TrimPrefix(r, "HEAD -> ")
+		r = strings.TrimPrefix(r, "tag: ")
+		r = strings.TrimSpace(r)
+		if r == "" || r == "origin/HEAD" {
+			continue
+		}
+		clean = append(clean, r)
+	}
+	if len(clean) == 0 {
+		return "-"
+	}
+	return strings.Join(clean, ", ")
+}
+
+func (a *App) newUsageCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "usage",
+		Short: "Display storage consumption of revisions on the remote host",
+		Long: `Queries the remote storage host via SSH to display total space consumption
+and, when invoked with -v/--verbose, correlates remote revision directories with Git commits.`,
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				return errcode.NewError(errcode.ErrUsage, "usage takes no arguments (got: %s)", args[0])
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			opts := UsageOptions{
+				Verbose:   a.Opts.Verbose,
+				Quiet:     a.Opts.Quiet,
+				CallerDir: a.WorkingDir,
+			}
+			_, err := RunUsage(
+				cmd.Context(),
+				a.Inspector,
+				a.Operations,
+				a.Remote,
+				nil,
+				a.Logger,
+				cmd.OutOrStdout(),
+				opts,
+			)
+			return err
+		},
+	}
+
+	return cmd
+}

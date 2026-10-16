@@ -7,7 +7,9 @@ import (
 
 	"git-drev/internal/errcode"
 	"git-drev/internal/git"
+	"git-drev/internal/hook"
 	"git-drev/internal/term"
+	"git-drev/internal/transport"
 	"git-drev/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -27,6 +29,8 @@ type App struct {
 	Runner     git.Runner
 	Inspector  *git.Inspector
 	Operations *git.Operations
+	Remote     transport.RemoteRunner
+	Hooks      hook.Runner
 	Opts       GlobalOptions
 	Stdout     io.Writer
 	Stderr     io.Writer
@@ -59,6 +63,8 @@ func NewApp(stdout, stderr io.Writer, runner git.Runner) *App {
 	app.Runner = runner
 	app.Inspector = git.NewInspector(runner)
 	app.Operations = git.NewOperations(runner)
+	app.Remote = transport.NewExecRemoteRunner(stdout, stderr)
+	app.Hooks = hook.NewExecRunner()
 
 	rootCmd := &cobra.Command{
 		Use:     "git-drev",
@@ -98,6 +104,10 @@ on remote SSH/rsync storage hosts, binding them to Git commit metadata and branc
 	rootCmd.AddCommand(app.newCreateCmd())
 	rootCmd.AddCommand(app.newSelectCmd())
 	rootCmd.AddCommand(app.newUpdateCmd())
+	rootCmd.AddCommand(app.newInfoCmd())
+	rootCmd.AddCommand(app.newUsageCmd())
+	rootCmd.AddCommand(app.newGetCmd())
+	rootCmd.AddCommand(app.newPutCmd())
 
 	app.RootCmd = rootCmd
 	return app

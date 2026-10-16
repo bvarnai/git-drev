@@ -16,7 +16,8 @@ const DetachedHeadDisplay = "No branch (detached HEAD state)"
 
 // NameOptions encapsulates parameters for the `name` subcommand.
 type NameOptions struct {
-	Quiet bool
+	Quiet     bool
+	CallerDir string
 }
 
 // NameResult captures the resolved branch state.
@@ -38,7 +39,7 @@ func RunName(ctx context.Context, insp *git.Inspector, logger *term.Logger, stdo
 		return NameResult{}, errcode.WrapError(errcode.ErrInterrupted, err, "Operation interrupted")
 	}
 
-	repoRoot, _, err := insp.RepoRoot(ctx, "")
+	repoRoot, _, err := insp.RepoRoot(ctx, opts.CallerDir)
 	if err != nil {
 		return NameResult{}, err
 	}
@@ -74,7 +75,8 @@ func (a *App) newNameCmd() *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts := NameOptions{
-				Quiet: a.Opts.Quiet,
+				Quiet:     a.Opts.Quiet,
+				CallerDir: a.WorkingDir,
 			}
 			_, err := RunName(cmd.Context(), a.Inspector, a.Logger, cmd.OutOrStdout(), opts)
 			return err

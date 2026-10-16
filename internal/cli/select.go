@@ -23,9 +23,10 @@ const (
 
 // SelectOptions encapsulates validated inputs for `git-drev select`.
 type SelectOptions struct {
-	Target  string
-	Quiet   bool
-	Verbose bool
+	Target    string
+	Quiet     bool
+	Verbose   bool
+	CallerDir string
 }
 
 // SelectResult captures the outcome of a select execution.
@@ -48,7 +49,7 @@ func RunSelect(
 		return SelectResult{}, errcode.WrapError(errcode.ErrInterrupted, err, "Operation interrupted")
 	}
 
-	repoRoot, _, err := insp.RepoRoot(ctx, "")
+	repoRoot, _, err := insp.RepoRoot(ctx, opts.CallerDir)
 	if err != nil {
 		return SelectResult{}, err
 	}
@@ -135,9 +136,10 @@ resolved by UUID. If no target is supplied, it falls back to the configured defa
 				target = args[0]
 			}
 			opts := SelectOptions{
-				Target:  target,
-				Quiet:   a.Opts.Quiet,
-				Verbose: a.Opts.Verbose,
+				Target:    target,
+				Quiet:     a.Opts.Quiet,
+				Verbose:   a.Opts.Verbose,
+				CallerDir: a.WorkingDir,
 			}
 			_, err := RunSelect(cmd.Context(), a.Inspector, a.Operations, nil, a.Logger, opts)
 			return err

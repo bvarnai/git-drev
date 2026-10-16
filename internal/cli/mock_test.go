@@ -24,6 +24,11 @@ func (m *mockGitRunner) Run(ctx context.Context, dir string, args ...string) (st
 	if resp, ok := m.responses[key]; ok {
 		return resp.out, resp.err
 	}
+	for pattern, resp := range m.responses {
+		if strings.HasSuffix(pattern, "*") && strings.HasPrefix(key, strings.TrimSuffix(pattern, "*")) {
+			return resp.out, resp.err
+		}
+	}
 	return "", errors.New("command not mocked: " + key)
 }
 

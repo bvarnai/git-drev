@@ -13,8 +13,9 @@ import (
 
 // UpdateOptions encapsulates validated parameters for `git-drev update`.
 type UpdateOptions struct {
-	Verbose bool
-	Quiet   bool
+	Verbose   bool
+	Quiet     bool
+	CallerDir string
 }
 
 // UpdateResult captures the outcome of an update execution.
@@ -38,7 +39,7 @@ func RunUpdate(
 
 	timer := term.StartTimer()
 
-	repoRoot, _, err := insp.RepoRoot(ctx, "")
+	repoRoot, _, err := insp.RepoRoot(ctx, opts.CallerDir)
 	if err != nil {
 		return nil, err
 	}
@@ -109,8 +110,9 @@ and hard-resets the active local branch to match its origin tracking branch.`,
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts := UpdateOptions{
-				Verbose: a.Opts.Verbose,
-				Quiet:   a.Opts.Quiet,
+				Verbose:   a.Opts.Verbose,
+				Quiet:     a.Opts.Quiet,
+				CallerDir: a.WorkingDir,
 			}
 			_, err := RunUpdate(cmd.Context(), a.Inspector, a.Operations, nil, a.Logger, opts)
 			return err

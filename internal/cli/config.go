@@ -14,7 +14,8 @@ import (
 
 // ConfigOptions holds flags for `git-drev config`.
 type ConfigOptions struct {
-	Sources bool
+	Sources   bool
+	CallerDir string
 }
 
 // RunConfig executes the config inspection and formatting.
@@ -23,9 +24,9 @@ func RunConfig(ctx context.Context, insp *git.Inspector, logger *term.Logger, st
 		return errcode.WrapError(errcode.ErrInterrupted, err, "Operation interrupted")
 	}
 
-	targetDir := ""
+	targetDir := opts.CallerDir
 	if insp != nil {
-		if root, _, err := insp.RepoRoot(ctx, ""); err == nil {
+		if root, _, err := insp.RepoRoot(ctx, opts.CallerDir); err == nil {
 			targetDir = root
 		}
 	}
@@ -62,6 +63,7 @@ and inline annotations for defaulted or inferred fields.`,
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			opts.CallerDir = a.WorkingDir
 			return RunConfig(cmd.Context(), a.Inspector, a.Logger, cmd.OutOrStdout(), opts)
 		},
 	}

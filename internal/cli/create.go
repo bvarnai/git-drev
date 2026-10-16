@@ -16,9 +16,10 @@ import (
 
 // CreateOptions holds validated inputs for `git-drev create`.
 type CreateOptions struct {
-	Branch  string
-	Verbose bool
-	Quiet   bool
+	Branch    string
+	Verbose   bool
+	Quiet     bool
+	CallerDir string
 }
 
 // CreateAction classifies the action performed by create.
@@ -52,7 +53,7 @@ func RunCreate(
 
 	timer := term.StartTimer()
 
-	repoRoot, _, err := insp.RepoRoot(ctx, "")
+	repoRoot, _, err := insp.RepoRoot(ctx, opts.CallerDir)
 	if err != nil {
 		return nil, err
 	}
@@ -213,9 +214,10 @@ or fetches and switches to <branch> if it already exists locally or remotely.`,
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts := CreateOptions{
-				Branch:  args[0],
-				Verbose: a.Opts.Verbose,
-				Quiet:   a.Opts.Quiet,
+				Branch:    args[0],
+				Verbose:   a.Opts.Verbose,
+				Quiet:     a.Opts.Quiet,
+				CallerDir: a.WorkingDir,
 			}
 			_, err := RunCreate(cmd.Context(), a.Inspector, a.Operations, nil, a.Logger, opts)
 			return err

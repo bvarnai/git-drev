@@ -4,13 +4,17 @@ package integration
 
 import (
 	"bytes"
+	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"git-drev/internal/cli"
 	"git-drev/internal/domain"
+	"git-drev/internal/git"
 	"gopkg.in/yaml.v3"
 )
 
@@ -153,4 +157,39 @@ func (f *RepoFixture) MustGit(dir string, args ...string) string {
 		f.T.Fatalf("git %v in %s failed: %v\nstdout: %s\nstderr: %s", args, dir, err, stdout.String(), stderr.String())
 	}
 	return strings.TrimSpace(stdout.String())
+}
+
+// NewApp creates a *cli.App pre-wired with the fixture's working directory,
+// isolated git environment, and LocalRemoteRunner.
+func (f *RepoFixture) NewApp(stdout, stderr io.Writer) *cli.App {
+	runner := git.NewExecRunner(nil)
+	runner.BaseEnv = f.Env
+	app := cli.NewApp(stdout, stderr, runner)
+	app.WorkingDir = f.WorkDir
+	app.Remote = NewLocalRemoteRunner(f.BaseDir)
+	return app
+}
+
+// RunDrev creates a fresh App and executes git-drev with args against f.WorkDir.
+func (f *RepoFixture) RunDrev(stdout, stderr io.Writer, args ...string) error {
+	app := f.NewApp(stdout, stderr)
+	app.RootCmd.SetArgs(args)
+	return app.Execute(context.Background())
+}
+
+// CloneReplica creates a secondary working repository clone of origin in <BaseDir>/<name>.
+func (f *RepoFixture) CloneReplica(name string) *RepoFixture {
+	f.T.Helper()
+	replicaDir := filepath.Join(f.BaseDir, name)
+	f.MustGit(f.BaseDir, "clone", f.OriginDir, replicaDir)
+	f.MustGit(replicaDir, "config", "user.name", "Drev Replica User")
+	f.MustGit(replicaDir, "config", "user.email", "drev-replica@example.com")
+	return &RepoFixture{
+		T:          f.T,
+		BaseDir:    f.BaseDir,
+		OriginDir:  f.OriginDir,
+		WorkDir:    replicaDir,
+		RemotePath: f.RemotePath,
+		Env:        f.Env,
+	}
 }
