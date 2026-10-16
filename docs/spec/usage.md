@@ -35,7 +35,7 @@ import (
 	"git-drev/internal/config"
 	"git-drev/internal/domain"
 	"git-drev/internal/git"
-	"git-drev/internal/logui"
+	"git-drev/internal/term"
 	"git-drev/internal/transport"
 )
 
@@ -72,7 +72,7 @@ type UsageResult struct {
 type UsageService struct {
 	Git    git.Runner
 	Remote transport.RemoteRunner
-	Logger *logui.Logger
+	Logger *term.Logger
 	Stdout io.Writer
 }
 

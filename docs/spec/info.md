@@ -87,7 +87,7 @@ import (
 	"git-drev/internal/config"
 	"git-drev/internal/git"
 	"git-drev/internal/hook"
-	"git-drev/internal/logui"
+	"git-drev/internal/term"
 )
 
 // InfoOptions encapsulates all inputs for the `git-drev info` subcommand.
@@ -112,7 +112,7 @@ type InfoResult struct {
 type InfoService struct {
 	Git    git.Runner
 	Hooks  hook.Runner
-	Logger *logui.Logger
+	Logger *term.Logger
 	Stdout io.Writer
 	Stderr io.Writer
 }

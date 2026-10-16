@@ -36,7 +36,7 @@ import (
 
 	"git-drev/internal/config"
 	"git-drev/internal/git"
-	"git-drev/internal/logui"
+	"git-drev/internal/term"
 )
 
 // SelectTargetKind classifies how the user-supplied target argument was interpreted.
@@ -75,7 +75,7 @@ func RunSelect(
 	ctx context.Context,
 	gitRunner git.Runner,
 	cfg *config.Config,
-	logger *logui.Logger,
+	logger *term.Logger,
 	opts SelectOptions,
 ) (SelectResult, error)
 ```

@@ -46,7 +46,7 @@ import (
 	"git-drev/internal/domain"
 	"git-drev/internal/git"
 	"git-drev/internal/hook"
-	"git-drev/internal/logui"
+	"git-drev/internal/term"
 	"git-drev/internal/transport"
 )
 
@@ -99,7 +99,7 @@ type PutEnv struct {
 	Git     git.Runner
 	Remote  transport.RemoteRunner
 	Hook    hook.Runner
-	Logger  *logui.Logger
+	Logger  *term.Logger
 	UUIDGen func() (string, error)
 	Now     func() time.Time
 }

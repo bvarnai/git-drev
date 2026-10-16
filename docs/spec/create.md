@@ -38,7 +38,7 @@ import (
 
 	"git-drev/internal/config"
 	"git-drev/internal/git"
-	"git-drev/internal/logui"
+	"git-drev/internal/term"
 )
 
 // CreateOptions holds the validated inputs for the `create` subcommand.
@@ -73,7 +73,7 @@ func RunCreate(
 	ctx context.Context,
 	gitRunner git.Runner,
 	cfg *config.Config,
-	logger *logui.Logger,
+	logger *term.Logger,
 	opts CreateOptions,
 ) (*CreateResult, error)
 ```
@@ -81,7 +81,7 @@ func RunCreate(
 ## 4. Execution Flow (Step-by-Step Domain Logic)
 
 1. **Input normalization & validation:**
-   1. Start the execution timer via `logger.StartTimer()`.
+   1. Start the execution timer via `timer := term.StartTimer()`.
    2. Validate global flag mutual exclusions (`--verbose` and `--quiet` cannot both be `true`; otherwise return `ErrUsage`).
    3. Verify positional argument cardinality:
       - If `len(args) == 0` or `args[0] == ""`, return `ErrUsage` with message `"No branch name specified"`.
@@ -100,7 +100,7 @@ func RunCreate(
         - Log `fmt.Sprintf("[drev] Branch '%s' found (local)", opts.Branch)` to `stderr`.
         - Call `gitRunner.FetchAll(ctx)` (`git fetch --all --prune`).
         - Call `gitRunner.Checkout(ctx, opts.Branch, false)` (`git -c advice.detachedHead=false checkout <branch> --`).
-        - Log elapsed time via `logger.LogElapsed()` and return `&CreateResult{Branch: opts.Branch, Action: CreateActionCheckedOutLocal}, nil`.
+        - Log elapsed time via `logger.Info(timer.String())` and return `&CreateResult{Branch: opts.Branch, Action: CreateActionCheckedOutLocal}, nil`.
       - **If `false` (branch does not exist locally):**
         - Log `fmt.Sprintf("[drev] No branch '%s' found (local)", opts.Branch)` to `stderr`.
    3. **Check remote branch existence on `origin`:**
@@ -111,7 +111,7 @@ func RunCreate(
         - Log `fmt.Sprintf("[drev] Branch '%s' found (remote)", opts.Branch)` to `stderr`.
         - Call `gitRunner.FetchAll(ctx)` (`git fetch --all --prune`).
         - Call `gitRunner.Switch(ctx, opts.Branch)` (`git switch --track origin/<branch>` or `git switch <branch>`).
-        - Log elapsed time via `logger.LogElapsed()` and return `&CreateResult{Branch: opts.Branch, Action: CreateActionSwitchedRemote}, nil`.
+        - Log elapsed time via `logger.Info(timer.String())` and return `&CreateResult{Branch: opts.Branch, Action: CreateActionSwitchedRemote}, nil`.
       - **If `false` (exit code `2`, branch does not exist on `origin`):**
         - Log `fmt.Sprintf("[drev] No branch '%s' found (remote)", opts.Branch)` to `stderr`.
    4. **Resolve parent revision UUID from current `HEAD`:**
@@ -132,7 +132,7 @@ func RunCreate(
       - Call `gitRunner.PushForceWithLease(ctx, opts.Branch, setUpstream)` where `setUpstream = (upstream != "origin/"+opts.Branch)` (`git push [--set-upstream] --force-with-lease origin refs/heads/<branch>`).
       - If the push fails (including stale ref rejection if another client concurrently created the branch on `origin`, or transport/auth failure), return `ErrGitExec` (exit code `5`).
    8. **Completion:**
-      - Log elapsed time `[drev] Took X min Y sec` to `stderr` (unless `--quiet` is set).
+      - Log elapsed time `[drev] Took X min Y sec` via `logger.Info(timer.String())` to `stderr` (unless `--quiet` is set).
       - Return `&CreateResult{Branch: opts.Branch, Action: CreateActionCreatedNew, MarkerUUID: parentUUID}, nil`.
 
 3. **Dry-run behavior (`--dry-run` / `-n`):**

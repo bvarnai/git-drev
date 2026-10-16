@@ -48,7 +48,7 @@ import (
 
 	"git-drev/internal/config"
 	"git-drev/internal/git"
-	"git-drev/internal/logui"
+	"git-drev/internal/term"
 	"git-drev/internal/transport"
 )
 
@@ -102,7 +102,7 @@ type GetDeps struct {
 	Git    git.Runner
 	Remote transport.RemoteRunner
 	FS     FS
-	Logger *logui.Logger
+	Logger *term.Logger
 	Config config.Config
 }
 
@@ -118,7 +118,7 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
 ## 4. Execution Flow (Step-by-Step Domain Logic)
 
 1. **Input normalization & validation:**
-   - Start execution timer via `deps.Logger.StartTimer()`.
+   - Start execution timer via `timer := term.StartTimer()`.
    - Verify global flag mutual exclusion (`opts.Verbose && opts.Quiet` returns `ErrUsage`, exit code `2`).
    - Verify positional argument count (`len(args) <= 1`; if `> 1`, return `ErrUsage`, exit code `2`).
    - Query `deps.Git.RepoRoot(ctx)` to obtain `repoRoot`, `prefix`, and validate that the caller is inside a non-bare working tree.
@@ -170,7 +170,7 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
        - `UserOptions`: `deps.Config.Remote.RsyncOptions.Get`
      - If `RsyncGet` fails, return `ErrTransport` (exit code `7`) with message `Unable to get directory revision`.
    - **Step 2.7: Completion logging:**
-     - Emit elapsed duration to `stderr` via `deps.Logger.LogElapsed()` (`[drev] Took X min Y sec`, suppressed under `--quiet`).
+     - Emit elapsed duration to `stderr` via `deps.Logger.Info(timer.String())` (`[drev] Took X min Y sec`, suppressed under `--quiet`).
      - Return `GetResult{UUID: uuid, TargetDir: opts.TargetDir, UpdatedBranch: updatedBranch, DryRun: opts.DryRun}, nil`.
 
 3. **Dry-run behavior (`--dry-run` / `-n`):**
@@ -285,7 +285,7 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
      - *Modernized fix:* Strictly validates `uuid` as RFC 4122 hex and passes the remote path as a positional parameter to `sh -c 'test -d "$1"' -- <remotePath>`.
   6. **Stdout pollution from `rsync` (`legacy/get.sh:156`):**
      - *Legacy bug:* `rsync` wrote `--info=progress2`, `--itemize-changes`, and `--stats` to `stdout` alongside `drs::common::log`.
-     - *Modernized fix:* Both `logui.Logger` and the `rsync` subprocess `cmd.Stdout` are bound to `stderr` so `stdout` remains clean.
+     - *Modernized fix:* Both `term.Logger` and the `rsync` subprocess `cmd.Stdout` are bound to `stderr` so `stdout` remains clean.
 
 - **Boundary conditions:**
   - **Subdirectory invocation (`GIT_PREFIX`):** If a user invokes `git drev get ./my-output` from `<repo-root>/sub/dir`, `<target_directory>` resolves to `<repo-root>/sub/dir/my-output`, whereas omitting `<target_directory>` always resolves `workDir` to `<repo-root>/<workDir>`.

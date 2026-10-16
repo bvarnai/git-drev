@@ -33,7 +33,7 @@ import (
 
 	"git-drev/internal/config"
 	"git-drev/internal/git"
-	"git-drev/internal/logui"
+	"git-drev/internal/term"
 )
 
 // UpdateOptions encapsulates the validated inputs for the `update` subcommand.
@@ -58,7 +58,7 @@ func RunUpdate(
 	ctx context.Context,
 	gitRunner git.Runner,
 	cfg *config.Config,
-	logger *logui.Logger,
+	logger *term.Logger,
 	opts UpdateOptions,
 ) (*UpdateResult, error)
 ```

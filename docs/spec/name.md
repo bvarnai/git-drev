@@ -34,7 +34,7 @@ import (
 	"io"
 
 	"git-drev/internal/git"
-	"git-drev/internal/logui"
+	"git-drev/internal/term"
 )
 
 // DetachedHeadDisplay is the canonical human-readable output emitted to stdout
@@ -67,7 +67,7 @@ func (r NameResult) String() string {
 }
 
 // RunName executes the domain logic for `git drev name` in isolation from CLI flag parsing.
-func RunName(ctx context.Context, gitRunner git.Runner, logger *logui.Logger, stdout io.Writer, opts NameOptions) (NameResult, error)
+func RunName(ctx context.Context, gitRunner git.Runner, logger *term.Logger, stdout io.Writer, opts NameOptions) (NameResult, error)
 ```
 
 ## 4. Execution Flow (Step-by-Step Domain Logic)

@@ -12,9 +12,9 @@
   - `internal/git/`: `Runner` interface, read-only plumbing inspection, and mutating Git operations.
   - `internal/transport/`: `RemoteRunner` interface and SSH/rsync execution engine.
   - `internal/hook/`: Project hook runner (`.drev-put-hook`, `.drev-info-hook`) with timeout (`GIT_DREV_HOOK_TIMEOUT`, default `5m`) and `GIT_DREV_*` environment injection.
-  - `internal/logui/`: Structured `stderr` logger, TTY/`NO_COLOR`/`GIT_DREV_COLOR` detection, and execution timers.
+  - `internal/term/`: Structured `stderr` logger, TTY/`NO_COLOR`/`GIT_DREV_COLOR` detection, and execution timers.
   - `test/integration/`: End-to-end integration tests using isolated Git repositories in `t.TempDir()`.
-- **Dependency Boundaries:** `internal/config`, `internal/git`, `internal/transport`, and `internal/hook` may depend on `domain`, `errcode`, and `logui`, but NEVER on `internal/cli`.
+- **Dependency Boundaries:** `internal/config`, `internal/git`, `internal/transport`, and `internal/hook` may depend on `domain`, `errcode`, and `term`, but NEVER on `internal/cli`.
 
 ## Coding Standards & Idioms
 In accordance with the [Google Go Style Guide](https://google.github.io/styleguide/go/guide) and `docs/spec/global.md`:

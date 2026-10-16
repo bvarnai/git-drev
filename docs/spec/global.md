@@ -182,13 +182,13 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
   │   │   ├── inspection.go        # Read-only plumbing queries (refs, log, rev-parse)
   │   │   └── operations.go        # Mutating Git operations (fetch, checkout, commit, push)
   │   ├── hook/                    # Hook runner for .drev-put-hook and .drev-info-hook
-  │   ├── logui/                   # Structured stderr logger, TTY & NO_COLOR detection, timer
+  │   ├── term/                    # Structured stderr logger, TTY & NO_COLOR detection, timer
   │   └── transport/               # SSHRunner and RsyncRunner interfaces & implementations
   └── go.mod
   ```
   - **Package dependency boundaries:**
     - `internal/domain` and `internal/errcode` depend only on the Go standard library.
-    - `internal/config`, `internal/git`, `internal/transport`, and `internal/hook` depend on `internal/domain`, `internal/errcode`, and `internal/logui`, never on `internal/cli`.
+    - `internal/config`, `internal/git`, `internal/transport`, and `internal/hook` depend on `internal/domain`, `internal/errcode`, and `internal/term`, never on `internal/cli`.
     - `internal/cli` wires flags and invokes domain/runner interfaces, enabling 100% unit testability with mock runners.
 - **Shared Go interfaces & structs:**
   ```go
