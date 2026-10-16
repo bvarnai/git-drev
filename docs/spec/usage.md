@@ -95,7 +95,7 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
      - Invoke `Ops.EnsureRemoteFetchConfig(ctx, repoRoot)` to idempotently ensure `+refs/heads/*:refs/remotes/origin/*` is present in local `.git/config` without destructive unsetting or network calls.
    - **Step 2.2: Query remote storage via SSH:**
      - Emit operational progress log to `stderr` (unless `--quiet` is active):
-       `[drev] Connecting to remote host '<host>' to retrieve storage usage...`
+       `[git-drev] Connecting to remote host '<host>' to retrieve storage usage...`
      - Invoke `RemoteRunner.QueryUsage(ctx, opts.Config.Remote.Host, opts.Config.Remote.Path)`.
      - Under the hood, `QueryUsage` executes a single non-interactive SSH command (`ssh -T <host> /bin/sh -s -- <quoted-path>`) with `LC_ALL=C` and feeds a POSIX shell script on `stdin` that:
        1. Checks `[ -d "$1" ]`; if missing, prints `ERROR:Remote path '$1' does not exist.` and exits with status `66` (or dedicated sentinel parsed into `errcode.ErrRemoteNotFound`, exit code `6`).
@@ -104,7 +104,7 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
      - If the SSH transport fails for reasons other than the missing remote path sentinel, return `errcode.ErrTransport` (exit code `7`) including the captured remote output in the error diagnostic.
    - **Step 2.3: Render storage summary:**
      - Emit operational log to `stderr` (unless `--quiet`):
-       `[drev] Remote storage usage for host:<host> path:<path>`
+       `[git-drev] Remote storage usage for host:<host> path:<path>`
      - Write the summary block to `stdout`:
        ```text
 
@@ -113,12 +113,12 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
 
        ```
      - If `len(revisions) == 0`:
-       - Emit to `stderr` (unless `--quiet`): `[drev] No revision directories found on remote storage.`
+       - Emit to `stderr` (unless `--quiet`): `[git-drev] No revision directories found on remote storage.`
        - Return `UsageResult` with `nil` error (exit code `0`).
      - If `!opts.Verbose`:
        - Emit to `stderr` (unless `--quiet`):
-         `[drev] Found <N> revision directory(ies) on remote storage.`
-         `[drev] Hint: Use -v/--verbose to view the detailed breakdown of revisions.`
+         `[git-drev] Found <N> revision directory(ies) on remote storage.`
+         `[git-drev] Hint: Use -v/--verbose to view the detailed breakdown of revisions.`
        - Return `UsageResult` with `nil` error (exit code `0`).
    - **Step 2.4: Correlate with local Git commit history (`--verbose` only):**
      - Invoke `Insp.ScanAllCommits(ctx, repoRoot)` which executes `git log --all -z --format=%H%x00%h%x00%ad%x00%D%x00%s --date=unix`.
@@ -189,26 +189,26 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
 
 - **Standard error (`stderr`):**
   - Progress and informational messages (suppressed when `--quiet` is active):
-    - `[drev] Connecting to remote host '<host>' to retrieve storage usage...`
-    - `[drev] Remote storage usage for host:<host> path:<path>`
-    - When `RevisionCount == 0`: `[drev] No revision directories found on remote storage.`
+    - `[git-drev] Connecting to remote host '<host>' to retrieve storage usage...`
+    - `[git-drev] Remote storage usage for host:<host> path:<path>`
+    - When `RevisionCount == 0`: `[git-drev] No revision directories found on remote storage.`
     - When `RevisionCount > 0` and `!Verbose`:
-      - `[drev] Found <N> revision directory(ies) on remote storage.`
-      - `[drev] Hint: Use -v/--verbose to view the detailed breakdown of revisions.`
+      - `[git-drev] Found <N> revision directory(ies) on remote storage.`
+      - `[git-drev] Hint: Use -v/--verbose to view the detailed breakdown of revisions.`
   - Error messages (never suppressed):
-    - `[drev] ! <error summary>`
-    - `[drev] ! Details: <ssh/command stderr output>` (when applicable)
+    - `[git-drev] Error: <error summary>`
+    - `[git-drev] Error: Details: <ssh/command stderr output>` (when applicable)
 
 ## 6. Error Matrix & Exit Code Mapping
 | Failure Condition | Go Error Sentinel / Type | Exit Code | Expected `stderr` Message Pattern |
 | :--- | :--- | :--- | :--- |
-| Unknown flag, unexpected positional argument, or `--verbose` combined with `--quiet` | `errcode.ErrUsage` | `2` | `[drev] ! <details>` |
-| Invoked outside a Git worktree or inside a bare repository | `errcode.ErrNotRepository` | `3` | `[drev] ! not a git repository (or any of the parent directories)` |
-| Missing/malformed `.git-drev.yaml` | `errcode.ErrConfig` | `3` | `[drev] ! No configuration file found` or `[drev] ! <details>` |
-| Missing or invalid `remote.host` or `remote.path` in configuration | `errcode.ErrConfig` | `3` | `[drev] ! missing required configuration key '<remote.host\|remote.path>'` |
-| Remote storage base path `<remote.path>` does not exist on `<remote.host>` | `errcode.ErrRemoteNotFound` | `6` | `[drev] ! Remote path '<path>' does not exist.` |
-| SSH connection failure, authentication failure, or missing `ssh` binary | `errcode.ErrTransport` | `7` | `[drev] ! Failed to connect to remote host '<host>' via SSH or command failed (exit code: <code>)`<br>`[drev] ! Details: <output>` |
-| Context canceled via `SIGINT` or `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[drev] ! operation interrupted` |
+| Unknown flag, unexpected positional argument, or `--verbose` combined with `--quiet` | `errcode.ErrUsage` | `2` | `[git-drev] Error: <details>` |
+| Invoked outside a Git worktree or inside a bare repository | `errcode.ErrNotRepository` | `3` | `[git-drev] Error: not a git repository (or any of the parent directories)` |
+| Missing/malformed `.git-drev.yaml` | `errcode.ErrConfig` | `3` | `[git-drev] Error: No configuration file found` or `[git-drev] Error: <details>` |
+| Missing or invalid `remote.host` or `remote.path` in configuration | `errcode.ErrConfig` | `3` | `[git-drev] Error: missing required configuration key '<remote.host\|remote.path>'` |
+| Remote storage base path `<remote.path>` does not exist on `<remote.host>` | `errcode.ErrRemoteNotFound` | `6` | `[git-drev] Error: Remote path '<path>' does not exist.` |
+| SSH connection failure, authentication failure, or missing `ssh` binary | `errcode.ErrTransport` | `7` | `[git-drev] Error: Failed to connect to remote host '<host>' via SSH or command failed (exit code: <code>)`<br>`[git-drev] Error: Details: <output>` |
+| Context canceled via `SIGINT` or `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[git-drev] Error: operation interrupted` |
 
 ## 7. Legacy Modernization & Edge Cases
 - **Fixed legacy quirks:**
@@ -220,7 +220,7 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
      - *Modernized Go behavior:* All JSON unmarshaling (`encoding/json`), regex matching (`regexp`), string trimming (`strings.TrimSpace`), and epoch timestamp formatting (`time.Unix(mtime, 0).Local().Format("2006-01-02 15:04:05")`) run in-memory in native Go with zero child processes per row.
   3. **Operational Logs Mixed into `stdout` (`legacy/usage.sh:86,150,157,162-163`):**
      - *Legacy flaw:* `drs::common::log` wrote `[drs] Connecting to remote host...` and `[drs] Hint: ...` to `stdout`, polluting redirected or piped `usage` reports.
-     - *Modernized Go behavior:* All `[drev] ...` operational logs and hints are emitted to `stderr`; only the structured `Summary:` and `Revisions breakdown:` sections are written to `stdout`.
+     - *Modernized Go behavior:* All `[git-drev] ...` operational logs and hints are emitted to `stderr`; only the structured `Summary:` and `Revisions breakdown:` sections are written to `stdout`.
   4. **Unescaped Remote Path in SSH Invocation (`legacy/usage.sh:91`):**
      - *Legacy flaw:* `ssh -T "${host}" "/bin/sh -s -- \"${path}\""` interpolated `${path}` inside double quotes without escaping embedded spaces, quotes, or `$` characters.
      - *Modernized Go behavior:* `remote.path` is validated at config load time against shell metacharacters and passed as a POSIX single-quoted token (`'...'`) to `/bin/sh -s --`.
@@ -235,7 +235,7 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
      - *Modernized Go behavior:* Resolves `RepoRoot` via `git rev-parse --show-toplevel` first and loads `.git-drev.yaml` from `RepoRoot`.
 
 - **Boundary conditions:**
-  - **Empty branch marker commits:** Commits created by `git drev create` with `{"uuid":"...","marker":"true"}` or `domain.ZeroUUID` (`00000000-0000-0000-0000-000000000000`) are ignored when building the active revision commit map (unless a real `put` commit shares the parent UUID, in which case the `put` commit represents the revision), ensuring marker commits do not shadow actual revision metadata.
+  - **Empty branch marker commits:** Commits created by `git-drev create` with `{"uuid":"...","marker":"true"}` or `domain.ZeroUUID` (`00000000-0000-0000-0000-000000000000`) are ignored when building the active revision commit map (unless a real `put` commit shares the parent UUID, in which case the `put` commit represents the revision), ensuring marker commits do not shadow actual revision metadata.
   - **Case-insensitive UUID correlation:** If a remote directory name or commit JSON uses uppercase hex characters, correlation normalizes keys via `strings.ToLower` while preserving the remote directory's exact UUID string in the display column.
   - **Non-UUID entries on remote storage:** Any files, symlinks to non-directories, or subdirectories in `<remote.path>` whose basenames do not match the 36-character RFC 4122 UUID regex are ignored in the revision breakdown (though their bytes remain reflected in `du -sh <remote.path>` total space used).
   - **Symlinked revision directories:** On the remote server, `[ -d "$d" ]` evaluates to true for both real directories and symlinks pointing to directories; `stat` and `du -sh` operate on the directory entry without following nested symlinks outside the revision payload.
@@ -245,9 +245,9 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
 ## 8. Black-Box Verification Scenarios
 | Scenario ID | Given (Repo & Filesystem State) | When (CLI Invocation) | Then (Expected Exit Code, `stdout`/`stderr`, & Repo/FS State) |
 | :--- | :--- | :--- | :--- |
-| `TC-01` | Valid repo with `.git-drev.yaml` (`remote.host: store`, `remote.path: /data/repo`); remote `/data/repo` occupies `2.5G` and contains 2 UUID directories (`uuid-1`, `uuid-2`). | `git drev usage` | **Exit Code:** `0`<br>**`stdout`:** Contains `Summary:` and `Total space used:  2.5G` (no table).<br>**`stderr`:** Contains `[drev] Connecting to remote host 'store'...`, `[drev] Found 2 revision directory(ies) on remote storage.`, and `[drev] Hint: Use -v/--verbose...`. |
-| `TC-02` | Same state as `TC-01`; `uuid-1` matches local `HEAD` commit `a1b2c3d` on `main` (`{"uuid":"<uuid-1>","seq":"1700000000"}`), while `uuid-2` has no matching commit in `git log --all`. | `git drev usage --verbose` | **Exit Code:** `0`<br>**`stdout`:** Contains `Summary:` followed by `Revisions breakdown:` table where `uuid-1` shows commit `a1b2c3d`, branch `main`, message `seq: 1700000000`, and `uuid-2` shows commit `[orphaned]`, branch `-`, message `-`. |
-| `TC-03` | Valid repo with `.git-drev.yaml`, invoked from nested subdirectory `src/pkg/`; `.git/config` is missing the wildcard fetch refspec. | `git drev usage` | **Exit Code:** `0`<br>**`stdout`:** Prints `Summary:` with remote total space.<br>**Repo State:** `.git/config` contains `+refs/heads/*:refs/remotes/origin/*`. |
-| `TC-04` | Valid repo with `.git-drev.yaml` pointing to `remote.path: /data/nonexistent`, which does not exist on the remote server. | `git drev usage` | **Exit Code:** `6` (`ErrRemoteNotFound`)<br>**`stdout`:** Empty.<br>**`stderr`:** Contains `[drev] ! Remote path '/data/nonexistent' does not exist.` |
-| `TC-05` | Valid repo with `.git-drev.yaml`; remote `/data/repo` exists and occupies `4.0K` but contains zero UUID subdirectories (only a `.keep` file). | `git drev usage -v` | **Exit Code:** `0`<br>**`stdout`:** Contains `Summary:` and `Total space used:  4.0K` (no `Revisions breakdown:` table printed).<br>**`stderr`:** Contains `[drev] No revision directories found on remote storage.` |
-| `TC-06` | Valid repo with `.git-drev.yaml`; caller passes an unexpected positional argument or conflicting flags. | `git drev usage extra-arg` | **Exit Code:** `2` (`ErrUsage`)<br>**`stdout`:** Empty.<br>**`stderr`:** Contains `[drev] !` usage error diagnostic rejecting positional arguments. |
+| `TC-01` | Valid repo with `.git-drev.yaml` (`remote.host: store`, `remote.path: /data/repo`); remote `/data/repo` occupies `2.5G` and contains 2 UUID directories (`uuid-1`, `uuid-2`). | `git-drev usage` | **Exit Code:** `0`<br>**`stdout`:** Contains `Summary:` and `Total space used:  2.5G` (no table).<br>**`stderr`:** Contains `[git-drev] Connecting to remote host 'store'...`, `[git-drev] Found 2 revision directory(ies) on remote storage.`, and `[git-drev] Hint: Use -v/--verbose...`. |
+| `TC-02` | Same state as `TC-01`; `uuid-1` matches local `HEAD` commit `a1b2c3d` on `main` (`{"uuid":"<uuid-1>","seq":"1700000000"}`), while `uuid-2` has no matching commit in `git log --all`. | `git-drev usage --verbose` | **Exit Code:** `0`<br>**`stdout`:** Contains `Summary:` followed by `Revisions breakdown:` table where `uuid-1` shows commit `a1b2c3d`, branch `main`, message `seq: 1700000000`, and `uuid-2` shows commit `[orphaned]`, branch `-`, message `-`. |
+| `TC-03` | Valid repo with `.git-drev.yaml`, invoked from nested subdirectory `src/pkg/`; `.git/config` is missing the wildcard fetch refspec. | `git-drev usage` | **Exit Code:** `0`<br>**`stdout`:** Prints `Summary:` with remote total space.<br>**Repo State:** `.git/config` contains `+refs/heads/*:refs/remotes/origin/*`. |
+| `TC-04` | Valid repo with `.git-drev.yaml` pointing to `remote.path: /data/nonexistent`, which does not exist on the remote server. | `git-drev usage` | **Exit Code:** `6` (`ErrRemoteNotFound`)<br>**`stdout`:** Empty.<br>**`stderr`:** Contains `[git-drev] Error: Remote path '/data/nonexistent' does not exist.` |
+| `TC-05` | Valid repo with `.git-drev.yaml`; remote `/data/repo` exists and occupies `4.0K` but contains zero UUID subdirectories (only a `.keep` file). | `git-drev usage -v` | **Exit Code:** `0`<br>**`stdout`:** Contains `Summary:` and `Total space used:  4.0K` (no `Revisions breakdown:` table printed).<br>**`stderr`:** Contains `[git-drev] No revision directories found on remote storage.` |
+| `TC-06` | Valid repo with `.git-drev.yaml`; caller passes an unexpected positional argument or conflicting flags. | `git-drev usage extra-arg` | **Exit Code:** `2` (`ErrUsage`)<br>**`stdout`:** Empty.<br>**`stderr`:** Contains `[git-drev] Error:` usage error diagnostic rejecting positional arguments. |

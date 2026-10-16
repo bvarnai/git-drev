@@ -94,45 +94,45 @@ func RunCreate(
       - Call `ops.EnsureRemoteFetchConfig(ctx, repoRoot)`.
       - This inspects `git config --local --get-all remote.origin.fetch`. If `+refs/heads/*:refs/remotes/origin/*` is missing, it idempotently adds it (without unsetting existing refspecs or making network calls).
    2. **Check local branch existence:**
-      - Log `[drev] Checking for existing branch (local)` to `stderr`.
+      - Log `[git-drev] Checking for existing branch (local)` to `stderr`.
       - Call `insp.LocalBranchExists(ctx, repoRoot, opts.Branch)` (`git show-ref --verify --quiet refs/heads/<branch>`).
       - **If `true` (branch exists locally):**
-        - Log `fmt.Sprintf("[drev] Branch '%s' found (local)", opts.Branch)` to `stderr`.
+        - Log `fmt.Sprintf("[git-drev] Branch '%s' found (local)", opts.Branch)` to `stderr`.
         - Call `ops.FetchAll(ctx, repoRoot, opts.Quiet && !opts.Verbose)` (`git fetch --all --prune`).
         - Call `ops.Checkout(ctx, repoRoot, opts.Branch, false)` (`git -c advice.detachedHead=false checkout <branch>`).
         - Log elapsed time via `logger.Info(timer.String())` and return `&CreateResult{Branch: opts.Branch, Action: CreateActionCheckedOutLocal}, nil`.
       - **If `false` (branch does not exist locally):**
-        - Log `fmt.Sprintf("[drev] No branch '%s' found (local)", opts.Branch)` to `stderr`.
+        - Log `fmt.Sprintf("[git-drev] No branch '%s' found (local)", opts.Branch)` to `stderr`.
    3. **Check remote branch existence on `origin`:**
-      - Log `[drev] Checking for existing branch (remote)` to `stderr`.
+      - Log `[git-drev] Checking for existing branch (remote)` to `stderr`.
       - Call `insp.RemoteBranchExists(ctx, repoRoot, opts.Branch)` (`git ls-remote --exit-code --heads origin refs/heads/<branch>`).
       - If `git ls-remote` fails with a transport/repository error (exit code `128`), return `ErrGitExec` (exit code `5`).
       - **If `true` (exit code `0`, branch exists on `origin`):**
-        - Log `fmt.Sprintf("[drev] Branch '%s' found (remote)", opts.Branch)` to `stderr`.
+        - Log `fmt.Sprintf("[git-drev] Branch '%s' found (remote)", opts.Branch)` to `stderr`.
         - Call `ops.FetchAll(ctx, repoRoot, opts.Quiet && !opts.Verbose)` (`git fetch --all --prune`).
         - Call `ops.Switch(ctx, repoRoot, opts.Branch)` (`git switch <branch>`).
         - Log elapsed time via `logger.Info(timer.String())` and return `&CreateResult{Branch: opts.Branch, Action: CreateActionSwitchedRemote}, nil`.
       - **If `false` (exit code `2`, branch does not exist on `origin`):**
-        - Log `fmt.Sprintf("[drev] No branch '%s' found (remote)", opts.Branch)` to `stderr`.
+        - Log `fmt.Sprintf("[git-drev] No branch '%s' found (remote)", opts.Branch)` to `stderr`.
    4. **Resolve parent revision UUID from current `HEAD`:**
       - Before creating or switching branches (or immediately after `git checkout -b`, since `HEAD` tree/commit is identical), inspect the current `HEAD` commit subject via `insp.HeadCommitMeta(ctx, repoRoot)` (`git log -1 --format=%s HEAD --`).
       - Parse the subject as JSON into `domain.RevisionMeta`.
       - If `HEAD` exists, its commit subject is valid JSON, and `meta.UUID` matches the strict RFC 4122 hex UUID regex (`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`), set `parentUUID = strings.ToLower(meta.UUID)`.
       - Otherwise (unborn `HEAD`, non-JSON commit subject such as `"Add initial drev configuration"`, or missing/invalid `.uuid`), set `parentUUID = domain.ZeroUUID` (`"00000000-0000-0000-0000-000000000000"`).
    5. **Create new local branch:**
-      - Log `fmt.Sprintf("[drev] Creating new revision branch '%s'", opts.Branch)` to `stderr`.
+      - Log `fmt.Sprintf("[git-drev] Creating new revision branch '%s'", opts.Branch)` to `stderr`.
       - Call `ops.CheckoutNewBranch(ctx, repoRoot, opts.Branch)` (`git checkout -b <branch>`).
    6. **Commit empty revision marker:**
-      - Log `[drev] Committing empty revision marker` to `stderr`.
+      - Log `[git-drev] Committing empty revision marker` to `stderr`.
       - Construct marker payload: `domain.RevisionMeta{UUID: parentUUID, Marker: "true"}` serialized as compact JSON `{"uuid":"<parentUUID>","marker":"true"}`.
       - Call `ops.CommitAllowEmpty(ctx, repoRoot, markerJSON)` (`git commit --allow-empty -m <markerJSON>`).
    7. **Publish new branch to `origin`:**
-      - Log `fmt.Sprintf("[drev] Pushing new revision branch '%s'", opts.Branch)` to `stderr`.
+      - Log `fmt.Sprintf("[git-drev] Pushing new revision branch '%s'", opts.Branch)` to `stderr`.
       - Determine whether `refs/heads/<branch>` already has `origin/<branch>` configured as its upstream via `insp.HasUpstream(ctx, repoRoot, opts.Branch)` (`git for-each-ref --format=%(upstream:short) refs/heads/<branch>`).
       - Call `ops.PushForceWithLease(ctx, repoRoot, opts.Branch, !hasUpstream)` (`git push [--set-upstream] --force-with-lease origin refs/heads/<branch>`).
       - If the push fails (including stale ref rejection if another client concurrently created the branch on `origin`, or transport/auth failure), return `ErrGitExec` (exit code `5`).
    8. **Completion:**
-      - Log elapsed time `[drev] Took X min Y sec` via `logger.Info(timer.String())` to `stderr` (unless `--quiet` is set).
+      - Log elapsed time `[git-drev] Took X min Y sec` via `logger.Info(timer.String())` to `stderr` (unless `--quiet` is set).
       - Return `&CreateResult{Branch: opts.Branch, Action: CreateActionCreatedNew, MarkerUUID: parentUUID}, nil`.
 
 3. **Interruption, cleanup & rollback:**
@@ -141,7 +141,7 @@ func RunCreate(
      - Before step 2.5 (`git checkout -b <branch>`), `RunCreate` records the caller's starting ref (`origBranch, detached, _ := gitRunner.CurrentBranch(ctx)` and `origHeadHash` via `git rev-parse --verify -q HEAD`).
      - If step 2.6 (`git commit --allow-empty`) or step 2.7 (`git push`) fails or is interrupted via `ctx.Done()` after `refs/heads/<branch>` has been created locally:
        - A deferred rollback handler (executing with a short detached cleanup context `context.WithTimeout(context.Background(), 5*time.Second)`) restores the original `HEAD` (`git checkout <origBranch>` or `git -c advice.detachedHead=false checkout <origHeadHash>`) and deletes the unpushed local branch (`git branch -D <branch>`).
-       - Why: In the legacy `create.sh`, if `git commit` (e.g., missing `user.name`/`user.email`) or `git push` (e.g., network failure) failed after `git checkout -b <branch>`, the repository was left stranded on a local-only branch. A subsequent re-run of `git drev create <branch>` saw the local branch in `refs/heads/<branch>`, entered the "Branch found (local)" path, skipped the `git push`, and silently exited `0` without ever publishing the branch to `origin`! Rolling back the unpushed local branch preserves idempotency on retry.
+       - Why: In the legacy `create.sh`, if `git commit` (e.g., missing `user.name`/`user.email`) or `git push` (e.g., network failure) failed after `git checkout -b <branch>`, the repository was left stranded on a local-only branch. A subsequent re-run of `git-drev create <branch>` saw the local branch in `refs/heads/<branch>`, entered the "Branch found (local)" path, skipped the `git push`, and silently exited `0` without ever publishing the branch to `origin`! Rolling back the unpushed local branch preserves idempotency on retry.
 
 ## 5. Side Effects, Git Plumbing & I/O Contract
 
@@ -168,7 +168,7 @@ func RunCreate(
   - `.git/config`: Updated only if `+refs/heads/*:refs/remotes/origin/*` was missing from `remote.origin.fetch`.
   - `.git/HEAD` & `.git/refs/heads/<branch>`: Pointed to `<branch>` (either existing or newly created with the marker commit `{"uuid":"<parent-or-zero-uuid>","marker":"true"}`).
   - `.git/refs/remotes/origin/<branch>`: Created/updated upon `git fetch --all --prune` or `git push --set-upstream origin <branch> --force-with-lease`.
-  - Working tree & `workDir`: Untouched by `create` (unless switching to an existing branch that has tracked metadata file differences outside the gitignored `workDir`). Remote SSH/rsync storage is never contacted or mutated by `create`.
+  - Working tree & `workdir`: Untouched by `create` (unless switching to an existing branch that has tracked metadata file differences outside the gitignored `workdir`). Remote SSH/rsync storage is never contacted or mutated by `create`.
 
 - **Standard output (`stdout`):**
   - Strictly empty on normal execution (`create` produces no machine-parseable `stdout` payload).
@@ -177,37 +177,37 @@ func RunCreate(
 - **Standard error (`stderr`):**
   - All operational progress logs and elapsed time summaries are emitted to `stderr` (suppressed when `--quiet` / `-q` is set):
     ```text
-    [drev] Checking for existing branch (local)
-    [drev] No branch '<branch>' found (local)
-    [drev] Checking for existing branch (remote)
-    [drev] No branch '<branch>' found (remote)
-    [drev] Creating new revision branch '<branch>'
-    [drev] Committing empty revision marker
-    [drev] Pushing new revision branch '<branch>'
-    [drev] Took 0 min 1 sec
+    [git-drev] Checking for existing branch (local)
+    [git-drev] No branch '<branch>' found (local)
+    [git-drev] Checking for existing branch (remote)
+    [git-drev] No branch '<branch>' found (remote)
+    [git-drev] Creating new revision branch '<branch>'
+    [git-drev] Committing empty revision marker
+    [git-drev] Pushing new revision branch '<branch>'
+    [git-drev] Took 0 min 1 sec
     ```
   - Errors are emitted to `stderr` even when `--quiet` is active:
     ```text
-    [drev] ! <error message>
+    [git-drev] Error: <error message>
     ```
 
 ## 6. Error Matrix & Exit Code Mapping
 
 | Failure Condition | Go Error Sentinel / Type | Exit Code | Expected `stderr` Message Pattern |
 | :--- | :--- | :--- | :--- |
-| Unknown CLI flag or mutually exclusive `-v` and `-q` | `errcode.ErrUsage` | `2` | `[drev] ! Unsupported option '<flag>'` or `[drev] ! Flags --verbose and --quiet are mutually exclusive` |
-| Missing `<branch>` positional argument | `errcode.ErrUsage` | `2` | `[drev] ! No branch name specified` |
-| Extra positional arguments (`len(args) > 1`) | `errcode.ErrUsage` | `2` | `[drev] ! Unexpected argument '<arg>'` |
-| Invalid Git branch name (`git check-ref-format --branch` fails) | `errcode.ErrUsage` | `2` | `[drev] ! Invalid branch name '<branch>'` |
-| Invoked outside a Git worktree or inside a bare repository | `errcode.ErrNotRepository` | `3` | `[drev] ! Not a git repository (or any of the parent directories)` |
-| Missing or malformed `.git-drev.yaml` configuration | `errcode.ErrConfig` | `3` | `[drev] ! No configuration file found` or `[drev] ! <validation error>` |
-| `git ls-remote origin` fails (missing remote `origin`, network/auth failure) | `errcode.ErrGitExec` | `5` | `[drev] ! Remote listing failed (git ls-remote --exit-code --heads origin refs/heads/<branch>)` |
-| `git fetch --all --prune` fails when switching to existing local/remote branch | `errcode.ErrGitExec` | `5` | `[drev] ! Fetch failed (git fetch --all --prune)` |
-| `git checkout <branch>` or `git switch <branch>` fails (e.g., dirty tracked file conflict) | `errcode.ErrGitExec` | `5` | `[drev] ! Checkout failed (git checkout <branch>)` |
-| `git checkout -b <branch>` fails | `errcode.ErrGitExec` | `5` | `[drev] ! Checkout failed (git checkout -b <branch>)` |
-| `git commit --allow-empty` fails (e.g., missing Git `user.name`/`user.email` identity, index lock) | `errcode.ErrGitExec` | `5` | `[drev] ! Commit failed (git commit --allow-empty)` |
-| `git push` fails (auth error, remote hook rejection, or stale ref race) | `errcode.ErrGitExec` | `5` | `[drev] ! Push failed (git push --set-upstream origin <branch> --force-with-lease)` |
-| Context canceled via `SIGINT` / `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[drev] ! Operation interrupted` |
+| Unknown CLI flag or mutually exclusive `-v` and `-q` | `errcode.ErrUsage` | `2` | `[git-drev] Error: Unsupported option '<flag>'` or `[git-drev] Error: Flags --verbose and --quiet are mutually exclusive` |
+| Missing `<branch>` positional argument | `errcode.ErrUsage` | `2` | `[git-drev] Error: No branch name specified` |
+| Extra positional arguments (`len(args) > 1`) | `errcode.ErrUsage` | `2` | `[git-drev] Error: Unexpected argument '<arg>'` |
+| Invalid Git branch name (`git check-ref-format --branch` fails) | `errcode.ErrUsage` | `2` | `[git-drev] Error: Invalid branch name '<branch>'` |
+| Invoked outside a Git worktree or inside a bare repository | `errcode.ErrNotRepository` | `3` | `[git-drev] Error: Not a git repository (or any of the parent directories)` |
+| Missing or malformed `.git-drev.yaml` configuration | `errcode.ErrConfig` | `3` | `[git-drev] Error: No configuration file found` or `[git-drev] Error: <validation error>` |
+| `git ls-remote origin` fails (missing remote `origin`, network/auth failure) | `errcode.ErrGitExec` | `5` | `[git-drev] Error: Remote listing failed (git ls-remote --exit-code --heads origin refs/heads/<branch>)` |
+| `git fetch --all --prune` fails when switching to existing local/remote branch | `errcode.ErrGitExec` | `5` | `[git-drev] Error: Fetch failed (git fetch --all --prune)` |
+| `git checkout <branch>` or `git switch <branch>` fails (e.g., dirty tracked file conflict) | `errcode.ErrGitExec` | `5` | `[git-drev] Error: Checkout failed (git checkout <branch>)` |
+| `git checkout -b <branch>` fails | `errcode.ErrGitExec` | `5` | `[git-drev] Error: Checkout failed (git checkout -b <branch>)` |
+| `git commit --allow-empty` fails (e.g., missing Git `user.name`/`user.email` identity, index lock) | `errcode.ErrGitExec` | `5` | `[git-drev] Error: Commit failed (git commit --allow-empty)` |
+| `git push` fails (auth error, remote hook rejection, or stale ref race) | `errcode.ErrGitExec` | `5` | `[git-drev] Error: Push failed (git push --set-upstream origin <branch> --force-with-lease)` |
+| Context canceled via `SIGINT` / `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[git-drev] Error: Operation interrupted` |
 
 ## 7. Legacy Modernization & Edge Cases
 - **Fixed legacy quirks:**
@@ -230,11 +230,11 @@ func RunCreate(
      - *Resolution:* If committing the marker or pushing to `origin` fails after `git checkout -b`, `RunCreate` rolls back to the original `HEAD` and deletes the unpushed local branch (`git branch -D <branch>`).
   6. **Operational Logs on `stdout` & Typo Fix (`create.sh:104`):**
      - *Legacy flaw:* `drs::common::log` wrote operational messages to `stdout`, and line 104 logged `"Commiting empty revision marker"` (misspelled).
-     - *Resolution:* All operational logs are emitted to `stderr` with `[drev]` prefix, and spelling is standardized to `"Committing empty revision marker"` (while keeping the structure human-friendly).
+     - *Resolution:* All operational logs are emitted to `stderr` with `[git-drev]` prefix, and spelling is standardized to `"Committing empty revision marker"` (while keeping the structure human-friendly).
 
 - **Boundary conditions:**
-  - **Subdirectory invocation (`GIT_PREFIX`):** Running `git drev create <branch>` from `<repo-root>/data/subdir` locates `<repo-root>/.git-drev.yaml` via `RepoRoot` resolution rather than failing with `"No configuration file found"`.
-  - **Detached `HEAD` state:** Running `git drev create hotfix/v1` while in detached `HEAD` (e.g., after `git drev select <uuid>`) succeeds: `git checkout -b hotfix/v1` branches directly from the detached commit and copies its `uuid` into the new branch's marker commit `{"uuid":"<uuid>","marker":"true"}`.
+  - **Subdirectory invocation (`GIT_PREFIX`):** Running `git-drev create <branch>` from `<repo-root>/data/subdir` locates `<repo-root>/.git-drev.yaml` via `RepoRoot` resolution rather than failing with `"No configuration file found"`.
+  - **Detached `HEAD` state:** Running `git-drev create hotfix/v1` while in detached `HEAD` (e.g., after `git-drev select <uuid>`) succeeds: `git checkout -b hotfix/v1` branches directly from the detached commit and copies its `uuid` into the new branch's marker commit `{"uuid":"<uuid>","marker":"true"}`.
   - **Initial commit / non-revision `HEAD`:** When `HEAD` is the initial repository setup commit (e.g., `"Add initial drev configuration"`) or an unborn branch with no commits, `HeadCommitMeta` fails JSON/UUID validation and safely falls back to `{"uuid":"00000000-0000-0000-0000-000000000000","marker":"true"}`.
   - **Branch off another empty marker branch:** When creating branch `B` while `HEAD` is on branch `A`'s marker commit (`{"uuid":"<uuid-or-zero>","marker":"true"}`), `HeadCommitMeta` extracts `meta.UUID` (preserving either the ancestor's real UUID or `domain.ZeroUUID`) and writes `{"uuid":"<uuid-or-zero>","marker":"true"}` on branch `B`.
   - **Hierarchical branch names (`feature/foo`):** Creating `feature` when `refs/heads/feature/foo` exists (no `refs/heads/feature`) accurately detects that `refs/heads/feature` does not exist locally (fixing the legacy `git for-each-ref` prefix bug). Conversely, attempting to create `feature/sub` when `refs/heads/feature` already exists as a file ref fails cleanly at `git checkout -b` with `ErrGitExec` (exit code `5`).
@@ -244,8 +244,8 @@ func RunCreate(
 
 | Scenario ID | Given (Repo & Filesystem State) | When (CLI Invocation) | Then (Expected Exit Code, `stdout`/`stderr`, & Repo/FS State) |
 | :--- | :--- | :--- | :--- |
-| `TC-01` | Valid `.git-drev.yaml`; repo on `main` whose `HEAD` commit subject is `"Add initial drev configuration"` (non-JSON); `origin` bare repo attached; branch `release-1.0` does not exist locally or on `origin`. | `git drev create release-1.0` | **Exit Code:** `0`<br>**`stdout`:** Empty.<br>**`stderr`:** Logs local check (not found), remote check (not found), creating branch `release-1.0`, committing empty revision marker, pushing branch `release-1.0`, and elapsed time.<br>**Repo/FS State:** Active branch is `release-1.0`; `HEAD` commit subject is `{"uuid":"00000000-0000-0000-0000-000000000000","marker":"true"}`; `origin/release-1.0` exists on `origin` and is set as upstream of `release-1.0`. |
-| `TC-02` | Valid `.git-drev.yaml`; repo on `main` (or detached `HEAD`) at a revision commit with subject `{"uuid":"c1ca82b1-7f34-4f4c-9a76-05e3297b2a23","seq":"1700000000"}`; branch `hotfix/login` does not exist locally or on `origin`. | `git drev create hotfix/login` | **Exit Code:** `0`<br>**`stdout`:** Empty.<br>**`stderr`:** Logs creation, marker commit, and push of `hotfix/login`.<br>**Repo/FS State:** Active branch is `hotfix/login`; `HEAD` is a new empty commit with subject `{"uuid":"c1ca82b1-7f34-4f4c-9a76-05e3297b2a23","marker":"true"}` whose parent is the `main` revision commit; `refs/heads/hotfix/login` is pushed to `origin`. |
-| `TC-03` | Valid `.git-drev.yaml`; repo currently on `main`; branch `existing-local` already exists in `refs/heads/existing-local`. | `git drev create existing-local` | **Exit Code:** `0`<br>**`stdout`:** Empty.<br>**`stderr`:** Contains `[drev] Branch 'existing-local' found (local)`.<br>**Repo/FS State:** `git fetch --all --prune` was executed; active branch is switched to `existing-local`; no new marker commit is created on `existing-local`. |
-| `TC-04` | Valid `.git-drev.yaml`; repo currently on `main`; branch `remote-only` does not exist in `refs/heads/remote-only` but exists on `origin` (`refs/heads/remote-only`). | `git drev create remote-only` | **Exit Code:** `0`<br>**`stdout`:** Empty.<br>**`stderr`:** Contains `[drev] No branch 'remote-only' found (local)` and `[drev] Branch 'remote-only' found (remote)`.<br>**Repo/FS State:** `git fetch --all --prune` was executed; local branch `remote-only` is created tracking `origin/remote-only` at the remote's existing commit without creating a new marker commit. |
-| `TC-05` | Valid `.git-drev.yaml`; repo on `main`; branch `refs/heads/feat/sub` exists locally, but `refs/heads/feat` does not exist; `origin` is unreachable or rejects pushes (e.g., invalid remote URL or pre-receive hook rejection). | `git drev create new-branch` (and separately `git drev create` with no args) | **Case A (`git drev create` with no args):** Exit code `2` (`ErrUsage`), `stderr` contains `[drev] ! No branch name specified`.<br>**Case B (`git drev create new-branch` when push fails):** Exit code `5` (`ErrGitExec`), `stderr` contains `[drev] ! Push failed`; rollback restores active branch to `main` and deletes the unpushed local `refs/heads/new-branch` so a subsequent retry does not falsely take the local-branch shortcut. |
+| `TC-01` | Valid `.git-drev.yaml`; repo on `main` whose `HEAD` commit subject is `"Add initial drev configuration"` (non-JSON); `origin` bare repo attached; branch `release-1.0` does not exist locally or on `origin`. | `git-drev create release-1.0` | **Exit Code:** `0`<br>**`stdout`:** Empty.<br>**`stderr`:** Logs local check (not found), remote check (not found), creating branch `release-1.0`, committing empty revision marker, pushing branch `release-1.0`, and elapsed time.<br>**Repo/FS State:** Active branch is `release-1.0`; `HEAD` commit subject is `{"uuid":"00000000-0000-0000-0000-000000000000","marker":"true"}`; `origin/release-1.0` exists on `origin` and is set as upstream of `release-1.0`. |
+| `TC-02` | Valid `.git-drev.yaml`; repo on `main` (or detached `HEAD`) at a revision commit with subject `{"uuid":"c1ca82b1-7f34-4f4c-9a76-05e3297b2a23","seq":"1700000000"}`; branch `hotfix/login` does not exist locally or on `origin`. | `git-drev create hotfix/login` | **Exit Code:** `0`<br>**`stdout`:** Empty.<br>**`stderr`:** Logs creation, marker commit, and push of `hotfix/login`.<br>**Repo/FS State:** Active branch is `hotfix/login`; `HEAD` is a new empty commit with subject `{"uuid":"c1ca82b1-7f34-4f4c-9a76-05e3297b2a23","marker":"true"}` whose parent is the `main` revision commit; `refs/heads/hotfix/login` is pushed to `origin`. |
+| `TC-03` | Valid `.git-drev.yaml`; repo currently on `main`; branch `existing-local` already exists in `refs/heads/existing-local`. | `git-drev create existing-local` | **Exit Code:** `0`<br>**`stdout`:** Empty.<br>**`stderr`:** Contains `[git-drev] Branch 'existing-local' found (local)`.<br>**Repo/FS State:** `git fetch --all --prune` was executed; active branch is switched to `existing-local`; no new marker commit is created on `existing-local`. |
+| `TC-04` | Valid `.git-drev.yaml`; repo currently on `main`; branch `remote-only` does not exist in `refs/heads/remote-only` but exists on `origin` (`refs/heads/remote-only`). | `git-drev create remote-only` | **Exit Code:** `0`<br>**`stdout`:** Empty.<br>**`stderr`:** Contains `[git-drev] No branch 'remote-only' found (local)` and `[git-drev] Branch 'remote-only' found (remote)`.<br>**Repo/FS State:** `git fetch --all --prune` was executed; local branch `remote-only` is created tracking `origin/remote-only` at the remote's existing commit without creating a new marker commit. |
+| `TC-05` | Valid `.git-drev.yaml`; repo on `main`; branch `refs/heads/feat/sub` exists locally, but `refs/heads/feat` does not exist; `origin` is unreachable or rejects pushes (e.g., invalid remote URL or pre-receive hook rejection). | `git-drev create new-branch` (and separately `git-drev create` with no args) | **Case A (`git-drev create` with no args):** Exit code `2` (`ErrUsage`), `stderr` contains `[git-drev] Error: No branch name specified`.<br>**Case B (`git-drev create new-branch` when push fails):** Exit code `5` (`ErrGitExec`), `stderr` contains `[git-drev] Error: Push failed`; rollback restores active branch to `main` and deletes the unpushed local `refs/heads/new-branch` so a subsequent retry does not falsely take the local-branch shortcut. |

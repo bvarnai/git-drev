@@ -30,12 +30,12 @@
   1. **Non-bare Git working tree:** Must be invoked inside a valid Git working tree (`git rev-parse --is-inside-work-tree` == `true`). Bare repositories or invocations inside `.git/` fail with `ErrNotRepository` (exit code `3`).
   2. **Configuration validity:** The 3-tier YAML configuration (`config.Load(RepoRoot)`) must parse as valid YAML and satisfy all schema constraints defined in `docs/spec/global.md` Section 5 (`remote.host`, `remote.path`, `workdir`). Missing or invalid configuration fails with `ErrConfig` (exit code `3`).
   3. **Branch attachment check (conditional on `--latest`):**
-     - When `--latest` (`-l`) is `false`: Detached `HEAD` state is **permitted** so users can retrieve revisions after running `git drev select <tag>` or `git drev select <uuid>`.
-     - When `--latest` (`-l`) is `true`: `HEAD` MUST be a symbolic reference to a local branch (`git symbolic-ref --quiet --short HEAD`). If `HEAD` is detached, execution aborts before any network call with `ErrDetachedHead` (exit code `4`) and emits the remediation hint: `Use "git drev select <branch>" to select a branch first.`
-  4. **Valid non-marker revision commit at `HEAD`:**
-     - After any optional `--latest` branch update, `HEAD` must resolve to a commit whose subject (`%s`) unmarshals into a valid `domain.RevisionMeta` JSON object.
-     - If `meta.IsMarker()` is `true` (`"marker":"true"` or `meta.UUID == domain.ZeroUUID`), execution fails with `ErrGitState` (exit code `4`) because no revision payload has been uploaded to the branch yet.
-     - If `meta.UUID` is missing or does not match the canonical RFC 4122 UUID v4 hex pattern (`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`), execution fails with `ErrGitState` (exit code `4`).
+      - When `--latest` (`-l`) is `false`: Detached `HEAD` state is **permitted** so users can retrieve revisions after running `git-drev select <tag>` or `git-drev select <uuid>`.
+      - When `--latest` (`-l`) is `true`: `HEAD` MUST be a symbolic reference to a local branch (`git symbolic-ref --quiet --short HEAD`). If `HEAD` is detached, execution aborts before any network call with `ErrDetachedHead` (exit code `4`) and emits the remediation hint: `Use "git-drev select <branch>" to select a branch first.`
+   4. **Valid non-marker revision commit at `HEAD`:**
+      - After any optional `--latest` branch update, `HEAD` must resolve to a commit whose subject (`%s`) unmarshals into a valid `domain.RevisionMeta` JSON object.
+      - If `meta.IsMarker()` is `true` (`"marker":"true"` or `meta.UUID == domain.ZeroUUID`), execution fails with `ErrGitState` (exit code `4`) because no revision payload has been uploaded to the branch yet.
+      - If `meta.UUID` is missing or does not match the canonical RFC 4122 UUID v4 hex pattern (`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`), execution fails with `ErrGitState` (exit code `4`).
 
 ## 3. Subcommand Domain Models & Signatures
 
@@ -105,7 +105,7 @@ type GetDeps struct {
 // repoRoot or gitDir.
 func ResolveGetTargetDir(repoRoot, gitDir, callerDir, workDir, targetDirArg string) (string, error)
 
-// RunGet executes the domain logic of `git drev get` independently of CLI flag parsing.
+// RunGet executes the domain logic of `git-drev get` independently of CLI flag parsing.
 func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, error)
 ```
 
@@ -127,7 +127,7 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
      - Call `deps.Ops.EnsureRemoteFetchConfig(ctx, repoRoot)` to ensure `remote.origin.fetch` includes `+refs/heads/*:refs/remotes/origin/*`.
    - **Step 2.2: Optional branch update (`opts.Latest == true`):**
      - Call `deps.Insp.CurrentBranch(ctx, repoRoot)` (`git symbolic-ref --quiet --short HEAD`).
-     - If `detached == true`, abort with `ErrDetachedHead` (exit code `4`) and hint `Use "git drev select <branch>" to select a branch first.`
+     - If `detached == true`, abort with `ErrDetachedHead` (exit code `4`) and hint `Use "git-drev select <branch>" to select a branch first.`
      - Call `deps.Ops.FetchAll(ctx, repoRoot, opts.Quiet && !opts.Verbose)` (`git fetch --all --prune`). On failure, return `ErrGitExec` (exit code `5`).
      - Verify `origin/<branch>` exists locally (`refs/remotes/origin/<branch>`). If missing, return `ErrGitState` (exit code `4`).
      - Call `deps.Ops.ResetHard(ctx, repoRoot, "refs/remotes/origin/"+branch)` (`git reset --hard refs/remotes/origin/<branch> --`). On failure, return `ErrGitExec` (exit code `5`).
@@ -136,9 +136,9 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
      - If JSON unmarshaling fails or `meta.UUID` is empty: return `ErrGitState` (exit code `4`) with message `Unable to read directory metadata (missing uuid)`.
      - Check `meta.IsMarker()` (`meta.Marker == "true"`) BEFORE or alongside UUID validation: if `meta.IsMarker()` is `true` (or `meta.UUID == domain.ZeroUUID`), return `ErrGitState` (exit code `4`) with message `No directory revision available yet on current branch`.
      - Validate `meta.UUID` against the RFC 4122 UUID v4 regex (`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`) and normalize to lowercase (`uuid = strings.ToLower(meta.UUID)`). If invalid, return `ErrGitState` (exit code `4`).
-     - Log to `stderr`: `[drev] Directory revision uuid is '<uuid>'`.
+     - Log to `stderr`: `[git-drev] Directory revision uuid is '<uuid>'`.
    - **Step 2.4: Verify remote revision existence via SSH BEFORE mutating local directories:**
-     - Log to `stderr`: `[drev] Checking revision on remote host`.
+     - Log to `stderr`: `[git-drev] Checking revision on remote host`.
      - Construct `remoteRevPath := path.Join(deps.Config.Remote.Path, uuid)`.
      - Call `deps.Remote.CheckDirExists(ctx, deps.Config.Remote.Host, remoteRevPath)`.
      - If an SSH transport error occurs (exit status `255` or connection failure), return `ErrTransport` (exit code `7`).
@@ -150,7 +150,7 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
      - If it does not exist (`errors.Is(err, fs.ErrNotExist)`):
        - Create it via `deps.FS.MkdirAll(opts.TargetDir, 0o755)`. If creation fails, return `ErrRuntime` (exit code `1`) with message `Failed to create target directory '<path>'`.
    - **Step 2.6: Synchronize payload via `rsync`:**
-     - Log to `stderr`: `[drev] Getting directory revision from remote host (this might take a while)`.
+     - Log to `stderr`: `[git-drev] Getting directory revision from remote host (this might take a while)`.
      - Invoke `deps.Remote.RsyncGet(ctx, transport.SyncRequest{...})` with:
        - `Host`: `deps.Config.Remote.Host`
        - `RemotePath`: `remoteRevPath + "/"` (trailing slash mandatory so `rsync` copies directory contents into `LocalPath`)
@@ -161,7 +161,7 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
        - `UserOptions`: `deps.Config.Remote.Rsync.Get`
      - If `RsyncGet` fails, return `ErrTransport` (exit code `7`) with message `Unable to get directory revision`.
    - **Step 2.7: Completion logging:**
-     - Emit elapsed duration to `stderr` via `deps.Logger.Info(timer.String())` (`[drev] Took X min Y sec`, suppressed under `--quiet`).
+     - Emit elapsed duration to `stderr` via `deps.Logger.Info(timer.String())` (`[git-drev] Took X min Y sec`, suppressed under `--quiet`).
      - Return `GetResult{UUID: uuid, TargetDir: opts.TargetDir, UpdatedBranch: updatedBranch}, nil`.
 
 3. **Interruption, cleanup & rollback:**
@@ -169,7 +169,7 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
    - On context cancellation:
      - Active `ssh` or `rsync` child processes receive `SIGTERM` followed by `SIGKILL` after the 3-second grace period (`cmd.WaitDelay`).
      - `git-drev` aborts immediately and returns `ErrInterrupted` (exit code `130`).
-     - Note on partial `rsync` transfers: Because `rsync` updates `<target_directory>` in place (using `--delete-during` and temporary dot-files per file in transfer), `rsync` automatically unlinks its own in-flight temporary file on `SIGTERM`, leaving already-transferred files intact as a valid baseline so a subsequent `git drev get` resumes incrementally without re-downloading completed files.
+     - Note on partial `rsync` transfers: Because `rsync` updates `<target_directory>` in place (using `--delete-during` and temporary dot-files per file in transfer), `rsync` automatically unlinks its own in-flight temporary file on `SIGTERM`, leaving already-transferred files intact as a valid baseline so a subsequent `git-drev get` resumes incrementally without re-downloading completed files.
 
 ## 5. Side Effects, Git Plumbing & I/O Contract
 
@@ -211,39 +211,39 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
     - Synchronized in-place by `rsync -a --delete-during`: extraneous local files inside `<target_directory>` not present in `<remote.path>/<uuid>/` are deleted, and remote files, symlinks, permissions, and modification times are replicated locally.
 
 - **Standard output (`stdout`):**
-  - `git drev get` produces **no output on `stdout`** during normal, verbose, or quiet execution (all operational logs, `rsync` progress/stats, and timer summaries are routed to `stderr` per `docs/spec/global.md` Section 1).
-  - Only `git drev get -h` / `git-drev get --help` writes usage documentation to `stdout`.
+  - `git-drev get` produces **no output on `stdout`** during normal, verbose, or quiet execution (all operational logs, `rsync` progress/stats, and timer summaries are routed to `stderr` per `docs/spec/global.md` Section 1).
+  - Only `git-drev get -h` / `git-drev get --help` writes usage documentation to `stdout`.
 
 - **Standard error (`stderr`):**
   - Normal mode (`!Quiet`):
     ```text
-    [drev] Directory revision uuid is '<uuid>'
-    [drev] Checking revision on remote host
-    [drev] Getting directory revision from remote host (this might take a while)
+    [git-drev] Directory revision uuid is '<uuid>'
+    [git-drev] Checking revision on remote host
+    [git-drev] Getting directory revision from remote host (this might take a while)
     <rsync progress / itemize-changes / stats output>
-    [drev] Took <M> min <S> sec
+    [git-drev] Took <M> min <S> sec
     ```
   - Quiet mode (`--quiet` / `-q`):
-    - No `[drev]` informational lines or `rsync` progress are emitted; `stderr` remains completely silent unless a warning or error occurs.
+    - No `[git-drev]` informational lines or `rsync` progress are emitted; `stderr` remains completely silent unless a warning or error occurs.
 
 ## 6. Error Matrix & Exit Code Mapping
 
 | Failure Condition | Go Error Sentinel / Type | Exit Code | Expected `stderr` Message Pattern |
 | :--- | :--- | :--- | :--- |
-| Unknown flag, extra positional args (`> 1`), or mutually exclusive `-v` and `-q` | `errcode.ErrUsage` | `2` | `[drev] ! <flag/argument validation error>` |
-| Target directory resolves to `<RepoRoot>` or inside `<GitDir>` | `errcode.ErrUsage` | `2` | `[drev] ! Invalid target directory '<path>': cannot overwrite repository root or .git directory` |
-| Invoked outside a Git working tree or inside a bare repository | `errcode.ErrNotRepository` | `3` | `[drev] ! Not inside a Git working tree` |
-| Missing or malformed `.git-drev.yaml`, or missing `remote.host` / `remote.path` | `errcode.ErrConfig` | `3` | `[drev] ! Configuration error: <details>` |
-| `--latest` passed while `HEAD` is detached | `errcode.ErrDetachedHead` | `4` | `[drev] ! Detached HEAD state detected, aborting`<br>`[drev] Hint: Use "git drev select <branch>" to select a branch first.` |
-| `--latest` passed when `origin/<branch>` does not exist on remote | `errcode.ErrGitState` | `4` | `[drev] ! Remote branch 'origin/<branch>' does not exist` |
-| `HEAD` commit is an empty branch creation marker (`"marker":"true"`) | `errcode.ErrGitState` | `4` | `[drev] ! No directory revision available yet on current branch` |
-| `HEAD` commit subject is not valid JSON or lacks a valid RFC 4122 `uuid` | `errcode.ErrGitState` | `4` | `[drev] ! Unable to read directory metadata (missing or invalid uuid)` |
-| `git fetch --all --prune` or `git reset --hard origin/<branch>` fails | `errcode.ErrGitExec` | `5` | `[drev] ! Fetch failed: <git stderr>` or `[drev] ! Reset failed: <git stderr>` |
-| Remote directory `<remote.path>/<uuid>` does not exist on remote server | `errcode.ErrRemoteNotFound` | `6` | `[drev] ! Unable to find revision '<uuid>' on remote host`<br>`[drev] Hint: Revision might be gone already (that's normal depending on your retention policy)` |
-| Target path exists locally as a regular file instead of a directory | `errcode.ErrRuntime` | `1` | `[drev] ! Target path '<path>' exists and is not a directory` |
-| `os.MkdirAll(<target_directory>, 0755)` fails (e.g., `EACCES` / `EROFS`) | `errcode.ErrRuntime` | `1` | `[drev] ! Failed to create target directory '<path>': <os error>` |
-| SSH connection failure or `rsync` subprocess non-zero exit | `errcode.ErrTransport` | `7` | `[drev] ! Unable to get directory revision: <ssh/rsync error>` |
-| Execution canceled via `SIGINT` or `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[drev] ! Operation interrupted` |
+| Unknown flag, extra positional args (`> 1`), or mutually exclusive `-v` and `-q` | `errcode.ErrUsage` | `2` | `[git-drev] Error: <flag/argument validation error>` |
+| Target directory resolves to `<RepoRoot>` or inside `<GitDir>` | `errcode.ErrUsage` | `2` | `[git-drev] Error: Invalid target directory '<path>': cannot overwrite repository root or .git directory` |
+| Invoked outside a Git working tree or inside a bare repository | `errcode.ErrNotRepository` | `3` | `[git-drev] Error: Not inside a Git working tree` |
+| Missing or malformed `.git-drev.yaml`, or missing `remote.host` / `remote.path` | `errcode.ErrConfig` | `3` | `[git-drev] Error: Configuration error: <details>` |
+| `--latest` passed while `HEAD` is detached | `errcode.ErrDetachedHead` | `4` | `[git-drev] Error: Detached HEAD state detected, aborting`<br>`[git-drev] Hint: Use "git-drev select <branch>" to select a branch first.` |
+| `--latest` passed when `origin/<branch>` does not exist on remote | `errcode.ErrGitState` | `4` | `[git-drev] Error: Remote branch 'origin/<branch>' does not exist` |
+| `HEAD` commit is an empty branch creation marker (`"marker":"true"`) | `errcode.ErrGitState` | `4` | `[git-drev] Error: No directory revision available yet on current branch` |
+| `HEAD` commit subject is not valid JSON or lacks a valid RFC 4122 `uuid` | `errcode.ErrGitState` | `4` | `[git-drev] Error: Unable to read directory metadata (missing or invalid uuid)` |
+| `git fetch --all --prune` or `git reset --hard origin/<branch>` fails | `errcode.ErrGitExec` | `5` | `[git-drev] Error: Fetch failed: <git stderr>` or `[git-drev] Error: Reset failed: <git stderr>` |
+| Remote directory `<remote.path>/<uuid>` does not exist on remote server | `errcode.ErrRemoteNotFound` | `6` | `[git-drev] Error: Unable to find revision '<uuid>' on remote host`<br>`[git-drev] Hint: Revision might be gone already (that's normal depending on your retention policy)` |
+| Target path exists locally as a regular file instead of a directory | `errcode.ErrRuntime` | `1` | `[git-drev] Error: Target path '<path>' exists and is not a directory` |
+| `os.MkdirAll(<target_directory>, 0755)` fails (e.g., `EACCES` / `EROFS`) | `errcode.ErrRuntime` | `1` | `[git-drev] Error: Failed to create target directory '<path>': <os error>` |
+| SSH connection failure or `rsync` subprocess non-zero exit | `errcode.ErrTransport` | `7` | `[git-drev] Error: Unable to get directory revision: <ssh/rsync error>` |
+| Execution canceled via `SIGINT` or `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[git-drev] Error: Operation interrupted` |
 
 ## 7. Legacy Modernization & Edge Cases
 
@@ -256,7 +256,7 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
      - *Modernized fix:* `git-drev get` probes remote revision existence first (Step 2.4) and only creates `<target_directory>` (Step 2.5) after confirming the remote revision exists.
   3. **Empty branch marker error routed to `stdout` (`legacy/get.sh:96-99`):**
      - *Legacy bug:* When `marker == "true"`, `get.sh` called `drs::common::log "No directory revision available yet on current branch"` (which wrote to `stdout`) and then exited `1`.
-     - *Modernized fix:* Emits a structured error `[drev] ! No directory revision available yet on current branch` to `stderr` and exits with code `4` (`ErrGitState`).
+     - *Modernized fix:* Emits a structured error `[git-drev] Error: No directory revision available yet on current branch` to `stderr` and exits with code `4` (`ErrGitState`).
   4. **Shell word-splitting on `<target_directory>` and `$rsyncOptions` (`legacy/get.sh:58,64,156`):**
      - *Legacy bug:* `eval set -- "${params}"` split `<target_directory>` arguments containing spaces and silently discarded any words after `$1`; unquoted `rsync $rsyncOptions` expanded shell globs against the local working directory.
      - *Modernized fix:* Positional arguments are validated for exact cardinality (`0..1`) without shell evaluation, and `rsync` arguments are passed directly as a `[]string` slice to `exec.CommandContext`.
@@ -268,11 +268,11 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
      - *Modernized fix:* Both `term.Logger` and the `rsync` subprocess `cmd.Stdout` are bound to `stderr` so `stdout` remains clean.
 
 - **Boundary conditions:**
-  - **Subdirectory invocation (`GIT_PREFIX`):** If a user invokes `git drev get ./my-output` from `<repo-root>/sub/dir`, `<target_directory>` resolves to `<repo-root>/sub/dir/my-output`, whereas omitting `<target_directory>` always resolves `workdir` to `<repo-root>/<workdir>`.
+  - **Subdirectory invocation (`GIT_PREFIX`):** If a user invokes `git-drev get ./my-output` from `<repo-root>/sub/dir`, `<target_directory>` resolves to `<repo-root>/sub/dir/my-output`, whereas omitting `<target_directory>` always resolves `workdir` to `<repo-root>/<workdir>`.
   - **Symlinks:**
     - If `<target_directory>` itself is a symlink pointing to an existing directory, `os.Stat` follows the symlink (`info.IsDir() == true`) and `rsync` synchronizes into the linked directory (trailing slash `<target_directory>/` ensures `rsync` traverses the symlink rather than replacing the symlink itself).
     - Symlinks *inside* the remote revision payload are preserved verbatim as symlinks by `rsync -a` (`-l` / `--links`).
-  - **Empty remote revision directory:** If `<remote.path>/<uuid>/` exists on the remote server but contains zero files, `git drev get` succeeds (`exit 0`) and empties `<target_directory>` via `rsync --delete-during`.
+  - **Empty remote revision directory:** If `<remote.path>/<uuid>/` exists on the remote server but contains zero files, `git-drev get` succeeds (`exit 0`) and empties `<target_directory>` via `rsync --delete-during`.
   - **Paths with spaces, Unicode, or special characters:** Handled natively via Go `[]string` argument passing and `sh -c 'test -d "$1"' --` remote parameter binding; `--` is passed to `rsync` so a relative `<target_directory>` starting with `-` is not interpreted as an `rsync` flag.
   - **Submodule boundaries:** `git rev-parse --show-toplevel` resolves the innermost Git working tree containing the caller's `PWD`.
 
@@ -280,9 +280,9 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
 
 | Scenario ID | Given (Repo & Filesystem State) | When (CLI Invocation) | Then (Expected Exit Code, `stdout`/`stderr`, & Repo/FS State) |
 | :--- | :--- | :--- | :--- |
-| `TC-01` | Valid repo with `.git-drev.yaml` (`workdir: data`), `HEAD` commit `{"uuid":"c1ca82b1-7f34-4f4c-9a76-05e3297b2a23","seq":"100"}`, remote directory `<path>/c1ca82b1-.../` containing `app.bin`, local `data/` contains stale `old.bin`. | `git drev get` | **Exit Code:** `0`<br>**`stdout`:** Empty<br>**`stderr`:** Contains `[drev] Directory revision uuid is 'c1ca82b1-7f34-4f4c-9a76-05e3297b2a23'`, `[drev] Checking revision on remote host`, `[drev] Getting directory revision from remote host`, `[drev] Took ...`<br>**FS State:** `data/app.bin` exists; `data/old.bin` is deleted by `--delete-during`. |
-| `TC-02` | Caller `PWD` is `<repo-root>/subdir`; user specifies a relative `<target_directory>` `./custom out` (containing a space) that does not yet exist. | `git drev get "./custom out"` | **Exit Code:** `0`<br>**`stdout`:** Empty<br>**`stderr`:** Standard progress logs.<br>**FS State:** `<repo-root>/subdir/custom out/app.bin` is created and populated; default `<repo-root>/data` is untouched. |
-| `TC-03` | Local branch `main` is 1 commit behind `origin/main` (which points to revision UUID `b2b282b1-7f34-4f4c-9a76-05e3297b2a23` present on remote). | `git drev get --latest --quiet` | **Exit Code:** `0`<br>**`stdout`:** Empty<br>**`stderr`:** Empty (`--quiet` suppresses informational logs and `rsync` progress).<br>**Repo & FS State:** Local `main` `HEAD` equals `origin/main`; `data/` matches revision `b2b282b1-...`. |
-| `TC-04` | Repository is in detached `HEAD` state (e.g., after `git drev select v1.0`). | `git drev get --latest` | **Exit Code:** `4` (`ErrDetachedHead`)<br>**`stdout`:** Empty<br>**`stderr`:** `[drev] ! Detached HEAD state detected, aborting` and `[drev] Hint: Use "git drev select <branch>" to select a branch first.`<br>**Repo & FS State:** `HEAD` and `data/` remain completely unchanged; no network calls made. |
-| `TC-05` | Current branch was just created via `git drev create feat` (`HEAD` commit subject is `{"uuid":"00000000-0000-0000-0000-000000000000","marker":"true"}`). | `git drev get` | **Exit Code:** `4` (`ErrGitState`)<br>**`stdout`:** Empty<br>**`stderr`:** `[drev] ! No directory revision available yet on current branch`<br>**FS State:** No SSH connection opened; `data/` not created or modified. |
-| `TC-06` | `HEAD` points to valid commit `{"uuid":"deadbeef-7f34-4f4c-9a76-05e3297b2a23","seq":"50"}`, but `<remote.path>/deadbeef-...` was purged by `git drev cleanup` on the remote server; local `out_dir` does not exist. | `git drev get out_dir` | **Exit Code:** `6` (`ErrRemoteNotFound`)<br>**`stdout`:** Empty<br>**`stderr`:** `[drev] ! Unable to find revision 'deadbeef-7f34-4f4c-9a76-05e3297b2a23' on remote host` and retention policy hint.<br>**FS State:** `out_dir` is **not** created on the local filesystem. |
+| `TC-01` | Valid repo with `.git-drev.yaml` (`workdir: data`), `HEAD` commit `{"uuid":"c1ca82b1-7f34-4f4c-9a76-05e3297b2a23","seq":"100"}`, remote directory `<path>/c1ca82b1-.../` containing `app.bin`, local `data/` contains stale `old.bin`. | `git-drev get` | **Exit Code:** `0`<br>**`stdout`:** Empty<br>**`stderr`:** Contains `[git-drev] Directory revision uuid is 'c1ca82b1-7f34-4f4c-9a76-05e3297b2a23'`, `[git-drev] Checking revision on remote host`, `[git-drev] Getting directory revision from remote host`, `[git-drev] Took ...`<br>**FS State:** `data/app.bin` exists; `data/old.bin` is deleted by `--delete-during`. |
+| `TC-02` | Caller `PWD` is `<repo-root>/subdir`; user specifies a relative `<target_directory>` `./custom out` (containing a space) that does not yet exist. | `git-drev get "./custom out"` | **Exit Code:** `0`<br>**`stdout`:** Empty<br>**`stderr`:** Standard progress logs.<br>**FS State:** `<repo-root>/subdir/custom out/app.bin` is created and populated; default `<repo-root>/data` is untouched. |
+| `TC-03` | Local branch `main` is 1 commit behind `origin/main` (which points to revision UUID `b2b282b1-7f34-4f4c-9a76-05e3297b2a23` present on remote). | `git-drev get --latest --quiet` | **Exit Code:** `0`<br>**`stdout`:** Empty<br>**`stderr`:** Empty (`--quiet` suppresses informational logs and `rsync` progress).<br>**Repo & FS State:** Local `main` `HEAD` equals `origin/main`; `data/` matches revision `b2b282b1-...`. |
+| `TC-04` | Repository is in detached `HEAD` state (e.g., after `git-drev select v1.0`). | `git-drev get --latest` | **Exit Code:** `4` (`ErrDetachedHead`)<br>**`stdout`:** Empty<br>**`stderr`:** `[git-drev] Error: Detached HEAD state detected, aborting` and `[git-drev] Hint: Use "git-drev select <branch>" to select a branch first.`<br>**Repo & FS State:** `HEAD` and `data/` remain completely unchanged; no network calls made. |
+| `TC-05` | Current branch was just created via `git-drev create feat` (`HEAD` commit subject is `{"uuid":"00000000-0000-0000-0000-000000000000","marker":"true"}`). | `git-drev get` | **Exit Code:** `4` (`ErrGitState`)<br>**`stdout`:** Empty<br>**`stderr`:** `[git-drev] Error: No directory revision available yet on current branch`<br>**FS State:** No SSH connection opened; `data/` not created or modified. |
+| `TC-06` | `HEAD` points to valid commit `{"uuid":"deadbeef-7f34-4f4c-9a76-05e3297b2a23","seq":"50"}`, but `<remote.path>/deadbeef-...` was purged by `git-drev cleanup` on the remote server; local `out_dir` does not exist. | `git-drev get out_dir` | **Exit Code:** `6` (`ErrRemoteNotFound`)<br>**`stdout`:** Empty<br>**`stderr`:** `[git-drev] Error: Unable to find revision 'deadbeef-7f34-4f4c-9a76-05e3297b2a23' on remote host` and retention policy hint.<br>**FS State:** `out_dir` is **not** created on the local filesystem. |

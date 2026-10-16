@@ -71,8 +71,8 @@ func RunName(ctx context.Context, insp *git.Inspector, logger *term.Logger, stdo
 
 ## 4. Execution Flow (Step-by-Step Domain Logic)
 1. **Input normalization & validation:**
-   - Parse global flags via the CLI dispatcher. Reject any mutually exclusive flag combinations (`--verbose` with `--quiet`) or unknown flags with `ErrUsage` (exit code `2`).
-   - Assert `len(args) == 0`. If one or more positional arguments are provided, return `errcode.NewError(errcode.ErrUsage, "This command takes no arguments (got: %q)", args[0])` which logs `[drev] ! This command takes no arguments` to `stderr` and exits with code `2`.
+   - Parse global flags via the CLI dispatcher. Reject any mutually exclusive flag combinations (`--verbose` and `--quiet`) or unknown flags with `ErrUsage` (exit code `2`).
+   - Assert `len(args) == 0`. If one or more positional arguments are provided, return `errcode.NewError(errcode.ErrUsage, "This command takes no arguments (got: %q)", args[0])` which logs `[git-drev] Error: This command takes no arguments` to `stderr` and exits with code `2`.
    - Verify that `ctx.Err()` is nil; if already canceled, return `errcode.ErrInterrupted` (exit code `130`).
 
 2. **Core algorithm:**
@@ -95,28 +95,28 @@ func RunName(ctx context.Context, insp *git.Inspector, logger *term.Logger, stdo
   | `git symbolic-ref --quiet --short HEAD` | `RepoRoot` | Single line `<branch-name>\n` (e.g., `main\n`, `feature/foo\n`) when on a branch; empty output on exit code `1` | Exit code `0`: attached branch. Exit code `1`: detached `HEAD` (`NameResult{Detached: true}`). Exit code `> 1` (e.g., `128` corrupt `.git/HEAD`): returns `errcode.ErrGitExec` (exit code `5`). |
 
 - **Filesystem & metadata mutations:**
-  - **None.** `git drev name` is completely side-effect-free. It does not read or modify `.git-drev.yaml`, `.git/config`, the Git index, or the working tree.
+  - **None.** `git-drev name` is completely side-effect-free. It does not read or modify `.git-drev.yaml`, `.git/config`, the Git index, or the working tree.
 
 - **Standard output (`stdout`):**
   - On attached branch (committed or unborn): `<branch-name>\n` (e.g., `main\n`), with LF (`\n`) line ending across all platforms (Linux, macOS, Windows).
   - On detached `HEAD`: `No branch (detached HEAD state)\n`.
-  - Output is identical regardless of `--verbose` or `--quiet` flags so scripts and pipelines (`branch=$(git drev name)`) receive clean porcelain output.
+  - Output is identical regardless of `--verbose` or `--quiet` flags so scripts and pipelines (`branch=$(git-drev name)`) receive clean porcelain output.
 
 - **Standard error (`stderr`):**
   - Empty (`0` bytes) on success.
-  - On error, emits `[drev] ! <error message>\n` (and optional `[drev] Hint: <remediation>\n` where applicable) formatted according to Section 1 of `docs/spec/global.md`.
+  - On error, emits `[git-drev] Error: <error message>\n` (and optional `[git-drev] Hint: <remediation>\n` where applicable) formatted according to Section 1 of `docs/spec/global.md`.
 
 ## 6. Error Matrix & Exit Code Mapping
 | Failure Condition | Go Error Sentinel / Type | Exit Code | Expected `stderr` Message Pattern |
 | :--- | :--- | :--- | :--- |
-| Unexpected positional argument(s) provided (e.g., `git drev name foo`) | `errcode.ErrUsage` | `2` | `[drev] ! This command takes no arguments (got: "foo")` |
-| Unknown CLI flag provided (e.g., `git drev name --foo`) | `errcode.ErrUsage` | `2` | `[drev] ! unknown flag: --foo` |
-| Mutually exclusive global flags (`--verbose` and `--quiet`) | `errcode.ErrUsage` | `2` | `[drev] ! flags --verbose and --quiet cannot be used together` |
-| Invoked outside a Git repository, inside `.git/`, or in a bare repository | `errcode.ErrNotRepository` | `3` | `[drev] ! Not inside a Git working tree` |
-| `git` binary missing from `$PATH` | `errcode.ErrTransport` | `7` | `[drev] ! Required binary "git" not found in $PATH` |
-| Corrupt `.git/HEAD` or `git symbolic-ref` fails with exit code `128` | `errcode.ErrGitExec` | `5` | `[drev] ! Failed to resolve HEAD reference: <git stderr>` |
-| Standard output write failure (e.g., closed stdout / `EPIPE`) | `errcode.ErrRuntime` | `1` | `[drev] ! Failed to write output: <io error>` |
-| Execution canceled via `SIGINT` or `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[drev] ! Operation interrupted` |
+| Unexpected positional argument(s) provided (e.g., `git-drev name foo`) | `errcode.ErrUsage` | `2` | `[git-drev] Error: This command takes no arguments (got: "foo")` |
+| Unknown CLI flag provided (e.g., `git-drev name --foo`) | `errcode.ErrUsage` | `2` | `[git-drev] Error: unknown flag: --foo` |
+| Mutually exclusive global flags (`--verbose` and `--quiet`) | `errcode.ErrUsage` | `2` | `[git-drev] Error: flags --verbose and --quiet cannot be used together` |
+| Invoked outside a Git repository, inside `.git/`, or in a bare repository | `errcode.ErrNotRepository` | `3` | `[git-drev] Error: Not inside a Git working tree` |
+| `git` binary missing from `$PATH` | `errcode.ErrTransport` | `7` | `[git-drev] Error: Required binary "git" not found in $PATH` |
+| Corrupt `.git/HEAD` or `git symbolic-ref` fails with exit code `128` | `errcode.ErrGitExec` | `5` | `[git-drev] Error: Failed to resolve HEAD reference: <git stderr>` |
+| Standard output write failure (e.g., closed stdout / `EPIPE`) | `errcode.ErrRuntime` | `1` | `[git-drev] Error: Failed to write output: <io error>` |
+| Execution canceled via `SIGINT` or `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[git-drev] Error: Operation interrupted` |
 
 ## 7. Legacy Modernization & Edge Cases
 - **Fixed legacy quirks:**
@@ -133,22 +133,22 @@ func RunName(ctx context.Context, insp *git.Inspector, logger *term.Logger, stdo
      - *Modernized Go behavior:* Verifies `git rev-parse --is-inside-work-tree` == `"true"`, returning `ErrNotRepository` (exit code `3`) otherwise.
   4. **Legacy `help` Positional Argument Returning Exit Code `1` (`legacy/common.sh:219-220, 253-257`):**
      - *Legacy flaw:* Running `git drs-name help` printed a 2-line message to `stdout`/`stderr` and exited with code `1`.
-     - *Modernized Go behavior:* Standard `-h` / `--help` flags and `git drev help name` print comprehensive usage documentation to `stdout` and exit `0`.
+     - *Modernized Go behavior:* Standard `-h` / `--help` flags and `git-drev help name` print comprehensive usage documentation to `stdout` and exit `0`.
 
 - **Boundary conditions:**
-  - **Subdirectory invocation (`GIT_PREFIX`):** Invoking `git drev name` from a nested subdirectory (e.g., `data/subdir/nested`) resolves the enclosing worktree's `HEAD` and outputs the branch name identically to invoking from `RepoRoot`.
+  - **Subdirectory invocation (`GIT_PREFIX`):** Invoking `git-drev name` from a nested subdirectory (e.g., `data/subdir/nested`) resolves the enclosing worktree's `HEAD` and outputs the branch name identically to invoking from `RepoRoot`.
   - **Hierarchical branch names & special characters:** Branches containing slashes or special characters valid in `git-check-ref-format(1)` (e.g., `feature/JIRA-123_build+test`, `release/v2.0.0-rc.1`) are emitted verbatim via `git symbolic-ref --quiet --short HEAD` without stripping path segments under `refs/heads/`.
-  - **Detached `HEAD` on tag or UUID commit:** When a user checks out a tag or specific revision UUID via `git drev select <uuid>` (which places the repo in a detached `HEAD` state), `git drev name` deterministically prints `No branch (detached HEAD state)` to `stdout` and exits `0`.
+  - **Detached `HEAD` on tag or UUID commit:** When a user checks out a tag or specific revision UUID via `git-drev select <uuid>` (which places the repo in a detached `HEAD` state), `git-drev name` deterministically prints `No branch (detached HEAD state)` to `stdout` and exits `0`.
   - **Unborn branch (`git init` with 0 commits):** `git symbolic-ref --quiet --short HEAD` reads `ref: refs/heads/<initial-branch>` from `.git/HEAD` and returns `<initial-branch>` cleanly with exit code `0`.
-  - **Submodule boundaries:** If invoked inside a Git submodule working tree, `git rev-parse --show-toplevel` resolves to the submodule's working tree root and `git drev name` reports the branch/detached state of that active working tree.
+  - **Submodule boundaries:** If invoked inside a Git submodule working tree, `git rev-parse --show-toplevel` resolves to the submodule's working tree root and `git-drev name` reports the branch/detached state of that active working tree.
   - **Symlinked repository path:** If the caller's `PWD` enters the repository through a symlink, `git symbolic-ref` still inspects `.git/HEAD` accurately without error.
 
 ## 8. Black-Box Verification Scenarios
 | Scenario ID | Given (Repo & Filesystem State) | When (CLI Invocation) | Then (Expected Exit Code, `stdout`/`stderr`, & Repo/FS State) |
 | :--- | :--- | :--- | :--- |
-| `TC-01` | Valid Git repository on branch `feature/build-42` with at least one commit; no `.git-drev.yaml` present. | `git drev name` | **Exit Code:** `0`<br>**`stdout`:** `feature/build-42\n`<br>**`stderr`:** *(empty)*<br>**Repo/FS State:** Unchanged. |
-| `TC-02` | Valid Git repository in detached `HEAD` state (e.g., after `git checkout --detach HEAD` or `git drev select <uuid>`). | `git drev name` | **Exit Code:** `0`<br>**`stdout`:** `No branch (detached HEAD state)\n`<br>**`stderr`:** *(empty)*<br>**Repo/FS State:** Remains in detached `HEAD` state. |
-| `TC-03` | Newly initialized Git repository (`git init -b main`) with an unborn `HEAD` (zero commits) and a nested subdirectory `sub/dir` as caller `PWD`. | `git drev name` (executed from `sub/dir`) | **Exit Code:** `0`<br>**`stdout`:** `main\n`<br>**`stderr`:** *(empty)*<br>**Repo/FS State:** Unchanged. |
-| `TC-04` | Valid Git repository on branch `main`. | `git drev name unexpected-arg` | **Exit Code:** `2` (`ErrUsage`)<br>**`stdout`:** *(empty)*<br>**`stderr`:** Contains `[drev] !` and message indicating `name` takes no arguments.<br>**Repo/FS State:** Unchanged. |
-| `TC-05` | Caller `PWD` is `/tmp/non-git-dir` (outside any Git repository) or inside a bare repository (`repo.git`). | `git drev name` | **Exit Code:** `3` (`ErrNotRepository`)<br>**`stdout`:** *(empty)*<br>**`stderr`:** `[drev] ! Not inside a Git working tree\n`<br>**Repo/FS State:** Unchanged. |
-| `TC-06` | Valid Git repository on branch `main`. | `git drev name --unknown-flag` | **Exit Code:** `2` (`ErrUsage`)<br>**`stdout`:** *(empty)*<br>**`stderr`:** Contains `[drev] !` and unknown flag diagnostic.<br>**Repo/FS State:** Unchanged. |
+| `TC-01` | Valid Git repository on branch `feature/build-42` with at least one commit; no `.git-drev.yaml` present. | `git-drev name` | **Exit Code:** `0`<br>**`stdout`:** `feature/build-42\n`<br>**`stderr`:** *(empty)*<br>**Repo/FS State:** Unchanged. |
+| `TC-02` | Valid Git repository in detached `HEAD` state (e.g., after `git checkout --detach HEAD` or `git-drev select <uuid>`). | `git-drev name` | **Exit Code:** `0`<br>**`stdout`:** `No branch (detached HEAD state)\n`<br>**`stderr`:** *(empty)*<br>**Repo/FS State:** Remains in detached `HEAD` state. |
+| `TC-03` | Newly initialized Git repository (`git init -b main`) with an unborn `HEAD` (zero commits) and a nested subdirectory `sub/dir` as caller `PWD`. | `git-drev name` (executed from `sub/dir`) | **Exit Code:** `0`<br>**`stdout`:** `main\n`<br>**`stderr`:** *(empty)*<br>**Repo/FS State:** Unchanged. |
+| `TC-04` | Valid Git repository on branch `main`. | `git-drev name unexpected-arg` | **Exit Code:** `2` (`ErrUsage`)<br>**`stdout`:** *(empty)*<br>**`stderr`:** Contains `[git-drev] Error:` and message indicating `name` takes no arguments.<br>**Repo/FS State:** Unchanged. |
+| `TC-05` | Caller `PWD` is `/tmp/non-git-dir` (outside any Git repository) or inside a bare repository (`repo.git`). | `git-drev name` | **Exit Code:** `3` (`ErrNotRepository`)<br>**`stdout`:** *(empty)*<br>**`stderr`:** `[git-drev] Error: Not inside a Git working tree\n`<br>**Repo/FS State:** Unchanged. |
+| `TC-06` | Valid Git repository on branch `main`. | `git-drev name --unknown-flag` | **Exit Code:** `2` (`ErrUsage`)<br>**`stdout`:** *(empty)*<br>**`stderr`:** Contains `[git-drev] Error:` and unknown flag diagnostic.<br>**Repo/FS State:** Unchanged. |

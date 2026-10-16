@@ -32,13 +32,13 @@
    - If `--sources` is specified, emit only the Source hierarchy header and exit cleanly with Exit Code `0`.
    - Otherwise, serialize the effective configuration to YAML and annotate defaulted fields inline with YAML comments (`# default convention`).
 4. **Standard Output Protocol:**
-   - Output directly to `stdout`. The resulting output is 100% valid YAML and safe to redirect directly into a `.git-drev.yaml` file (`git drev config > .git-drev.yaml`).
+   - Output directly to `stdout`. The resulting output is 100% valid YAML and safe to redirect directly into a `.git-drev.yaml` file (`git-drev config > .git-drev.yaml`).
 
 ## 4. Error Handling & Exit Codes
 | Exit Code | Error Category | Scenario | Emitted Stderr Pattern |
 | :--- | :--- | :--- | :--- |
 | `0` | `nil` | Configuration evaluated and printed successfully. | None. |
-| `2` | `errcode.ErrUsage` | Unexpected positional arguments passed (`git-drev config extra`). | `[drev] ! Unexpected argument: <arg>` |
-| `3` | `errcode.ErrConfig` | No configuration files found across any tier. | `[drev] ! No configuration file found` |
-| `3` | `errcode.ErrConfig` | `GIT_DREV_CONFIG` path specified but file does not exist or is unreadable. | `[drev] ! configuration file specified by GIT_DREV_CONFIG not found: <path>` |
-| `3` | `errcode.ErrConfig` | Malformed YAML or schema validation failure (e.g., missing `remote.host` or `remote.path`). | `[drev] ! <validation error>` |
+| `2` | `errcode.ErrUsage` | Unexpected positional arguments passed (`git-drev config extra`). | `[git-drev] Error: Unexpected argument: <arg>` |
+| `3` | `errcode.ErrConfig` | No configuration files found across any tier. | `[git-drev] Error: No configuration file found` |
+| `3` | `errcode.ErrConfig` | `GIT_DREV_CONFIG` path specified but file does not exist or is unreadable. | `[git-drev] Error: configuration file specified by GIT_DREV_CONFIG not found: <path>` |
+| `3` | `errcode.ErrConfig` | Malformed YAML or schema validation failure (e.g., missing `remote.host` or `remote.path`). | `[git-drev] Error: <validation error>` |

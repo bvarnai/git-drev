@@ -55,7 +55,7 @@ func TestExitCode(t *testing.T) {
 		},
 		{
 			name:     "ErrDetachedHead maps to 4",
-			err:      errcode.NewError(errcode.ErrDetachedHead, "Detached HEAD").WithHint(`Use "git drev select <branch>" to select a branch first.`),
+			err:      errcode.NewError(errcode.ErrDetachedHead, "Detached HEAD").WithHint(`Use "git-drev select <branch>" to select a branch first.`),
 			wantCode: errcode.ExitGitState,
 		},
 		{
@@ -107,7 +107,7 @@ func TestAppErrorFormattingAndHint(t *testing.T) {
 	}
 
 	wrapped := errcode.WrapError(errcode.ErrDetachedHead, io.EOF, "Detached HEAD state detected, aborting").
-		WithHint(`Use "git drev select <branch>" to select a branch first.`)
+		WithHint(`Use "git-drev select <branch>" to select a branch first.`)
 
 	if !errors.Is(wrapped, errcode.ErrDetachedHead) {
 		t.Errorf("expected errors.Is to match ErrDetachedHead")
@@ -115,7 +115,7 @@ func TestAppErrorFormattingAndHint(t *testing.T) {
 	if !errors.Is(wrapped, io.EOF) {
 		t.Errorf("expected errors.Is to match wrapped cause io.EOF")
 	}
-	wantHint := `Use "git drev select <branch>" to select a branch first.`
+	wantHint := `Use "git-drev select <branch>" to select a branch first.`
 	if got := errcode.Hint(wrapped); got != wantHint {
 		t.Errorf("Hint() = %q, want %q", got, wantHint)
 	}

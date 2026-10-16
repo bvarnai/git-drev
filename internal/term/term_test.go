@@ -119,17 +119,17 @@ func TestLoggerOutputFormatsAndQuiet(t *testing.T) {
 		logger.Hint("Use -v for details")
 
 		err := errcode.NewError(errcode.ErrDetachedHead, "Detached HEAD state detected, aborting").
-			WithHint(`Use "git drev select <branch>" to select a branch first.`)
+			WithHint(`Use "git-drev select <branch>" to select a branch first.`)
 		logger.LogError(err)
 
 		lines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 		wantLines := []string{
-			"[drev] Checking branch 'main'",
-			"[drev] Verbose diagnostic",
-			"[drev] WARN: Something minor",
-			"[drev] Hint: Use -v for details",
-			"[drev] ! Detached HEAD state detected, aborting",
-			`[drev] Hint: Use "git drev select <branch>" to select a branch first.`,
+			"[git-drev] Checking branch 'main'",
+			"[git-drev] Verbose diagnostic",
+			"[git-drev] Warning: Something minor",
+			"[git-drev] Hint: Use -v for details",
+			"[git-drev] Error: Detached HEAD state detected, aborting",
+			`[git-drev] Hint: Use "git-drev select <branch>" to select a branch first.`,
 		}
 		if len(lines) != len(wantLines) {
 			t.Fatalf("got %d lines:\n%s\nwant %d lines:\n%s", len(lines), buf.String(), len(wantLines), strings.Join(wantLines, "\n"))
@@ -156,7 +156,7 @@ func TestLoggerOutputFormatsAndQuiet(t *testing.T) {
 		logger.Error("fatal failure")
 
 		got := buf.String()
-		want := "[drev] ! fatal failure\n"
+		want := "[git-drev] Error: fatal failure\n"
 		if got != want {
 			t.Errorf("quiet logger output = %q, want %q", got, want)
 		}
@@ -169,7 +169,7 @@ func TestLoggerOutputFormatsAndQuiet(t *testing.T) {
 			IsTTY:     false,
 			EnvLookup: mapEnv(map[string]string{"GIT_DREV_COLOR": "bogus"}),
 		})
-		if !strings.Contains(buf.String(), `[drev] WARN: Invalid GIT_DREV_COLOR value "bogus"`) {
+		if !strings.Contains(buf.String(), `[git-drev] Warning: Invalid GIT_DREV_COLOR value "bogus"`) {
 			t.Errorf("expected warning in stderr, got %q", buf.String())
 		}
 	})

@@ -13,13 +13,14 @@ import (
 )
 
 // Prefix is the canonical operational log prefix emitted on stderr.
-const Prefix = "[drev]"
+const Prefix = "[git-drev]"
 
 // ANSI SGR color escape sequences.
 const (
 	ansiReset  = "\x1b[0m"
-	ansiRed    = "\x1b[31m"
+	ansiRed    = "\x1b[31;1m"
 	ansiYellow = "\x1b[33m"
+	ansiCyan   = "\x1b[36m"
 )
 
 // Options configures a Logger instance.
@@ -156,7 +157,7 @@ func (l *Logger) UseColor() bool {
 	return l.useColor
 }
 
-// Info emits `[drev] <msg>` to stderr unless Quiet is enabled.
+// Info emits `[git-drev] <msg>` to stderr unless Quiet is enabled.
 func (l *Logger) Info(msg string) {
 	if l.quiet {
 		return
@@ -164,7 +165,7 @@ func (l *Logger) Info(msg string) {
 	l.writeLine(fmt.Sprintf("%s %s", Prefix, msg))
 }
 
-// Infof emits a formatted `[drev] <msg>` line to stderr unless Quiet is enabled.
+// Infof emits a formatted `[git-drev] <msg>` line to stderr unless Quiet is enabled.
 func (l *Logger) Infof(format string, args ...any) {
 	if l.quiet {
 		return
@@ -172,7 +173,7 @@ func (l *Logger) Infof(format string, args ...any) {
 	l.Info(fmt.Sprintf(format, args...))
 }
 
-// Debug emits `[drev] <msg>` to stderr only when Verbose is enabled and Quiet is false.
+// Debug emits `[git-drev] <msg>` to stderr only when Verbose is enabled and Quiet is false.
 func (l *Logger) Debug(msg string) {
 	if !l.verbose || l.quiet {
 		return
@@ -180,7 +181,7 @@ func (l *Logger) Debug(msg string) {
 	l.writeLine(fmt.Sprintf("%s %s", Prefix, msg))
 }
 
-// Debugf emits a formatted `[drev] <msg>` line to stderr only when Verbose is enabled.
+// Debugf emits a formatted `[git-drev] <msg>` line to stderr only when Verbose is enabled.
 func (l *Logger) Debugf(format string, args ...any) {
 	if !l.verbose || l.quiet {
 		return
@@ -188,50 +189,54 @@ func (l *Logger) Debugf(format string, args ...any) {
 	l.Debug(fmt.Sprintf(format, args...))
 }
 
-// Warn emits `[drev] WARN: <msg>` to stderr.
+// Warn emits `[git-drev] Warning: <msg>` to stderr.
 func (l *Logger) Warn(msg string) {
-	label := "WARN:"
 	if l.useColor {
-		label = ansiYellow + label + ansiReset
+		l.writeLine(fmt.Sprintf("%s %sWarning: %s%s", Prefix, ansiYellow, msg, ansiReset))
+		return
 	}
-	l.writeLine(fmt.Sprintf("%s %s %s", Prefix, label, msg))
+	l.writeLine(fmt.Sprintf("%s Warning: %s", Prefix, msg))
 }
 
-// Warnf emits a formatted `[drev] WARN: <msg>` line to stderr.
+// Warnf emits a formatted `[git-drev] Warning: <msg>` line to stderr.
 func (l *Logger) Warnf(format string, args ...any) {
 	l.Warn(fmt.Sprintf(format, args...))
 }
 
-// Hint emits `[drev] Hint: <msg>` to stderr unless Quiet is enabled.
+// Hint emits `[git-drev] Hint: <msg>` to stderr unless Quiet is enabled.
 func (l *Logger) Hint(msg string) {
 	if l.quiet {
+		return
+	}
+	l.HintAlways(msg)
+}
+
+// HintAlways emits `[git-drev] Hint: <msg>` to stderr even when Quiet is enabled
+// (used for error remediation hints attached to fatal errors).
+func (l *Logger) HintAlways(msg string) {
+	if l.useColor {
+		l.writeLine(fmt.Sprintf("%s %sHint: %s%s", Prefix, ansiCyan, msg, ansiReset))
 		return
 	}
 	l.writeLine(fmt.Sprintf("%s Hint: %s", Prefix, msg))
 }
 
-// HintAlways emits `[drev] Hint: <msg>` to stderr even when Quiet is enabled
-// (used for error remediation hints attached to fatal errors).
-func (l *Logger) HintAlways(msg string) {
-	l.writeLine(fmt.Sprintf("%s Hint: %s", Prefix, msg))
-}
-
-// Error emits `[drev] ! <msg>` to stderr (never suppressed by Quiet).
+// Error emits `[git-drev] Error: <msg>` to stderr (never suppressed by Quiet).
 func (l *Logger) Error(msg string) {
-	bang := "!"
 	if l.useColor {
-		bang = ansiRed + bang + ansiReset
+		l.writeLine(fmt.Sprintf("%s %sError: %s%s", Prefix, ansiRed, msg, ansiReset))
+		return
 	}
-	l.writeLine(fmt.Sprintf("%s %s %s", Prefix, bang, msg))
+	l.writeLine(fmt.Sprintf("%s Error: %s", Prefix, msg))
 }
 
-// Errorf emits a formatted `[drev] ! <msg>` line to stderr (never suppressed by Quiet).
+// Errorf emits a formatted `[git-drev] Error: <msg>` line to stderr (never suppressed by Quiet).
 func (l *Logger) Errorf(format string, args ...any) {
 	l.Error(fmt.Sprintf(format, args...))
 }
 
-// LogError emits `[drev] ! <err>` and, if err carries an errcode.Hint, follows it
-// with `[drev] Hint: <remediation>` on stderr.
+// LogError emits `[git-drev] Error: <err>` and, if err carries an errcode.Hint, follows it
+// with `[git-drev] Hint: <remediation>` on stderr.
 func (l *Logger) LogError(err error) {
 	if err == nil {
 		return

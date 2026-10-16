@@ -21,7 +21,7 @@
   1. **Argument & Flag Validation:** Verify no positional arguments or unknown flags are present, and global flags (`--verbose` and `--quiet`) are not mutually exclusively set.
   2. **Non-Bare Working Tree:** Must be invoked inside a valid, non-bare Git working tree (`git rev-parse --is-inside-work-tree` == `"true"`). Invoking outside a Git repository or inside a bare repository fails with `errcode.ErrNotRepository` (exit code `3`).
   3. **Repository Configuration (`.git-drev.yaml`):** Must load and validate the configuration across the 3-tier YAML cascade (`~/.config/git-drev/config.yaml`, `$GIT_DREV_CONFIG`, `<repo-root>/.git-drev.yaml`). Missing or invalid configuration fails with `errcode.ErrConfig` (exit code `3`).
-  4. **Symbolic `HEAD` (Attached Branch):** `HEAD` must be attached to a local branch (`git symbolic-ref --quiet --short HEAD`). If `HEAD` is detached (e.g., after selecting a tag or specific revision UUID), execution fails immediately with `errcode.ErrDetachedHead` (exit code `4`) and emits the remediation hint: `Use "git drev select <branch>" to select a branch first.`
+  4. **Symbolic `HEAD` (Attached Branch):** `HEAD` must be attached to a local branch (`git symbolic-ref --quiet --short HEAD`). If `HEAD` is detached (e.g., after selecting a tag or specific revision UUID), execution fails immediately with `errcode.ErrDetachedHead` (exit code `4`) and emits the remediation hint: `Use "git-drev select <branch>" to select a branch first.`
   5. **Remote Tracking Branch Existence (Post-Fetch):** After fetching from remotes, `refs/remotes/origin/<branch>` must exist (`git show-ref --verify --quiet refs/remotes/origin/<branch>`). If the current local branch has no corresponding branch on `origin`, execution fails with `errcode.ErrGitState` (exit code `4`) before attempting `git reset --hard`.
 
 ## 3. Subcommand Domain Models & Signatures
@@ -50,8 +50,8 @@ type UpdateResult struct {
 	UpdatedHash  string // Commit SHA-1 of UpstreamRef after fetch/reset.
 }
 
-// RunUpdate executes the `git drev update` domain workflow (and the `--latest`
-// phase of `git drev get`) in isolation from CLI flag parsing.
+// RunUpdate executes the `git-drev update` domain workflow (and the `--latest`
+// phase of `git-drev get`) in isolation from CLI flag parsing.
 func RunUpdate(
 	ctx context.Context,
 	insp *git.Inspector,
@@ -68,7 +68,7 @@ func RunUpdate(
    - Resolve `RepoRoot` and `Prefix` via `insp.RepoRoot(ctx, dir)` and chdir to `RepoRoot` as specified in Section 2 of `docs/spec/global.md`.
    - Load and validate `*domain.ProjectConfig` via `config.Load(repoRoot)`.
    - Resolve the active local branch via `branch, detached, err := insp.CurrentBranch(ctx, repoRoot)` (`git symbolic-ref --quiet --short HEAD`).
-     - If `detached` is `true`, return `errcode.NewError(errcode.ErrDetachedHead, "Detached HEAD state detected, aborting").WithHint("Use \"git drev select <branch>\" to select a branch first.")` (exit code `4`).
+     - If `detached` is `true`, return `errcode.NewError(errcode.ErrDetachedHead, "Detached HEAD state detected, aborting").WithHint("Use \"git-drev select <branch>\" to select a branch first.")` (exit code `4`).
      - If `err != nil`, return `errcode.WrapError(errcode.ErrGitExec, err, "Failed to resolve current branch")` (exit code `5`).
 
 2. **Core algorithm:**
@@ -77,7 +77,7 @@ func RunUpdate(
      - Reads `git config --local --get-all remote.origin.fetch`.
      - If `+refs/heads/*:refs/remotes/origin/*` is not present among existing values, executes `git config --local --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/*` without unsetting existing refspecs or performing per-branch `ls-remote` network calls.
    - **Step 2.2 — Fetch and prune remote tracking branches:**
-     - Log operational progress (when not `--quiet`): `[drev] Fetching latest metadata from origin`.
+     - Log operational progress (when not `--quiet`): `[git-drev] Fetching latest metadata from origin`.
      - Invoke `ops.FetchAll(ctx, repoRoot, opts.Quiet && !opts.Verbose)` which executes `git fetch --all --prune [--quiet]`.
      - If `FetchAll` fails, return `errcode.ErrGitExec` (exit code `5`).
    - **Step 2.3 — Verify upstream tracking reference exists:**
@@ -111,32 +111,32 @@ func RunUpdate(
   - **`.git/config`:** Appends `fetch = +refs/heads/*:refs/remotes/origin/*` under `[remote "origin"]` if and only if not already present (retaining existing `.git/config` permissions, typically `0644`).
   - **`.git/refs/remotes/origin/*` and `.git/packed-refs`:** Updated and pruned by `git fetch --all --prune`.
   - **`.git/HEAD` target ref (`refs/heads/<branch>`), `.git/index`, and tracked files in `<repo-root>`:** Reset by `git reset --hard` to match the tree of `refs/remotes/origin/<branch>`.
-  - **Untracked / Ignored `workdir` (e.g., `<repo-root>/data`):** Untouched by `git reset --hard` because `workdir` is gitignored metadata payload storage; synchronizing `workdir` requires `git drev get`.
+  - **Untracked / Ignored `workdir` (e.g., `<repo-root>/data`):** Untouched by `git reset --hard` because `workdir` is gitignored metadata payload storage; synchronizing `workdir` requires `git-drev get`.
 
 - **Standard output (`stdout`):**
   - Emits **0 bytes** on normal execution. (Only `--help` / `-h` or `--version` writes to `stdout`.)
 
 - **Standard error (`stderr`):**
   - Default mode:
-    - `[drev] Updating branch '<branch>' to origin/<branch>`
+    - `[git-drev] Updating branch '<branch>' to origin/<branch>`
   - Verbose mode (`--verbose` / `-v`):
     - Includes subprocess diagnostics from `git fetch` and `git reset --hard` prefixed or forwarded to `stderr`.
   - Quiet mode (`--quiet` / `-q`):
-    - Suppresses all informational `[drev] ...` messages; emits only `[drev] ! <error>` and `[drev] Hint: <hint>` on failure.
+    - Suppresses all informational `[git-drev] ...` messages; emits only `[git-drev] Error: <error>` and `[git-drev] Hint: <hint>` on failure.
 
 ## 6. Error Matrix & Exit Code Mapping
 | Failure Condition | Go Error Sentinel / Type | Exit Code | Expected `stderr` Message Pattern |
 | :--- | :--- | :--- | :--- |
-| Unknown flag, unexpected positional argument, or `-v` with `-q` | `errcode.ErrUsage` | `2` | `[drev] ! <flag/argument validation error>` |
-| Executed outside a Git worktree or inside a bare repo | `errcode.ErrNotRepository` | `3` | `[drev] ! Not inside a Git working tree` |
-| Missing, unreadable, or schema-invalid `.git-drev.yaml` config | `errcode.ErrConfig` | `3` | `[drev] ! <configuration error>` |
-| Repository is in a detached `HEAD` state | `errcode.ErrDetachedHead` | `4` | `[drev] ! Detached HEAD state detected, aborting`<br>`[drev] Hint: Use "git drev select <branch>" to select a branch first.` |
-| Current branch `<branch>` does not exist on `origin` after fetch | `errcode.ErrGitState` | `4` | `[drev] ! Remote branch 'origin/<branch>' does not exist` |
-| `git config` read/write failure | `errcode.ErrGitExec` | `5` | `[drev] ! Failed to configure remote fetch refspec: <git stderr>` |
-| `git fetch --all --prune` fails (network, auth, or missing `origin`) | `errcode.ErrGitExec` | `5` | `[drev] ! Fetch failed: <git stderr>` |
-| `git reset --hard` fails (e.g., `.git/index.lock` exists or I/O error) | `errcode.ErrGitExec` | `5` | `[drev] ! Reset failed: <git stderr>` |
-| `git` binary missing from `$PATH` | `errcode.ErrTransport` | `7` | `[drev] ! Required binary 'git' not found in PATH` |
-| Context canceled via `SIGINT` or `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[drev] ! Operation interrupted` |
+| Unknown flag, unexpected positional argument, or `-v` with `-q` | `errcode.ErrUsage` | `2` | `[git-drev] Error: <flag/argument validation error>` |
+| Executed outside a Git worktree or inside a bare repo | `errcode.ErrNotRepository` | `3` | `[git-drev] Error: Not inside a Git working tree` |
+| Missing, unreadable, or schema-invalid `.git-drev.yaml` config | `errcode.ErrConfig` | `3` | `[git-drev] Error: <configuration error>` |
+| Repository is in a detached `HEAD` state | `errcode.ErrDetachedHead` | `4` | `[git-drev] Error: Detached HEAD state detected, aborting`<br>`[git-drev] Hint: Use "git-drev select <branch>" to select a branch first.` |
+| Current branch `<branch>` does not exist on `origin` after fetch | `errcode.ErrGitState` | `4` | `[git-drev] Error: Remote branch 'origin/<branch>' does not exist` |
+| `git config` read/write failure | `errcode.ErrGitExec` | `5` | `[git-drev] Error: Failed to configure remote fetch refspec: <git stderr>` |
+| `git fetch --all --prune` fails (network, auth, or missing `origin`) | `errcode.ErrGitExec` | `5` | `[git-drev] Error: Fetch failed: <git stderr>` |
+| `git reset --hard` fails (e.g., `.git/index.lock` exists or I/O error) | `errcode.ErrGitExec` | `5` | `[git-drev] Error: Reset failed: <git stderr>` |
+| `git` binary missing from `$PATH` | `errcode.ErrTransport` | `7` | `[git-drev] Error: Required binary 'git' not found in PATH` |
+| Context canceled via `SIGINT` or `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[git-drev] Error: Operation interrupted` |
 
 ## 7. Legacy Modernization & Edge Cases
 - **Fixed legacy quirks:**
@@ -163,8 +163,8 @@ func RunUpdate(
 ## 8. Black-Box Verification Scenarios
 | Scenario ID | Given (Repo & Filesystem State) | When (CLI Invocation) | Then (Expected Exit Code, `stdout`/`stderr`, & Repo/FS State) |
 | :--- | :--- | :--- | :--- |
-| `TC-01` | Local repo with valid `.git-drev.yaml` is on branch `main` at commit `A`. Remote `origin/main` has advanced to commit `B`. Tracked file `env.json` has local uncommitted edits; gitignored `data/build.bin` exists locally. | `git drev update` | Exit code `0`.<br>`stdout`: empty.<br>`stderr`: contains `[drev] Updating branch 'main' to origin/main`.<br>Repo state: `HEAD` and `refs/heads/main` point to commit `B`; `env.json` matches commit `B`; `data/build.bin` remains intact. |
-| `TC-02` | Local repo with valid `.git-drev.yaml` is in detached `HEAD` state (e.g., checked out at a specific revision UUID or tag). | `git drev update` | Exit code `4` (`ErrDetachedHead`).<br>`stdout`: empty.<br>`stderr`: contains `[drev] ! Detached HEAD state detected, aborting` and `[drev] Hint: Use "git drev select <branch>" to select a branch first.`.<br>Repo state: `HEAD` remains unchanged; no `git fetch` or `git reset` is executed. |
-| `TC-03` | Local repo is on branch `main`, and the user accidentally passes a branch name argument (`feature-x`). | `git drev update feature-x` | Exit code `2` (`ErrUsage`).<br>`stdout`: empty.<br>`stderr`: contains `[drev] ! update takes no positional arguments`.<br>Repo state: `HEAD` and working tree remain completely untouched (unlike legacy `drs-update` which warned and reset `main` anyway). |
-| `TC-04` | Local repo is on a newly created local branch `local-only` (created via `git checkout -b local-only`) that has never been pushed to `origin` (or was deleted on `origin`). | `git drev update` | Exit code `4` (`ErrGitState`).<br>`stdout`: empty.<br>`stderr`: contains `[drev] ! Remote branch 'origin/local-only' does not exist`.<br>Repo state: `refs/remotes/origin/*` is updated/pruned by fetch, `git reset --hard` is not executed, and `HEAD` remains on `local-only` at its existing commit. |
+| `TC-01` | Local repo with valid `.git-drev.yaml` is on branch `main` at commit `A`. Remote `origin/main` has advanced to commit `B`. Tracked file `env.json` has local uncommitted edits; gitignored `data/build.bin` exists locally. | `git-drev update` | Exit code `0`.<br>`stdout`: empty.<br>`stderr`: contains `[git-drev] Updating branch 'main' to origin/main`.<br>Repo state: `HEAD` and `refs/heads/main` point to commit `B`; `env.json` matches commit `B`; `data/build.bin` remains intact. |
+| `TC-02` | Local repo with valid `.git-drev.yaml` is in detached `HEAD` state (e.g., checked out at a specific revision UUID or tag). | `git-drev update` | Exit code `4` (`ErrDetachedHead`).<br>`stdout`: empty.<br>`stderr`: contains `[git-drev] Error: Detached HEAD state detected, aborting` and `[git-drev] Hint: Use "git-drev select <branch>" to select a branch first.`.<br>Repo state: `HEAD` remains unchanged; no `git fetch` or `git reset` is executed. |
+| `TC-03` | Local repo is on branch `main`, and the user accidentally passes a branch name argument (`feature-x`). | `git-drev update feature-x` | Exit code `2` (`ErrUsage`).<br>`stdout`: empty.<br>`stderr`: contains `[git-drev] Error: update takes no positional arguments`.<br>Repo state: `HEAD` and working tree remain completely untouched (unlike legacy `drs-update` which warned and reset `main` anyway). |
+| `TC-04` | Local repo is on a newly created local branch `local-only` (created via `git checkout -b local-only`) that has never been pushed to `origin` (or was deleted on `origin`). | `git-drev update` | Exit code `4` (`ErrGitState`).<br>`stdout`: empty.<br>`stderr`: contains `[git-drev] Error: Remote branch 'origin/local-only' does not exist`.<br>Repo state: `refs/remotes/origin/*` is updated/pruned by fetch, `git reset --hard` is not executed, and `HEAD` remains on `local-only` at its existing commit. |
 | `TC-05` | Local repo was cloned with `git clone --single-branch` (so `remote.origin.fetch` only maps `main`), then switched to branch `release/1.0` which has new commits on `origin`, and command is invoked from subdirectory `data/sub/`. | `git-drev update -q` | Exit code `0`.<br>`stdout`: empty.<br>`stderr`: empty (`--quiet`).<br>Repo state: `.git/config` contains `+refs/heads/*:refs/remotes/origin/*`, `refs/remotes/origin/release/1.0` is fetched, and `HEAD` is hard-reset to `origin/release/1.0`. |

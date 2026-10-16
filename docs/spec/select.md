@@ -83,9 +83,9 @@ func RunSelect(
 
 ## 4. Execution Flow (Step-by-Step Domain Logic)
 1. **Input normalization & validation:**
-   - Parse flags via the subcommand flag set. Reject any unknown flags (`-*` or `--*=`) with `errcode.ErrUsage` (exit code `2`) and message `[drev] ! Unsupported option '<flag>'`.
+   - Parse flags via the subcommand flag set. Reject any unknown flags (`-*` or `--*=`) with `errcode.ErrUsage` (exit code `2`) and message `[git-drev] Error: Unsupported option '<flag>'`.
    - Handle `--` end-of-options delimiter per POSIX conventions.
-   - Verify positional argument count is `0` or `1`. If `len(args) > 1`, return `errcode.ErrUsage` (exit code `2`) with `[drev] ! Too many arguments: expected at most 1 target (<branch>|<tag>|<uuid>), got <N>`.
+   - Verify positional argument count is `0` or `1`. If `len(args) > 1`, return `errcode.ErrUsage` (exit code `2`) with `[git-drev] Error: Too many arguments: expected at most 1 target (<branch>|<tag>|<uuid>), got <N>`.
    - If `len(args) == 1` and `strings.HasPrefix(args[0], "-")` (possible when passed after `--`), reject with `errcode.ErrUsage` (exit code `2`) to prevent invalid ref or option injection.
    - Resolve `RepoRoot` and `Prefix` via `insp.RepoRoot(ctx, dir)` and change the process working directory to `RepoRoot`. If not inside a non-bare working tree, return `errcode.ErrNotRepository` (exit code `3`).
    - Load and validate `cfg` via `config.Load(repoRoot)`. On failure, return `errcode.ErrConfig` (exit code `3`).
@@ -95,27 +95,27 @@ func RunSelect(
      - Invoke `ops.EnsureRemoteFetchConfig(ctx, repoRoot)`. This inspects `git config --local --get-all remote.origin.fetch` and idempotently adds `+refs/heads/*:refs/remotes/origin/*` only if missing (without unsetting existing fetch refspecs or performing per-branch `ls-remote` network calls).
    - **Step 2.2 — Synchronize remote refs (`FetchAll`):**
      - Invoke `ops.FetchAll(ctx, repoRoot, opts.Quiet && !opts.Verbose)` (`git fetch --all --prune`) so that remote branches, tags, and newly pushed revision commits on `origin` are present in the local object database before UUID commit resolution or branch checkout.
-     - If `FetchAll` fails, return `errcode.ErrGitExec` (exit code `5`) with `[drev] ! Fetch failed (git fetch --all --prune)`.
+     - If `FetchAll` fails, return `errcode.ErrGitExec` (exit code `5`) with `[git-drev] Error: Fetch failed (git fetch --all --prune)`.
    - **Step 2.3 — Resolve target reference:**
      - **Case A: `opts.Target == ""` (no positional argument):**
        - Set `requested = cfg.Branch.Default` (guaranteed non-empty, defaulting to `"main"`).
        - Set `resolvedRef = requested` and `kind = SelectTargetDefault`.
-       - Log `[drev] Selecting '<requested>' branch by default` to `stderr`.
+       - Log `[git-drev] Selecting '<requested>' branch by default` to `stderr`.
      - **Case B: `opts.Target` matches UUID format (`domain.ParseUUID(opts.Target)` succeeds):**
        - Normalize `targetUUID` by stripping optional `{}` braces and lowercasing.
-       - Log `[drev] Searching for commit with uuid '<opts.Target>'` to `stderr`.
+       - Log `[git-drev] Searching for commit with uuid '<opts.Target>'` to `stderr`.
        - Invoke `commitHash, err := insp.FindCommitByUUID(ctx, repoRoot, targetUUID)`:
          - Executes `git log --all -z --format=%H%x00%s`.
          - Streams NUL-delimited records; for each record, splits `<hash>\x00<subject>` and unmarshals `<subject>` into `domain.RevisionMeta`.
          - Selects the first commit (in topological/reverse-chronological order) where `strings.EqualFold(meta.UUID, targetUUID)` and `!meta.IsMarker()`.
-       - If no matching non-marker commit is found (`errors.Is(err, errcode.ErrGitState)` or `commitHash == ""`), log `[drev] ! No commit was found with uuid '<opts.Target>'` to `stderr` and return `errcode.ErrGitState` (exit code `4`).
-       - Log `[drev] Found commit '<commitHash>'` to `stderr`.
+       - If no matching non-marker commit is found (`errors.Is(err, errcode.ErrGitState)` or `commitHash == ""`), log `[git-drev] Error: No commit was found with uuid '<opts.Target>'` to `stderr` and return `errcode.ErrGitState` (exit code `4`).
+       - Log `[git-drev] Found commit '<commitHash>'` to `stderr`.
        - Set `resolvedRef = commitHash` and `kind = SelectTargetUUID`.
      - **Case C: `opts.Target` does not match UUID format (branch or tag name):**
        - Set `requested = opts.Target`, `resolvedRef = opts.Target`, and `kind = SelectTargetRef`.
    - **Step 2.4 — Checkout resolved reference:**
      - Invoke `ops.Checkout(ctx, repoRoot, resolvedRef, false)` (`git -c advice.detachedHead=false checkout <resolvedRef>`).
-     - If `Checkout` fails (e.g., branch/tag does not exist locally or on `origin`, or conflicting local tracked changes), log `[drev] ! Checkout failed (git checkout <resolvedRef>)` to `stderr` and return `errcode.ErrGitExec` (exit code `5`).
+     - If `Checkout` fails (e.g., branch/tag does not exist locally or on `origin`, or conflicting local tracked changes), log `[git-drev] Error: Checkout failed (git checkout <resolvedRef>)` to `stderr` and return `errcode.ErrGitExec` (exit code `5`).
    - **Step 2.5 — Return result:**
      - Return `SelectResult{Kind: kind, RequestedTarget: requested, ResolvedRef: resolvedRef}, nil`.
 
@@ -138,35 +138,35 @@ func RunSelect(
 - **Filesystem & metadata mutations:**
   - `.git/config`: Updated via `git config --local --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/*` only if the wildcard fetch refspec was absent.
   - `.git/HEAD`, `.git/index`, `.git/refs/remotes/origin/*`, and tracked metadata files in `RepoRoot`: Updated by `git fetch --all --prune` and `git checkout <resolvedRef>`.
-  - `<repo-root>/<workdir>`: Untouched by `select` (remains ignored by Git until `git drev get` is invoked).
+  - `<repo-root>/<workdir>`: Untouched by `select` (remains ignored by Git until `git-drev get` is invoked).
 
 - **Standard output (`stdout`):**
   - Emits nothing (`0` bytes) during normal operation, `--verbose`, or `--quiet`. (Only `--help` / `-h` or `--version` writes to `stdout`).
 
 - **Standard error (`stderr`):**
   - Default branch selection log (when `<target>` is omitted and `--quiet` is false):
-    `[drev] Selecting '<branch.default>' branch by default`
+    `[git-drev] Selecting '<branch.default>' branch by default`
   - UUID search logs (when `<target>` is a UUID and `--quiet` is false):
-    `[drev] Searching for commit with uuid '<target>'`
-    `[drev] Found commit '<commitHash>'`
+    `[git-drev] Searching for commit with uuid '<target>'`
+    `[git-drev] Found commit '<commitHash>'`
   - Error messages (always emitted regardless of `--quiet`):
-    `[drev] ! <error message>`
+    `[git-drev] Error: <error message>`
 
 ## 6. Error Matrix & Exit Code Mapping
 | Failure Condition | Go Error Sentinel / Type | Exit Code | Expected `stderr` Message Pattern |
 | :--- | :--- | :--- | :--- |
-| Unknown flag (`-x`, `--foo`) | `errcode.ErrUsage` | `2` | `[drev] ! Unsupported option '<flag>'` |
-| Mutually exclusive global flags (`--verbose` and `--quiet`) | `errcode.ErrUsage` | `2` | `[drev] ! Flags --verbose and --quiet cannot be used together` |
-| More than 1 positional argument supplied | `errcode.ErrUsage` | `2` | `[drev] ! Too many arguments: expected at most 1 target (<branch>\|<tag>\|<uuid>), got <N>` |
-| Target argument starts with `-` (e.g., `git drev select -- -bad`) | `errcode.ErrUsage` | `2` | `[drev] ! Invalid target reference '<target>': must not start with '-'` |
-| Invoked outside a Git working tree or inside a bare repository | `errcode.ErrNotRepository` | `3` | `[drev] ! Not inside a Git working tree` |
-| Missing, unreadable, or malformed `.git-drev.yaml` | `errcode.ErrConfig` | `3` | `[drev] ! <configuration error>` |
-| Target UUID not found in any non-marker commit in repository history | `errcode.ErrGitState` | `4` | `[drev] ! No commit was found with uuid '<uuid>'` |
-| `git config` refspec update fails | `errcode.ErrGitExec` | `5` | `[drev] ! Failed to configure remote.origin.fetch: <details>` |
-| `git fetch --all --prune` fails (network/auth error or invalid remote) | `errcode.ErrGitExec` | `5` | `[drev] ! Fetch failed (git fetch --all --prune)` |
-| `git checkout <resolvedRef>` fails (missing branch/tag or dirty tracked files) | `errcode.ErrGitExec` | `5` | `[drev] ! Checkout failed (git checkout <resolvedRef>)` |
-| `git` binary missing from `$PATH` | `errcode.ErrTransport` | `7` | `[drev] ! Required binary 'git' not found in $PATH` |
-| Context canceled via `SIGINT` or `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[drev] ! Operation interrupted` |
+| Unknown flag (`-x`, `--foo`) | `errcode.ErrUsage` | `2` | `[git-drev] Error: Unsupported option '<flag>'` |
+| Mutually exclusive global flags (`--verbose` and `--quiet`) | `errcode.ErrUsage` | `2` | `[git-drev] Error: Flags --verbose and --quiet cannot be used together` |
+| More than 1 positional argument supplied | `errcode.ErrUsage` | `2` | `[git-drev] Error: Too many arguments: expected at most 1 target (<branch>\|<tag>\|<uuid>), got <N>` |
+| Target argument starts with `-` (e.g., `git-drev select -- -bad`) | `errcode.ErrUsage` | `2` | `[git-drev] Error: Invalid target reference '<target>': must not start with '-'` |
+| Invoked outside a Git working tree or inside a bare repository | `errcode.ErrNotRepository` | `3` | `[git-drev] Error: Not inside a Git working tree` |
+| Missing, unreadable, or malformed `.git-drev.yaml` | `errcode.ErrConfig` | `3` | `[git-drev] Error: <configuration error>` |
+| Target UUID not found in any non-marker commit in repository history | `errcode.ErrGitState` | `4` | `[git-drev] Error: No commit was found with uuid '<uuid>'` |
+| `git config` refspec update fails | `errcode.ErrGitExec` | `5` | `[git-drev] Error: Failed to configure remote.origin.fetch: <details>` |
+| `git fetch --all --prune` fails (network/auth error or invalid remote) | `errcode.ErrGitExec` | `5` | `[git-drev] Error: Fetch failed (git fetch --all --prune)` |
+| `git checkout <resolvedRef>` fails (missing branch/tag or dirty tracked files) | `errcode.ErrGitExec` | `5` | `[git-drev] Error: Checkout failed (git checkout <resolvedRef>)` |
+| `git` binary missing from `$PATH` | `errcode.ErrTransport` | `7` | `[git-drev] Error: Required binary 'git' not found in $PATH` |
+| Context canceled via `SIGINT` or `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[git-drev] Error: Operation interrupted` |
 
 ## 7. Legacy Modernization & Edge Cases
 - **Fixed legacy quirks:**
@@ -184,26 +184,26 @@ func RunSelect(
      - *Modernized behavior:* Restricts UUID recognition to valid RFC 4122 hexadecimal digits (`[0-9a-fA-F]`), executes a single streaming `git log --all -z --format=%H%x00%s` command, parses each subject with `encoding/json` into `domain.RevisionMeta`, and verifies `strings.EqualFold(meta.UUID, targetUUID) && !meta.IsMarker()`.
   5. **Operational logs written to `stdout` (`legacy/select.sh:48,52,67`):**
      - *Legacy flaw:* `drs::common::log` wrote `[drs] Selecting ...` and `[drs] Found commit ...` to `stdout`.
-     - *Modernized behavior:* All `[drev]` operational logs are emitted to `stderr` (and suppressed when `--quiet` is active), keeping `stdout` completely clean.
+     - *Modernized behavior:* All `[git-drev]` operational logs are emitted to `stderr` (and suppressed when `--quiet` is active), keeping `stdout` completely clean.
   6. **Subdirectory invocation failure (`legacy/common.sh:172-178`):**
      - *Legacy flaw:* Checked `[[ ! -f "drs.json" ]]` relative to the caller's `PWD`, failing when invoked from a subdirectory.
      - *Modernized behavior:* Resolves `RepoRoot` via `git rev-parse --show-toplevel` first and loads `.git-drev.yaml` from `RepoRoot`.
 
 - **Boundary conditions:**
   - **Braced or uppercase UUIDs:** If the user passes `{C1CA82B1-7F34-4F4C-9A76-05E3297B2A23}` or `C1CA82B1-7F34-4F4C-9A76-05E3297B2A23`, `select` strips optional `{}` braces and performs a case-insensitive comparison (`strings.EqualFold`) against `RevisionMeta.UUID` while logging the user's input string in status messages.
-  - **Marker commits sharing a parent's UUID:** When `git drev create <new-branch>` creates a branch from an existing branch whose latest commit has UUID `U`, the new branch's initial marker commit has `{"uuid":"U","marker":"true"}`. Because `FindCommitByUUID` enforces `!meta.IsMarker()`, `git drev select U` always resolves to the actual revision commit that produced `U`, never the child branch's marker commit.
+  - **Marker commits sharing a parent's UUID:** When `git-drev create <new-branch>` creates a branch from an existing branch whose latest commit has UUID `U`, the new branch's initial marker commit has `{"uuid":"U","marker":"true"}`. Because `FindCommitByUUID` enforces `!meta.IsMarker()`, `git-drev select U` always resolves to the actual revision commit that produced `U`, never the child branch's marker commit.
   - **Zero UUID (`00000000-0000-0000-0000-000000000000`):** Empty branch marker commits carry `ZeroUUID` with `"marker":"true"`. Passing `00000000-0000-0000-0000-000000000000` to `select` will skip all marker commits and fail with `errcode.ErrGitState` (`No commit was found with uuid '00000000-0000-0000-0000-000000000000'`).
   - **Detached `HEAD` transitions:**
     - Selecting a UUID or a Git tag transitions the repository into a detached `HEAD` state without printing Git's detached-HEAD advice banner (`-c advice.detachedHead=false`).
     - Selecting a branch name (`main`, `feature/x`) from a detached `HEAD` state cleanly re-attaches `HEAD` to `refs/heads/<branch>` (creating a local tracking branch automatically via `git checkout <branch>` if `origin/<branch>` exists uniquely on `origin`).
-  - **Subdirectory & symlink execution:** Running `git drev select` from a nested subdirectory (including inside `<workdir>` or via a symlinked directory) resolves `RepoRoot` via `git rev-parse --show-toplevel` and executes all Git operations from `RepoRoot`.
+  - **Subdirectory & symlink execution:** Running `git-drev select` from a nested subdirectory (including inside `<workdir>` or via a symlinked directory) resolves `RepoRoot` via `git rev-parse --show-toplevel` and executes all Git operations from `RepoRoot`.
 
 ## 8. Black-Box Verification Scenarios
 | Scenario ID | Given (Repo & Filesystem State) | When (CLI Invocation) | Then (Expected Exit Code, `stdout`/`stderr`, & Repo/FS State) |
 | :--- | :--- | :--- | :--- |
-| `TC-01` | Valid repo on branch `feature-a`; `.git-drev.yaml` has `branch.default: main`; `origin/main` exists. | `git drev select` | Exit code `0`; `stdout` is empty; `stderr` contains `[drev] Selecting 'main' branch by default`; `git symbolic-ref --short HEAD` is `main`. |
-| `TC-02` | Valid repo on `main`; remote `origin` has branch `release/1.0` not yet checked out locally. | `git drev select release/1.0` | Exit code `0`; `stdout` is empty; `git fetch --all --prune` fetches `origin/release/1.0` and `git checkout release/1.0` switches `HEAD` to local tracking branch `release/1.0`. |
-| `TC-03` | Valid repo where commit `a1b2c3d4...` has subject `{"uuid":"c1ca82b1-7f34-4f4c-9a76-05e3297b2a23","seq":"100"}` and child branch `feat` has marker commit `e5f6a7b8...` with subject `{"uuid":"c1ca82b1-7f34-4f4c-9a76-05e3297b2a23","marker":"true"}`. | `git drev select c1ca82b1-7f34-4f4c-9a76-05e3297b2a23` | Exit code `0`; `stdout` is empty; `stderr` contains `[drev] Searching for commit with uuid 'c1ca82b1-7f34-4f4c-9a76-05e3297b2a23'` and `[drev] Found commit 'a1b2c3d4...'`; `HEAD` is detached at `a1b2c3d4...` (marker commit `e5f6a7b8...` is ignored). |
-| `TC-04` | Valid repo with no commit matching UUID `ffffffff-ffff-4fff-bfff-ffffffffffff`. | `git drev select ffffffff-ffff-4fff-bfff-ffffffffffff` | Exit code `4` (`ErrGitState`); `stdout` is empty; `stderr` contains `[drev] ! No commit was found with uuid 'ffffffff-ffff-4fff-bfff-ffffffffffff'`; `HEAD` remains unchanged. |
-| `TC-05` | Valid repo; user invokes command from nested subdirectory `sub/dir` with an nonexistent branch `no-such-branch`. | `git drev select no-such-branch` | Exit code `5` (`ErrGitExec`); `stdout` is empty; `stderr` contains `[drev] ! Checkout failed (git checkout no-such-branch)`; `HEAD` remains on original branch. |
-| `TC-06` | Valid repo; user passes unsupported flag `--invalid` or two positional arguments `main develop`. | `git drev select --invalid` / `git drev select main develop` | Exit code `2` (`ErrUsage`); `stdout` is empty; `stderr` contains `[drev] ! Unsupported option '--invalid'` or `[drev] ! Too many arguments...`; no Git fetch or checkout is executed. |
+| `TC-01` | Valid repo on branch `feature-a`; `.git-drev.yaml` has `branch.default: main`; `origin/main` exists. | `git-drev select` | Exit code `0`; `stdout` is empty; `stderr` contains `[git-drev] Selecting 'main' branch by default`; `git symbolic-ref --short HEAD` is `main`. |
+| `TC-02` | Valid repo on `main`; remote `origin` has branch `release/1.0` not yet checked out locally. | `git-drev select release/1.0` | Exit code `0`; `stdout` is empty; `git fetch --all --prune` fetches `origin/release/1.0` and `git checkout release/1.0` switches `HEAD` to local tracking branch `release/1.0`. |
+| `TC-03` | Valid repo where commit `a1b2c3d4...` has subject `{"uuid":"c1ca82b1-7f34-4f4c-9a76-05e3297b2a23","seq":"100"}` and child branch `feat` has marker commit `e5f6a7b8...` with subject `{"uuid":"c1ca82b1-7f34-4f4c-9a76-05e3297b2a23","marker":"true"}`. | `git-drev select c1ca82b1-7f34-4f4c-9a76-05e3297b2a23` | Exit code `0`; `stdout` is empty; `stderr` contains `[git-drev] Searching for commit with uuid 'c1ca82b1-7f34-4f4c-9a76-05e3297b2a23'` and `[git-drev] Found commit 'a1b2c3d4...'`; `HEAD` is detached at `a1b2c3d4...` (marker commit `e5f6a7b8...` is ignored). |
+| `TC-04` | Valid repo with no commit matching UUID `ffffffff-ffff-4fff-bfff-ffffffffffff`. | `git-drev select ffffffff-ffff-4fff-bfff-ffffffffffff` | Exit code `4` (`ErrGitState`); `stdout` is empty; `stderr` contains `[git-drev] Error: No commit was found with uuid 'ffffffff-ffff-4fff-bfff-ffffffffffff'`; `HEAD` remains unchanged. |
+| `TC-05` | Valid repo; user invokes command from nested subdirectory `sub/dir` with an nonexistent branch `no-such-branch`. | `git-drev select no-such-branch` | Exit code `5` (`ErrGitExec`); `stdout` is empty; `stderr` contains `[git-drev] Error: Checkout failed (git checkout no-such-branch)`; `HEAD` remains on original branch. |
+| `TC-06` | Valid repo; user passes unsupported flag `--invalid` or two positional arguments `main develop`. | `git-drev select --invalid` / `git-drev select main develop` | Exit code `2` (`ErrUsage`); `stdout` is empty; `stderr` contains `[git-drev] Error: Unsupported option '--invalid'` or `[git-drev] Error: Too many arguments...`; no Git fetch or checkout is executed. |

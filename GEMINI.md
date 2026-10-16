@@ -11,7 +11,7 @@
   - `internal/config/`: 3-tier YAML configuration loader (`loader.go`), cascading merger (`merge.go`), provenance reporter (`report.go`), and schema validator.
   - `internal/git/`: Thin `Runner` interface (`Run`, `RunLines`, `RunWithEnv`, `RunStream`), `Inspector` (read-only plumbing inspection), and `Operations` (mutating Git operations).
   - `internal/transport/`: `RemoteRunner` interface and SSH/rsync execution engine.
-  - `internal/hook/`: Project hook runner (`.drev-put-hook`, `.drev-info-hook`) with timeout (`GIT_DREV_HOOK_TIMEOUT`, default `5m`) and `GIT_DREV_*` environment injection.
+  - `internal/hook/`: Project hook runner (`.git-drev-put-hook`, `.git-drev-info-hook`) with timeout (`GIT_DREV_HOOK_TIMEOUT`, default `5m`) and `GIT_DREV_*` environment injection.
   - `internal/term/`: Structured `stderr` logger, TTY/`NO_COLOR`/`GIT_DREV_COLOR` detection, and decoupled `Timer`.
   - `test/integration/`: End-to-end integration tests using isolated Git repositories in `t.TempDir()`.
 - **Dependency Boundaries:** `internal/config`, `internal/git`, `internal/transport`, and `internal/hook` may depend on `domain`, `errcode`, and `term`, but NEVER on `internal/cli`.
@@ -47,5 +47,5 @@ In accordance with the [Google Go Style Guide](https://google.github.io/stylegui
 ## Workflow & Output Rules
 - Check `docs/spec/global.md` and `docs/spec/<subcommand>.md` for behavioral requirements before writing code; implement strict spec parity first.
 - Enforce stream separation:
-  - `stdout`: strictly for primary command output, machine-parseable porcelain (`name`, `info`, `usage` tables), and `--help`/`--version`.
-  - `stderr`: all operational logs (`[drev] <message>`), warnings (`[drev] WARN: <message>`), errors (`[drev] ! <message>`), hints (`[drev] Hint: <remediation>`), and elapsed time summaries.
+  - `stdout`: strictly for primary command output, machine-parseable porcelain (`name`, `info`, `usage` tables, `config`), and `--help`/`--version`.
+  - `stderr`: all operational logs (`[git-drev] <message>`), warnings (`[git-drev] Warning: <message>`), errors (`[git-drev] Error: <message>`), hints (`[git-drev] Hint: <remediation>`), and elapsed time summaries.

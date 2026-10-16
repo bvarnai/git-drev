@@ -12,13 +12,13 @@
   | `--help` | `-h` | `bool` | `false` | Print usage and flag reference for `git-drev` or the active subcommand to `stdout` and exit `0` (replaces legacy positional `help` argument which exited `1` to `stderr`). |
 - **Output protocols:**
   - **Standard output (`stdout`) conventions:**
-    - Reserved strictly for primary command results, machine-parseable porcelain output (e.g., `git drev name`, `git drev info`, `git drev usage` tables), and requested `--help`/`--version` text.
+    - Reserved strictly for primary command results, machine-parseable porcelain output (e.g., `git-drev name`, `git-drev info`, `git-drev usage` tables, `git-drev config`), and requested `--help`/`--version` text.
     - When piped or redirected (non-TTY), tables and outputs omit decorative spinners or dynamic carriage-return progress bars (`\r`).
   - **Standard error (`stderr`) conventions:**
-    - All operational progress logs, elapsed time summaries (`[drev] Took X min Y sec`), warnings, hints, and error diagnostics MUST be written to `stderr` (fixing the legacy anti-pattern where `drs::common::log` wrote operational chatter to `stdout`).
-    - Operational log format: `[drev] <message>` (suppressed when `--quiet` is active).
-    - Warning format: `[drev] WARN: <message>`.
-    - Error format: `[drev] ! <message>` followed by optional `[drev] Hint: <actionable remediation>`.
+    - All operational progress logs, elapsed time summaries (`[git-drev] Took X min Y sec`), warnings, hints, and error diagnostics MUST be written to `stderr` (fixing the legacy anti-pattern where `drs::common::log` wrote operational chatter to `stdout`).
+    - Operational log format: `[git-drev] <message>` (suppressed when `--quiet` is active).
+    - Warning format: `[git-drev] Warning: <message>`.
+    - Error format: `[git-drev] Error: <message>` followed by optional `[git-drev] Hint: <actionable remediation>`.
   - **Terminal color handling:**
     - Color output is enabled by default only when the target stream (`stdout` or `stderr` evaluated independently via `os.File.Stat()` and `os.ModeCharDevice`) is an interactive TTY.
     - Color MUST be disabled if any of the following hold:
@@ -50,7 +50,7 @@
     - `LC_ALL=C` and `LANG=C`: Enforces deterministic, unlocalized ASCII output from `git`, `ssh`, and remote POSIX commands (critical for parsing `git push` stale-ref rejections and remote storage probes).
     - `GIT_TERMINAL_PROMPT=0`: Prevents `git fetch`/`git push` from hanging indefinitely on interactive credential prompts in CI/headless contexts unless interactive TTY mode is explicitly active.
     - `GIT_ADVICE=0`: Suppresses Git informational advice blocks (e.g., detached HEAD banners).
-  - When executing project hooks (`.drev-put-hook`, `.drev-info-hook`), `git-drev` additionally injects:
+  - When executing project hooks (`.git-drev-put-hook`, `.git-drev-info-hook`), `git-drev` additionally injects:
     - `GIT_DREV_VERSION`: Current `git-drev` semantic version.
     - `GIT_DREV_UUID`: Active revision UUID (for `put` and `info` hooks).
     - `GIT_DREV_SEQ`: Active revision sequence string (for `put` and `info` hooks).
@@ -60,12 +60,12 @@
 - **Git context & path resolution:**
   - **Repository validation assertions:**
     - Repository subcommands (`create`, `get`, `info`, `name`, `put`, `select`, `update`, `usage`) require a non-bare Git working tree (`git rev-parse --is-inside-work-tree` == `true`). Invoking inside a bare repository or inside the `.git/` directory itself fails immediately with `ErrNotRepository` (exit code `3`).
-    - Subcommands that mutate branch state or require an upstream tracking branch (`put`, `update`) assert that `HEAD` is a symbolic reference (`git symbolic-ref -q HEAD`). If `HEAD` is detached, they fail with `ErrDetachedHead` (exit code `4`) and emit the remediation hint: `Use "git drev select <branch>" to select a branch first.`
+    - Subcommands that mutate branch state or require an upstream tracking branch (`put`, `update`) assert that `HEAD` is a symbolic reference (`git symbolic-ref -q HEAD`). If `HEAD` is detached, they fail with `ErrDetachedHead` (exit code `4`) and emit the remediation hint: `Use "git-drev select <branch>" to select a branch first.`
   - **Handling of `GIT_PREFIX`, `GIT_DIR`, and `GIT_WORK_TREE`:**
     - When invoked as `git drev <subcommand>` from a subdirectory, Git changes the process `PWD` to the top-level working tree root and sets `GIT_PREFIX` to the caller's original relative subdirectory (with trailing slash).
     - When invoked directly as `git-drev <subcommand>` from a subdirectory, `GIT_PREFIX` is unset. `git-drev` MUST normalize both invocation modes at startup by querying `git rev-parse --show-toplevel` and `git rev-parse --show-prefix`, computing `CallerDir = filepath.Join(RepoRoot, Prefix)`, and chdir'ing the process to `RepoRoot` after resolving user-supplied paths.
   - **Working directory enforcement:**
-    - Repository metadata files (`.git-drev.yaml`, `.drev-put-hook`, `.drev-info-hook`) and the configured `workdir` (default `data`) ALWAYS resolve relative to `RepoRoot`.
+    - Repository metadata files (`.git-drev.yaml`, `.git-drev-put-hook`, `.git-drev-info-hook`) and the configured `workdir` (default `data`) ALWAYS resolve relative to `RepoRoot`.
     - User-supplied CLI path arguments (`<target_directory>` in `get`, `<source_directory>` in `put`) ALWAYS resolve relative to `CallerDir` (the user's `PWD` at invocation time) before changing directory to `RepoRoot`.
   - **Built-in help integration:**
     - When a user runs `git drev --help` or `git help drev`, the `git` wrapper binary intercepts `--help` before invoking `git-drev` and attempts to display the `git-drev(1)` man page (`man git-drev`).
@@ -137,8 +137,8 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
       - UUID format: Lowercase RFC 4122 UUID v4 (`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`).
       - Sequence (`seq`): Unsigned 64-bit decimal integer serialized as a JSON string (defaults to Unix epoch seconds `time.Now().Unix()` if `--sequence` is not provided).
   - **Project Hook Scripts:**
-    - `.drev-put-hook` (located at `<repo-root>/.drev-put-hook`, permissions `0755` or executed via `sh` / `bash`): Invoked by `put` after `rsync` completes and before `git add --all` / `git commit`.
-    - `.drev-info-hook` (located at `<repo-root>/.drev-info-hook`, permissions `0755` or executed via `sh` / `bash`): Invoked by `info` to print custom build metadata to `stdout`.
+    - `.git-drev-put-hook` (located at `<repo-root>/.git-drev-put-hook`, permissions `0755` or executed via `sh` / `bash`): Invoked by `put` after `rsync` completes and before `git add --all` / `git commit`.
+    - `.git-drev-info-hook` (located at `<repo-root>/.git-drev-info-hook`, permissions `0755` or executed via `sh` / `bash`): Invoked by `info` to print custom build metadata to `stdout`.
     - Hook execution contract: Unlike legacy scripts that `source`d `.sh` files and called `put_hook`/`info_hook` functions in-process, `git-drev` supports both standalone executable files (`#!<interpreter>` with `0755` mode) AND legacy-style shell scripts defining `put_hook` / `info_hook` (executed via `bash -c 'source "$1"; if declare -F <hook_fn> >/dev/null; then <hook_fn>; fi' -- <hook-path>`).
   - **Remote Storage Layout:**
     - Remote revisions are stored on `<remote.host>` as flat subdirectories under `<remote.path>/<uuid>/` with mode `0755` (preserving uploaded payload permissions via `rsync -a`).
@@ -151,15 +151,15 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
   ├── internal/
   │   ├── cli/                     # Root dispatcher, global flags, subcommand handlers
   │   │   ├── root.go
-  │   │   ├── config.go            # git drev config
-  │   │   ├── create.go            # git drev create
-  │   │   ├── get.go               # git drev get
-  │   │   ├── info.go              # git drev info
-  │   │   ├── name.go              # git drev name
-  │   │   ├── put.go               # git drev put
-  │   │   ├── selectcmd.go         # git drev select
-  │   │   ├── update.go            # git drev update
-  │   │   └── usage.go             # git drev usage
+  │   │   ├── config.go            # git-drev config
+  │   │   ├── create.go            # git-drev create
+  │   │   ├── get.go               # git-drev get
+  │   │   ├── info.go              # git-drev info
+  │   │   ├── name.go              # git-drev name
+  │   │   ├── put.go               # git-drev put
+  │   │   ├── selectcmd.go         # git-drev select
+  │   │   ├── update.go            # git-drev update
+  │   │   └── usage.go             # git-drev usage
   │   ├── config/                  # 3-tier YAML config loader, merger, provenance report & validator
   │   │   ├── loader.go
   │   │   ├── merge.go
@@ -172,7 +172,7 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
   │   │   ├── runner.go            # Runner interface and subprocess execution core
   │   │   ├── inspection.go        # Read-only plumbing queries (refs, log, rev-parse)
   │   │   └── operations.go        # Mutating Git operations (fetch, checkout, commit, push)
-  │   ├── hook/                    # Hook runner for .drev-put-hook and .drev-info-hook
+  │   ├── hook/                    # Hook runner for .git-drev-put-hook and .git-drev-info-hook
   │   ├── term/                    # Structured stderr logger, TTY & NO_COLOR detection, timer
   │   └── transport/               # SSHRunner and RsyncRunner interfaces & implementations
   └── go.mod
@@ -320,10 +320,10 @@ All core legacy commands are consolidated into subcommands of the single `git-dr
 | :--- | :--- | :--- | :--- |
 | `create` | `legacy/create.sh` | `internal/cli` (`create.go`) | Creates a new revision metadata branch with an initial marker commit (or switches to it if it already exists locally/remotely) and pushes it to `origin`. |
 | `get` | `legacy/get.sh` | `internal/cli` (`get.go`) | Synchronizes the local working directory (or `<target_directory>`) with the remote directory revision referenced by `HEAD` (optionally updating to `--latest` first). |
-| `put` | `legacy/put.sh` | `internal/cli` (`put.go`) | Uploads local directory contents to a new remote UUID directory (cloning the previous revision as a server-side baseline when possible), runs `.drev-put-hook`, commits metadata with sequence number, and pushes with optimistic concurrency retry. |
+| `put` | `legacy/put.sh` | `internal/cli` (`put.go`) | Uploads local directory contents to a new remote UUID directory (cloning the previous revision as a server-side baseline when possible), runs `.git-drev-put-hook`, commits metadata with sequence number, and pushes with optimistic concurrency retry. |
 | `select` | `legacy/select.sh` | `internal/cli` (`selectcmd.go`) | Selects and checks out a target branch, tag, or specific revision commit resolved by UUID (falling back to `branch.default` when omitted). |
 | `update` | `legacy/update.sh` | `internal/cli` (`update.go`) | Fetches all remote changes and hard-resets the current active branch to `origin/<branch>`. |
-| `info` | `legacy/info.sh` | `internal/cli` (`info.go`) | Executes the repository's `.drev-info-hook` to display project-specific revision metadata. |
+| `info` | `legacy/info.sh` | `internal/cli` (`info.go`) | Executes the repository's `.git-drev-info-hook` to display project-specific revision metadata. |
 | `name` | `legacy/name.sh` | `internal/cli` (`name.go`) | Prints the current local branch name (or detached `HEAD` status) to `stdout`. |
 | `usage` | `legacy/usage.sh` | `internal/cli` (`usage.go`) | Queries the remote host via SSH for total storage consumption and (`-v`) correlates remote UUID directories against local Git history to display active vs. `[orphaned]` revisions. |
 | `config` | *N/A (Go native)* | `internal/cli` (`config.go`) | Prints the effective resolved cascading configuration and source provenance in YAML format. |
@@ -353,7 +353,7 @@ All core legacy commands are consolidated into subcommands of the single `git-dr
        3. Sequence numbers are parsed and compared as `uint64` integers.
   6. **Redundant `git add --all` Before Upload in `put.sh` (`put.sh:105`, `put.sh:180`):**
      - *Legacy flaw:* `put.sh` ran `git add --all` twice: once before `rsync` and once after `put_hook`. If `rsync` failed, the user's unstaged working tree changes were left staged in the Git index.
-     - *Modernized Go behavior:* Perform all precondition checks first, upload via `rsync`, run `.drev-put-hook`, and only then run `git add --all` and `git commit` atomically.
+     - *Modernized Go behavior:* Perform all precondition checks first, upload via `rsync`, run `.git-drev-put-hook`, and only then run `git add --all` and `git commit` atomically.
   7. **Redundant & Fragile UUID Search in `select.sh` (`select.sh:50-67`):**
      - *Legacy flaw:* `select.sh` ran `git log --all --format=%H --grep="$1"`, then looped over each commit running `git log --format=%B -n 1 "$commit"`, and then ran a dead code line `commit=$(git log --all --format=%H --grep="$1" -n 1)` on line 62 whose result was never used. Furthermore, `--grep` matched substring regexes rather than parsing the JSON `uuid` field.
      - *Modernized Go behavior:* Single-pass `git log --all -z --format=%H%x00%s` scan that unmarshals the JSON commit subject (`domain.RevisionMeta`), checks `strings.EqualFold(meta.UUID, targetUUID)` and `!meta.IsMarker()`, and stops at the first matching commit.
@@ -371,11 +371,11 @@ All core legacy commands are consolidated into subcommands of the single `git-dr
 - **Legacy-to-Modern identifier map:**
   | Category | Legacy (`drs`) Identifier | Modern (`git-drev`) Identifier | Notes |
   | :--- | :--- | :--- | :--- |
-  | **Binary / Invocation** | `git drs-<cmd>` / `$DRS_HOME/<cmd>.sh` | `git drev <cmd>` / `git-drev <cmd>` | Single self-contained Go binary on `$PATH` |
+  | **Binary / Invocation** | `git drs-<cmd>` / `$DRS_HOME/<cmd>.sh` | `git-drev <cmd>` / `git drev <cmd>` | Single self-contained Go binary on `$PATH` |
   | **Config File** | `drs.json` (`DRS_CONFIG_FILE`) | `.git-drev.yaml` / `.git-drev/config.yaml` | 3-tier YAML cascade (User Global, `$GIT_DREV_CONFIG`, Repo Local) |
-  | **Put Hook File** | `drs-put-hook.sh` (`DRS_PUT_HOOK_FILE`) | `.drev-put-hook` | Supports executable script or `put_hook()` shell function |
-  | **Info Hook File** | `drs-info-hook.sh` (`DRS_INFO_HOOK_FILE`) | `.drev-info-hook` | Supports executable script or `info_hook()` shell function |
-  | **Log Prefix** | `[drs]` (`DRS_LOG_PREFIX`) | `[drev]` | Emitted to `stderr` instead of `stdout` |
+  | **Put Hook File** | `drs-put-hook.sh` (`DRS_PUT_HOOK_FILE`) | `.git-drev-put-hook` | Supports executable script or `put_hook()` shell function |
+  | **Info Hook File** | `drs-info-hook.sh` (`DRS_INFO_HOOK_FILE`) | `.git-drev-info-hook` | Supports executable script or `info_hook()` shell function |
+  | **Log Prefix** | `[drs]` (`DRS_LOG_PREFIX`) | `[git-drev]` | Emitted to `stderr` instead of `stdout` |
   | **Env: Home Dir** | `DRS_HOME` | *(Retired)* | Replaced by single binary on `$PATH` |
   | **Env: Config Path** | *(Hardcoded `drs.json`)* | `GIT_DREV_CONFIG` | Tier 2 shared global YAML configuration file path |
   | **Env: Color Control** | *(None)* | `GIT_DREV_COLOR` / `NO_COLOR` | Controls ANSI color output |
