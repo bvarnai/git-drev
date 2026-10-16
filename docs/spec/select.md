@@ -105,7 +105,7 @@ func RunSelect(
        - Normalize `targetUUID` by stripping optional `{}` braces and lowercasing.
        - Log `[git-drev] Searching for commit with uuid '<opts.Target>'` to `stderr`.
        - Invoke `commitHash, err := insp.FindCommitByUUID(ctx, repoRoot, targetUUID)`:
-         - Executes `git log --all -z --format=%H%x00%s`.
+         - Executes `git log --all -z -F -i --grep=<targetUUID> --format=%H%x00%s`.
          - Streams NUL-delimited records; for each record, splits `<hash>\x00<subject>` and unmarshals `<subject>` into `domain.RevisionMeta`.
          - Selects the first commit (in topological/reverse-chronological order) where `strings.EqualFold(meta.UUID, targetUUID)` and `!meta.IsMarker()`.
        - If no matching non-marker commit is found (`errors.Is(err, errcode.ErrGitState)` or `commitHash == ""`), log `[git-drev] Error: No commit was found with uuid '<opts.Target>'` to `stderr` and return `errcode.ErrGitState` (exit code `4`).
@@ -132,7 +132,7 @@ func RunSelect(
   | `git config --local --get-all remote.origin.fetch` | `RepoRoot` | Newline-separated fetch refspec strings | Exit code `1` (unset) triggers adding wildcard fetch refspec; other errors return `errcode.ErrGitExec` (exit code `5`). |
   | `git config --local --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/*` | `RepoRoot` | Empty (`stdout`) | Executed only if wildcard refspec is missing. Non-zero exit returns `errcode.ErrGitExec` (exit code `5`). |
   | `git fetch --all --prune` | `RepoRoot` | Standard `git fetch` progress/summary on `stderr` | Non-zero exit returns `errcode.ErrGitExec` (exit code `5`). |
-  | `git log --all -z --format=%H%x00%s` | `RepoRoot` | NUL-delimited records of `<40-hex-hash>\x00<subject>\x00` | Executed only when `<target>` is a UUID. Non-zero exit (e.g., unborn repository with no commits) returns `errcode.ErrGitState` (exit code `4`) if no commit matches. |
+  | `git log --all -z -F -i --grep=<uuid> --format=%H%x00%s` | `RepoRoot` | NUL-delimited records of `<40-hex-hash>\x00<subject>\x00` matching `<uuid>` | Executed only when `<target>` is a UUID. Non-zero exit (e.g., unborn repository with no commits) returns `errcode.ErrGitState` (exit code `4`) if no commit matches. |
   | `git -c advice.detachedHead=false checkout <resolvedRef>` | `RepoRoot` | Standard `git checkout` status message | Non-zero exit returns `errcode.ErrGitExec` (exit code `5`). |
 
 - **Filesystem & metadata mutations:**
@@ -181,7 +181,7 @@ func RunSelect(
      - *Modernized behavior:* `FetchAll` (`git fetch --all --prune`) runs *before* `FindCommitByUUID`, guaranteeing that newly pushed remote revision commits are present locally when resolving `<uuid>`.
   4. **Redundant `git log` calls, dead code, and regex substring matching (`legacy/select.sh:50-62`):**
      - *Legacy flaw:* `select.sh` ran `git log --all --format=%H --grep="$1"`, spawned a separate `git log --format=%B -n 1 "$commit"` subprocess per candidate commit inside a loop, checked substring `[[ ! "$commit_message" =~ "marker" ]]`, and then executed a dead-code line `commit=$(git log --all --format=%H --grep="$1" -n 1)` on line 62 whose result was never read. Furthermore, `DRS_UUID_REGEXP` matched arbitrary alphanumeric `[A-Z0-9a-z]` characters rather than valid hexadecimal UUID digits `[0-9a-fA-F]`.
-     - *Modernized behavior:* Restricts UUID recognition to valid RFC 4122 hexadecimal digits (`[0-9a-fA-F]`), executes a single streaming `git log --all -z --format=%H%x00%s` command, parses each subject with `encoding/json` into `domain.RevisionMeta`, and verifies `strings.EqualFold(meta.UUID, targetUUID) && !meta.IsMarker()`.
+     - *Modernized behavior:* Restricts UUID recognition to valid RFC 4122 hexadecimal digits (`[0-9a-fA-F]`), executes a single streaming `git log --all -z -F -i --grep=<uuid> --format=%H%x00%s` command, parses each subject with `encoding/json` into `domain.RevisionMeta`, and verifies `strings.EqualFold(meta.UUID, targetUUID) && !meta.IsMarker()`.
   5. **Operational logs written to `stdout` (`legacy/select.sh:48,52,67`):**
      - *Legacy flaw:* `drs::common::log` wrote `[drs] Selecting ...` and `[drs] Found commit ...` to `stdout`.
      - *Modernized behavior:* All `[git-drev]` operational logs are emitted to `stderr` (and suppressed when `--quiet` is active), keeping `stdout` completely clean.

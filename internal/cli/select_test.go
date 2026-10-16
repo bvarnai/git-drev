@@ -91,7 +91,7 @@ remote:
 				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
 				"config --local --get-all remote.origin.fetch":                  {out: git.WildcardFetchRefspec},
 				"fetch --all --prune":                                           {out: ""},
-				"log --all -z --format=%H%x00%s": {
+				"log --all -z -F -i --grep=" + validUUID + " --format=%H%x00%s": {
 					out: "3333333333333333333333333333333333333333\x00" + `{"uuid":"` + validUUID + `","seq":"10"}` + "\x00",
 				},
 				"-c advice.detachedHead=false checkout 3333333333333333333333333333333333333333": {out: "HEAD is now at 3333333"},
@@ -108,8 +108,8 @@ remote:
 				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
 				"config --local --get-all remote.origin.fetch":                  {out: git.WildcardFetchRefspec},
 				"fetch --all --prune":                                           {out: ""},
-				"log --all -z --format=%H%x00%s": {
-					out: "3333333333333333333333333333333333333333\x00" + `{"uuid":"` + validUUID + `","seq":"10"}` + "\x00",
+				"log --all -z -F -i --grep=" + missingUUID + " --format=%H%x00%s": {
+					out: "",
 				},
 			},
 			expectedCode: errcode.ExitGitState,

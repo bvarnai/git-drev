@@ -223,7 +223,7 @@ func (i *Inspector) BranchUpstream(ctx context.Context, dir, branch string) (str
 	return strings.TrimSpace(out), nil
 }
 
-// FindCommitByUUID scans all commits via `git log --all -z --format=%H%x00%s` and returns the
+// FindCommitByUUID scans commits via `git log --all -z -F -i --grep=<uuid> --format=%H%x00%s` and returns the
 // full 40-character hash of the first non-marker commit whose JSON subject has a matching UUID.
 func (i *Inspector) FindCommitByUUID(ctx context.Context, dir, uuid string) (string, error) {
 	targetUUID, ok := domain.ParseUUID(uuid)
@@ -231,7 +231,7 @@ func (i *Inspector) FindCommitByUUID(ctx context.Context, dir, uuid string) (str
 		return "", errcode.NewError(errcode.ErrGitState, "No commit was found with uuid '%s'", uuid)
 	}
 
-	out, runErr := i.runner.Run(ctx, dir, "log", "--all", "-z", "--format=%H%x00%s")
+	out, runErr := i.runner.Run(ctx, dir, "log", "--all", "-z", "-F", "-i", "--grep="+targetUUID, "--format=%H%x00%s")
 	if runErr != nil {
 		if errors.Is(runErr, errcode.ErrInterrupted) || errors.Is(runErr, errcode.ErrTransport) {
 			return "", runErr
