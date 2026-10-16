@@ -4,14 +4,14 @@ package integration
 
 import (
 	"bytes"
-	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"git-drev/internal/config"
+	"git-drev/internal/domain"
+	"gopkg.in/yaml.v3"
 )
 
 // RepoFixture holds paths and isolated environment variables for a disposable
@@ -26,7 +26,7 @@ type RepoFixture struct {
 }
 
 // NewRepoFixture creates an isolated bare `origin` repository and a cloned working
-// repository on branch `main` with a valid `.drev.json` and an initial commit,
+// repository on branch `main` with a valid `.git-drev.yaml` and an initial commit,
 // completely isolated from the host machine's ~/.gitconfig and ~/.ssh/config.
 func NewRepoFixture(tb testing.TB) *RepoFixture {
 	tb.Helper()
@@ -63,17 +63,19 @@ func NewRepoFixture(tb testing.TB) *RepoFixture {
 	f.MustGit(workDir, "config", "user.email", "drev-test@example.com")
 	f.MustGit(workDir, "remote", "add", "origin", originDir)
 
-	// 3. Write default .drev.json and .gitignore, commit, and push to origin/main.
-	f.WriteConfig(config.Config{
-		WorkDir:       "data",
-		DefaultBranch: "main",
-		Remote: config.RemoteConfig{
+	// 3. Write default .git-drev.yaml and .gitignore, commit, and push to origin/main.
+	f.WriteConfig(domain.ProjectConfig{
+		WorkDir: "data",
+		Branch: domain.BranchConfig{
+			Default: "main",
+		},
+		Remote: domain.RemoteConfig{
 			Host: "localhost",
 			Path: f.RemotePath,
 		},
 	})
 	f.WriteFile(".gitignore", "/data/\n")
-	f.MustGit(workDir, "add", ".drev.json", ".gitignore")
+	f.MustGit(workDir, "add", ".git-drev.yaml", ".gitignore")
 	f.MustGit(workDir, "commit", "-m", "Add initial drev configuration")
 	f.MustGit(workDir, "push", "-u", "origin", "main")
 
@@ -115,14 +117,14 @@ func IsolatedGitEnv(homeDir string) []string {
 	)
 }
 
-// WriteConfig serializes cfg to <WorkDir>/.drev.json.
-func (f *RepoFixture) WriteConfig(cfg config.Config) {
+// WriteConfig serializes cfg to <WorkDir>/.git-drev.yaml.
+func (f *RepoFixture) WriteConfig(cfg domain.ProjectConfig) {
 	f.T.Helper()
-	b, err := json.MarshalIndent(cfg, "", "  ")
+	b, err := yaml.Marshal(cfg)
 	if err != nil {
-		f.T.Fatalf("marshal .drev.json: %v", err)
+		f.T.Fatalf("marshal .git-drev.yaml: %v", err)
 	}
-	f.WriteFile(".drev.json", string(b)+"\n")
+	f.WriteFile(".git-drev.yaml", string(b))
 }
 
 // WriteFile writes content to a relative path inside f.WorkDir, creating parent directories.

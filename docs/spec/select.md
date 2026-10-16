@@ -5,7 +5,7 @@
   - Via Git plugin: `git drev select [flags] [<branch>|<tag>|<uuid>]`
   - Direct binary: `git-drev select [flags] [<branch>|<tag>|<uuid>]`
 - **Target Go package:** `internal/cli` (`selectcmd.go`)
-- **Summary:** Selects and checks out an existing target branch, tag, or specific revision commit resolved by UUID, falling back to the configured `defaultBranch` (`"main"` by default) when no target argument is supplied.
+- **Summary:** Selects and checks out an existing target branch, tag, or specific revision commit resolved by UUID, falling back to the configured `branch.default` (`"main"` by default) when no target argument is supplied.
 
 ## 2. Arguments, Flags & Preconditions
 - **Subcommand-specific flags:**
@@ -15,7 +15,7 @@
 
 - **Positional arguments:**
   - `<target>` (`[<branch>|<tag>|<uuid>]`, optional, cardinality `0..1`):
-    - **Omitted (`0` arguments):** Resolves the target reference to `Config.DefaultBranch` (which defaults to `"main"` if unset in `.drev.json` and `git config drev.defaultBranch`).
+    - **Omitted (`0` arguments):** Resolves the target reference to `cfg.Branch.Default` (which defaults to `"main"` if unset across the 3-tier YAML cascade).
     - **UUID argument (`1` argument matching UUID format):** Recognized when the argument matches the case-insensitive RFC 4122 hex UUID pattern `^\{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}?$` (optional surrounding braces `{` and `}` are stripped before matching). Resolves to the full 40-character Git commit SHA-1 hash whose commit subject JSON (`domain.RevisionMeta`) has a matching `uuid` field and is not a branch creation marker (`!meta.IsMarker()`). Does not match `domain.ZeroUUID` (`00000000-0000-0000-0000-000000000000`) when associated only with marker commits.
     - **Branch or tag reference (`1` argument not matching UUID format):** Treated as a Git branch or tag reference name. Must not be empty or start with a leading dash `-` (rejected via `git check-ref-format --allow-onelevel` validation or leading-dash guard to prevent Git flag injection).
     - **Path resolution:** Not applicable. `<target>` is a logical Git reference or revision UUID, never a filesystem path; `GIT_PREFIX` does not alter `<target>`.
@@ -23,9 +23,9 @@
 
 - **Preconditions & state assertions:**
   1. **Non-bare Git working tree:** Must be invoked inside a valid, non-bare Git working tree (`git rev-parse --is-inside-work-tree` == `true`). Invoking outside a Git repository or inside a bare repository fails with `errcode.ErrNotRepository` (exit code `3`).
-  2. **Configuration presence & validity:** `<repo-root>/.drev.json` (or the path specified by `GIT_DREV_CONFIG`) must exist, be readable, parse as valid JSON, and pass `config.Config` schema validation (including `git config drev.*` overrides). Missing or invalid configuration fails with `errcode.ErrConfig` (exit code `3`).
+  2. **Configuration presence & validity:** Resolved configuration across the 3-tier YAML cascade (`~/.config/git-drev/config.yaml`, `$GIT_DREV_CONFIG`, `<repo-root>/.git-drev.yaml`) must pass `config.Load(repoRoot)` validation. Missing or invalid configuration fails with `errcode.ErrConfig` (exit code `3`).
   3. **Detached `HEAD` state allowed:** Unlike `put` and `update`, `select` MUST permit execution when `HEAD` is already detached. It is the designated recovery command (`Use "git drev select <branch>" to select a branch first.`) and also intentionally detaches `HEAD` when selecting a tag or UUID commit.
-  4. **Working tree cleanliness:** Standard `git checkout` semantics apply; untracked files in the ignored `workDir` are unaffected, while uncommitted modifications to tracked metadata files that conflict with the target commit cause `git checkout` to fail with `errcode.ErrGitExec` (exit code `5`).
+  4. **Working tree cleanliness:** Standard `git checkout` semantics apply; untracked files in the ignored `workdir` are unaffected, while uncommitted modifications to tracked metadata files that conflict with the target commit cause `git checkout` to fail with `errcode.ErrGitExec` (exit code `5`).
 
 ## 3. Subcommand Domain Models & Signatures
 ```go
@@ -34,7 +34,7 @@ package cli
 import (
 	"context"
 
-	"git-drev/internal/config"
+	"git-drev/internal/domain"
 	"git-drev/internal/git"
 	"git-drev/internal/term"
 )
@@ -43,7 +43,7 @@ import (
 type SelectTargetKind int
 
 const (
-	// SelectTargetDefault indicates no argument was supplied and Config.DefaultBranch was used.
+	// SelectTargetDefault indicates no argument was supplied and cfg.Branch.Default was used.
 	SelectTargetDefault SelectTargetKind = iota
 	// SelectTargetRef indicates the argument was treated as a branch or tag reference.
 	SelectTargetRef
@@ -64,7 +64,7 @@ type SelectOptions struct {
 type SelectResult struct {
 	// Kind indicates whether the target was defaulted, a direct ref, or a resolved UUID.
 	Kind SelectTargetKind
-	// RequestedTarget is the effective target string (DefaultBranch if Target was empty).
+	// RequestedTarget is the effective target string (Branch.Default if Target was empty).
 	RequestedTarget string
 	// ResolvedRef is the branch name, tag name, or commit SHA passed to git checkout.
 	ResolvedRef string
@@ -75,7 +75,7 @@ func RunSelect(
 	ctx context.Context,
 	insp *git.Inspector,
 	ops *git.Operations,
-	cfg *config.Config,
+	cfg *domain.ProjectConfig,
 	logger *term.Logger,
 	opts SelectOptions,
 ) (SelectResult, error)
@@ -88,7 +88,7 @@ func RunSelect(
    - Verify positional argument count is `0` or `1`. If `len(args) > 1`, return `errcode.ErrUsage` (exit code `2`) with `[drev] ! Too many arguments: expected at most 1 target (<branch>|<tag>|<uuid>), got <N>`.
    - If `len(args) == 1` and `strings.HasPrefix(args[0], "-")` (possible when passed after `--`), reject with `errcode.ErrUsage` (exit code `2`) to prevent invalid ref or option injection.
    - Resolve `RepoRoot` and `Prefix` via `insp.RepoRoot(ctx, dir)` and change the process working directory to `RepoRoot`. If not inside a non-bare working tree, return `errcode.ErrNotRepository` (exit code `3`).
-   - Load and validate `cfg` from `.drev.json` (or `GIT_DREV_CONFIG`) merged with `git config drev.*` overrides. On failure, return `errcode.ErrConfig` (exit code `3`).
+   - Load and validate `cfg` via `config.Load(repoRoot)`. On failure, return `errcode.ErrConfig` (exit code `3`).
 
 2. **Core algorithm:**
    - **Step 2.1 — Ensure remote fetch refspec configuration:**
@@ -98,7 +98,7 @@ func RunSelect(
      - If `FetchAll` fails, return `errcode.ErrGitExec` (exit code `5`) with `[drev] ! Fetch failed (git fetch --all --prune)`.
    - **Step 2.3 — Resolve target reference:**
      - **Case A: `opts.Target == ""` (no positional argument):**
-       - Set `requested = cfg.DefaultBranch` (guaranteed non-empty, defaulting to `"main"`).
+       - Set `requested = cfg.Branch.Default` (guaranteed non-empty, defaulting to `"main"`).
        - Set `resolvedRef = requested` and `kind = SelectTargetDefault`.
        - Log `[drev] Selecting '<requested>' branch by default` to `stderr`.
      - **Case B: `opts.Target` matches UUID format (`domain.ParseUUID(opts.Target)` succeeds):**
@@ -129,7 +129,6 @@ func RunSelect(
   | Command & Flags | Working Dir | Expected Output Format | Failure Handling |
   | :--- | :--- | :--- | :--- |
   | `git rev-parse --is-inside-work-tree --show-toplevel --show-prefix` | Caller `PWD` | Newline-separated boolean (`true`), absolute repo root path, and relative prefix | Non-zero exit or `false` returns `errcode.ErrNotRepository` (exit code `3`). |
-  | `git config --get-regexp ^drev\.` | `RepoRoot` | Newline-separated `drev.<key> <value>` pairs (exit code `1` if no keys match) | Exit code `1` treated as empty override set; other non-zero exits return `errcode.ErrConfig` (exit code `3`). |
   | `git config --local --get-all remote.origin.fetch` | `RepoRoot` | Newline-separated fetch refspec strings | Exit code `1` (unset) triggers adding wildcard fetch refspec; other errors return `errcode.ErrGitExec` (exit code `5`). |
   | `git config --local --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/*` | `RepoRoot` | Empty (`stdout`) | Executed only if wildcard refspec is missing. Non-zero exit returns `errcode.ErrGitExec` (exit code `5`). |
   | `git fetch --all --prune` | `RepoRoot` | Standard `git fetch` progress/summary on `stderr` | Non-zero exit returns `errcode.ErrGitExec` (exit code `5`). |
@@ -139,14 +138,14 @@ func RunSelect(
 - **Filesystem & metadata mutations:**
   - `.git/config`: Updated via `git config --local --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/*` only if the wildcard fetch refspec was absent.
   - `.git/HEAD`, `.git/index`, `.git/refs/remotes/origin/*`, and tracked metadata files in `RepoRoot`: Updated by `git fetch --all --prune` and `git checkout <resolvedRef>`.
-  - `<repo-root>/<workDir>`: Untouched by `select` (remains ignored by Git until `git drev get` is invoked).
+  - `<repo-root>/<workdir>`: Untouched by `select` (remains ignored by Git until `git drev get` is invoked).
 
 - **Standard output (`stdout`):**
   - Emits nothing (`0` bytes) during normal operation, `--verbose`, or `--quiet`. (Only `--help` / `-h` or `--version` writes to `stdout`).
 
 - **Standard error (`stderr`):**
   - Default branch selection log (when `<target>` is omitted and `--quiet` is false):
-    `[drev] Selecting '<defaultBranch>' branch by default`
+    `[drev] Selecting '<branch.default>' branch by default`
   - UUID search logs (when `<target>` is a UUID and `--quiet` is false):
     `[drev] Searching for commit with uuid '<target>'`
     `[drev] Found commit '<commitHash>'`
@@ -161,7 +160,7 @@ func RunSelect(
 | More than 1 positional argument supplied | `errcode.ErrUsage` | `2` | `[drev] ! Too many arguments: expected at most 1 target (<branch>\|<tag>\|<uuid>), got <N>` |
 | Target argument starts with `-` (e.g., `git drev select -- -bad`) | `errcode.ErrUsage` | `2` | `[drev] ! Invalid target reference '<target>': must not start with '-'` |
 | Invoked outside a Git working tree or inside a bare repository | `errcode.ErrNotRepository` | `3` | `[drev] ! Not inside a Git working tree` |
-| Missing, unreadable, or malformed `.drev.json` | `errcode.ErrConfig` | `3` | `[drev] ! Configuration file '.drev.json' not found or invalid: <details>` |
+| Missing, unreadable, or malformed `.git-drev.yaml` | `errcode.ErrConfig` | `3` | `[drev] ! <configuration error>` |
 | Target UUID not found in any non-marker commit in repository history | `errcode.ErrGitState` | `4` | `[drev] ! No commit was found with uuid '<uuid>'` |
 | `git config` refspec update fails | `errcode.ErrGitExec` | `5` | `[drev] ! Failed to configure remote.origin.fetch: <details>` |
 | `git fetch --all --prune` fails (network/auth error or invalid remote) | `errcode.ErrGitExec` | `5` | `[drev] ! Fetch failed (git fetch --all --prune)` |
@@ -188,7 +187,7 @@ func RunSelect(
      - *Modernized behavior:* All `[drev]` operational logs are emitted to `stderr` (and suppressed when `--quiet` is active), keeping `stdout` completely clean.
   6. **Subdirectory invocation failure (`legacy/common.sh:172-178`):**
      - *Legacy flaw:* Checked `[[ ! -f "drs.json" ]]` relative to the caller's `PWD`, failing when invoked from a subdirectory.
-     - *Modernized behavior:* Resolves `RepoRoot` via `git rev-parse --show-toplevel` first and loads `.drev.json` from `RepoRoot`.
+     - *Modernized behavior:* Resolves `RepoRoot` via `git rev-parse --show-toplevel` first and loads `.git-drev.yaml` from `RepoRoot`.
 
 - **Boundary conditions:**
   - **Braced or uppercase UUIDs:** If the user passes `{C1CA82B1-7F34-4F4C-9A76-05E3297B2A23}` or `C1CA82B1-7F34-4F4C-9A76-05E3297B2A23`, `select` strips optional `{}` braces and performs a case-insensitive comparison (`strings.EqualFold`) against `RevisionMeta.UUID` while logging the user's input string in status messages.
@@ -197,12 +196,12 @@ func RunSelect(
   - **Detached `HEAD` transitions:**
     - Selecting a UUID or a Git tag transitions the repository into a detached `HEAD` state without printing Git's detached-HEAD advice banner (`-c advice.detachedHead=false`).
     - Selecting a branch name (`main`, `feature/x`) from a detached `HEAD` state cleanly re-attaches `HEAD` to `refs/heads/<branch>` (creating a local tracking branch automatically via `git checkout <branch>` if `origin/<branch>` exists uniquely on `origin`).
-  - **Subdirectory & symlink execution:** Running `git drev select` from a nested subdirectory (including inside `<workDir>` or via a symlinked directory) resolves `RepoRoot` via `git rev-parse --show-toplevel` and executes all Git operations from `RepoRoot`.
+  - **Subdirectory & symlink execution:** Running `git drev select` from a nested subdirectory (including inside `<workdir>` or via a symlinked directory) resolves `RepoRoot` via `git rev-parse --show-toplevel` and executes all Git operations from `RepoRoot`.
 
 ## 8. Black-Box Verification Scenarios
 | Scenario ID | Given (Repo & Filesystem State) | When (CLI Invocation) | Then (Expected Exit Code, `stdout`/`stderr`, & Repo/FS State) |
 | :--- | :--- | :--- | :--- |
-| `TC-01` | Valid repo on branch `feature-a`; `.drev.json` has `"defaultBranch": "main"`; `origin/main` exists. | `git drev select` | Exit code `0`; `stdout` is empty; `stderr` contains `[drev] Selecting 'main' branch by default`; `git symbolic-ref --short HEAD` is `main`. |
+| `TC-01` | Valid repo on branch `feature-a`; `.git-drev.yaml` has `branch.default: main`; `origin/main` exists. | `git drev select` | Exit code `0`; `stdout` is empty; `stderr` contains `[drev] Selecting 'main' branch by default`; `git symbolic-ref --short HEAD` is `main`. |
 | `TC-02` | Valid repo on `main`; remote `origin` has branch `release/1.0` not yet checked out locally. | `git drev select release/1.0` | Exit code `0`; `stdout` is empty; `git fetch --all --prune` fetches `origin/release/1.0` and `git checkout release/1.0` switches `HEAD` to local tracking branch `release/1.0`. |
 | `TC-03` | Valid repo where commit `a1b2c3d4...` has subject `{"uuid":"c1ca82b1-7f34-4f4c-9a76-05e3297b2a23","seq":"100"}` and child branch `feat` has marker commit `e5f6a7b8...` with subject `{"uuid":"c1ca82b1-7f34-4f4c-9a76-05e3297b2a23","marker":"true"}`. | `git drev select c1ca82b1-7f34-4f4c-9a76-05e3297b2a23` | Exit code `0`; `stdout` is empty; `stderr` contains `[drev] Searching for commit with uuid 'c1ca82b1-7f34-4f4c-9a76-05e3297b2a23'` and `[drev] Found commit 'a1b2c3d4...'`; `HEAD` is detached at `a1b2c3d4...` (marker commit `e5f6a7b8...` is ignored). |
 | `TC-04` | Valid repo with no commit matching UUID `ffffffff-ffff-4fff-bfff-ffffffffffff`. | `git drev select ffffffff-ffff-4fff-bfff-ffffffffffff` | Exit code `4` (`ErrGitState`); `stdout` is empty; `stderr` contains `[drev] ! No commit was found with uuid 'ffffffff-ffff-4fff-bfff-ffffffffffff'`; `HEAD` remains unchanged. |

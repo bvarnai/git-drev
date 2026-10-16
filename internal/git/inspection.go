@@ -162,46 +162,6 @@ func (i *Inspector) ValidateBranchName(ctx context.Context, dir, branch string) 
 	return nil
 }
 
-// ConfigOverrides reads all `drev.*` Git configuration keys in dir via `git config --get-regexp ^drev\.`.
-func (i *Inspector) ConfigOverrides(ctx context.Context, dir string) (map[string]string, error) {
-	out, runErr := i.runner.Run(ctx, dir, "config", "--get-regexp", `^drev\.`)
-	if runErr != nil {
-		if errors.Is(runErr, errcode.ErrInterrupted) || errors.Is(runErr, errcode.ErrTransport) {
-			return nil, runErr
-		}
-		if code, ok := ExitCodeOf(runErr); ok && code == 1 {
-			return map[string]string{}, nil
-		}
-		return nil, errcode.WrapError(errcode.ErrConfig, runErr, "Failed to read git config drev.*")
-	}
-
-	overrides := make(map[string]string)
-	for _, line := range strings.Split(strings.ReplaceAll(out, "\r\n", "\n"), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		key, val, hasVal := strings.Cut(line, " ")
-		if !hasVal {
-			overrides[strings.ToLower(key)] = ""
-			continue
-		}
-		overrides[strings.ToLower(key)] = val
-	}
-	return overrides, nil
-}
-
-// BoundConfigReader binds an Inspector and repository directory to satisfy config.GitConfigReader.
-type BoundConfigReader struct {
-	Inspector *Inspector
-	Dir       string
-}
-
-// ConfigOverrides implements config.GitConfigReader.
-func (b BoundConfigReader) ConfigOverrides(ctx context.Context) (map[string]string, error) {
-	return b.Inspector.ConfigOverrides(ctx, b.Dir)
-}
-
 // LocalBranchExists checks whether `refs/heads/<branch>` exists locally via `git show-ref --verify --quiet`.
 func (i *Inspector) LocalBranchExists(ctx context.Context, dir, branch string) (bool, error) {
 	_, runErr := i.runner.Run(ctx, dir, "show-ref", "--verify", "--quiet", "refs/heads/"+branch)

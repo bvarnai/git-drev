@@ -31,7 +31,7 @@ var (
 	// missing mandatory arguments, mutually exclusive flags, or invalid formats (exit code 2).
 	ErrUsage = errors.New("usage error")
 
-	// ErrConfig indicates a missing or malformed .drev.json or invalid git config drev.* (exit code 3).
+	// ErrConfig indicates a missing or malformed .git-drev.yaml configuration (exit code 3).
 	ErrConfig = errors.New("configuration error")
 
 	// ErrNotRepository indicates invocation outside a non-bare Git working tree (exit code 3).

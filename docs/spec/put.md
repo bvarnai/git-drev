@@ -5,7 +5,7 @@
   - Via Git plugin: `git drev put [flags] [<source_directory>]`
   - Direct binary: `git-drev put [flags] [<source_directory>]`
 - **Target Go package:** `internal/cli` (`internal/cli/put.go`)
-- **Summary:** Uploads the contents of a local source directory (or the configured `workDir`) to a newly generated UUID directory on the remote storage host—cloning the current `HEAD` revision on the remote server as a copy-on-write/delta baseline when available—executes the optional `.drev-put-hook` script, commits the new revision metadata (`{"uuid":"...","seq":"..."}`) to the active branch, and publishes it to `origin` using an optimistic concurrency control loop with sequence-based conflict resolution.
+- **Summary:** Uploads the contents of a local source directory (or the configured `workdir`) to a newly generated UUID directory on the remote storage host—cloning the current `HEAD` revision on the remote server as a copy-on-write/delta baseline when available—executes the optional `.drev-put-hook` script, commits the new revision metadata (`{"uuid":"...","seq":"..."}`) to the active branch, and publishes it to `origin` using an optimistic concurrency control loop with sequence-based conflict resolution.
 
 ## 2. Arguments, Flags & Preconditions
 - **Subcommand-specific flags:**
@@ -21,7 +21,7 @@
   - `[<source_directory>]` (**Optional**, cardinality `0..1`):
     - Rejects invocations with more than 1 positional argument with `errcode.ErrUsage` (exit code `2`).
     - **When provided:** Resolved relative to `CallerDir` (`filepath.Join(RepoRoot, Prefix)`—the caller's working directory at invocation time, honoring `GIT_PREFIX`) before changing the process working directory to `RepoRoot`.
-    - **When omitted:** Defaults to `filepath.Join(RepoRoot, cfg.WorkDir)` (where `cfg.WorkDir` defaults to `"data"` if unset in `.drev.json` and `git config drev.workDir`).
+    - **When omitted:** Defaults to `filepath.Join(RepoRoot, cfg.WorkDir)` (where `cfg.WorkDir` defaults to `"data"` if unset in the 3-tier YAML configuration).
     - **Validation rules:**
       1. The resolved path MUST exist on the local filesystem (`os.Stat`); if missing, fail immediately with `errcode.ErrUsage` (exit code `2`).
       2. The resolved path MUST be a directory (`info.IsDir() == true`, following symlinks at the top-level path via `os.Stat`); if it is a regular file, fail with `errcode.ErrUsage` (exit code `2`).
@@ -29,7 +29,7 @@
 
 - **Preconditions & state assertions:**
   1. **Non-bare Git working tree:** Must be invoked inside a valid Git working tree (`git rev-parse --is-inside-work-tree == true`). Bare repositories or invocations inside `.git/` fail with `errcode.ErrNotRepository` (exit code `3`).
-  2. **Configuration validity:** `<repo-root>/.drev.json` (or `$GIT_DREV_CONFIG`) must exist, parse as valid UTF-8 JSON, and yield validated `remote.host`, `remote.path`, and `workDir` values after applying `git config drev.*` overrides (`errcode.ErrConfig`, exit code `3`).
+  2. **Configuration validity:** The 3-tier YAML configuration (`config.Load(RepoRoot)`) must parse as valid YAML and yield validated `remote.host`, `remote.path`, and `workdir` values (`errcode.ErrConfig`, exit code `3`).
   3. **Attached `HEAD` on a named branch:** `HEAD` MUST be a symbolic reference (`git symbolic-ref --quiet --short HEAD`). If `HEAD` is detached, abort before any remote or local mutation with `errcode.ErrDetachedHead` (exit code `4`) and emit `[drev] Hint: Use "git drev select <branch>" to select a branch first.`
   4. **Git index unlocked:** Verify `<git-dir>/index.lock` does not exist before starting the upload or staging changes; if present, fail with `errcode.ErrGitState` (exit code `4`).
   5. **Remote fetch refspec configuration:** Ensure `remote.origin.fetch` includes `+refs/heads/*:refs/remotes/origin/*` via `ops.EnsureRemoteFetchConfig` (non-destructively adding the refspec if missing).
@@ -42,7 +42,6 @@ import (
 	"context"
 	"time"
 
-	"git-drev/internal/config"
 	"git-drev/internal/domain"
 	"git-drev/internal/git"
 	"git-drev/internal/hook"
@@ -93,7 +92,7 @@ type PutResult struct {
 
 // PutEnv groups external dependencies injected into RunPut for pure unit testing.
 type PutEnv struct {
-	Config  config.Config
+	Config  domain.ProjectConfig
 	Insp    *git.Inspector
 	Ops     *git.Operations
 	Remote  transport.RemoteRunner
@@ -118,7 +117,7 @@ func RunPut(ctx context.Context, env PutEnv, opts PutOptions) (*PutResult, error
 2. **Repository & path canonicalization:**
    - Query `RepoRoot` and `Prefix` via `env.Insp.RepoRoot(ctx, dir)`.
    - Compute `CallerDir = filepath.Join(RepoRoot, Prefix)`.
-   - Load and validate `cfg` from `<RepoRoot>/.drev.json` (or `$GIT_DREV_CONFIG`) merged with `git config drev.*` overrides.
+   - Load and validate `cfg` via `config.Load(RepoRoot)` (3-tier YAML cascade).
    - Resolve `opts.SourceDir`:
      - If positional argument `<source_directory>` is present: if `filepath.IsAbs(arg)`, use `filepath.Clean(arg)`; otherwise `filepath.Join(CallerDir, arg)`.
      - If omitted: `filepath.Join(RepoRoot, cfg.WorkDir)`.
@@ -151,11 +150,11 @@ func RunPut(ctx context.Context, env PutEnv, opts PutOptions) (*PutResult, error
      - `Verbose`: `opts.Verbose`
      - `Quiet`: `opts.Quiet`
      - `Stats`: `opts.Stats`
-     - `UserOptions`: `cfg.Remote.RsyncOptions.Put`
+     - `UserOptions`: `cfg.Remote.Rsync.Put`
    - Invoke `env.Remote.RsyncPut(ctx, syncReq)`. If `RsyncPut` fails, return `errcode.ErrTransport` (exit code `7`).
 4. **Execute `.drev-put-hook` (if present):**
    - Check if `<RepoRoot>/.drev-put-hook` exists and is a regular file (`os.Stat`).
-   - If present, execute via `env.Hook.Run(ctx, hookReq)` with `GIT_DREV_UUID=<uuid>`, `GIT_DREV_SEQ=<seq>`, `GIT_DREV_BRANCH=<branch>`, `GIT_DREV_WORK_DIR=<abs-workDir>`, `GIT_DREV_ROOT=<RepoRoot>`, and positional arguments `opts.RawArgs`, enforcing `GIT_DREV_HOOK_TIMEOUT` (default `5m`).
+   - If present, execute via `env.Hook.Run(ctx, hookReq)` with `GIT_DREV_UUID=<uuid>`, `GIT_DREV_SEQ=<seq>`, `GIT_DREV_BRANCH=<branch>`, `GIT_DREV_WORK_DIR=<abs-workdir>`, `GIT_DREV_ROOT=<RepoRoot>`, and positional arguments `opts.RawArgs`, enforcing `GIT_DREV_HOOK_TIMEOUT` (default `5m`).
    - If the hook exits non-zero or times out, return `errcode.ErrRuntime` (exit code `1`).
 5. **Stage and commit revision metadata:**
    - Log `[drev] Staging revision metadata` to `stderr`.
@@ -258,7 +257,7 @@ func RunPut(ctx context.Context, env PutEnv, opts PutOptions) (*PutResult, error
 | Invalid `--sequence` value (non-integer, negative, or `uint64` overflow) | `errcode.ErrUsage` | `2` | `[drev] ! Invalid sequence number '<val>': must be an unsigned 64-bit integer` |
 | Specified or default `<source_directory>` does not exist or is not a directory | `errcode.ErrUsage` | `2` | `[drev] ! Specified source directory '<path>' does not exist` |
 | Invoked outside a Git worktree or inside a bare repository | `errcode.ErrNotRepository` | `3` | `[drev] ! Not inside a Git working tree` |
-| Missing or malformed `.drev.json`, or missing `remote.host` / `remote.path` | `errcode.ErrConfig` | `3` | `[drev] ! Configuration error in '<path>': <detail>` |
+| Missing or malformed `.git-drev.yaml`, or missing `remote.host` / `remote.path` | `errcode.ErrConfig` | `3` | `[drev] ! Configuration error in '<path>': <detail>` |
 | Repository is in detached `HEAD` state | `errcode.ErrDetachedHead` | `4` | `[drev] ! Detached HEAD state detected, aborting\n[drev] Hint: Use "git drev select <branch>" to select a branch first.` |
 | `.git/index.lock` exists | `errcode.ErrGitState` | `4` | `[drev] ! Git index is locked ('.git/index.lock' exists)` |
 | `.drev-put-hook` exits with non-zero code or exceeds `GIT_DREV_HOOK_TIMEOUT` | `errcode.ErrRuntime` | `1` | `[drev] ! Put hook '.drev-put-hook' failed: <detail>` |
@@ -292,13 +291,13 @@ func RunPut(ctx context.Context, env PutEnv, opts PutOptions) (*PutResult, error
 ### Boundary Conditions
 - **Symlinks:**
   - If `<source_directory>` itself is a symlink to a directory, `os.Stat` follows it and appending `/` (`<source_directory>/`) causes `rsync -a` to traverse into the target directory and transfer its contents.
-  - Symlinks *inside* `<source_directory>` are preserved as symlinks on the remote server (`-l` implied by `rsync -a`) unless overridden by user `remote.rsyncOptions.put` (e.g., `--copy-links`).
+  - Symlinks *inside* `<source_directory>` are preserved as symlinks on the remote server (`-l` implied by `rsync -a`) unless overridden by user `remote.rsync.put` (e.g., `--copy-links`).
 - **Empty `<source_directory>`:**
   - Valid and permitted; creates an empty `<remote.path>/<uuid>/` directory on the remote server (and deletes baseline files via `--delete-during` if cloned from a non-empty baseline).
 - **Paths with spaces, quotes, or newlines:**
   - Passed as discrete elements in `[]string` to `rsync` and POSIX-quoted in SSH remote commands; never subjected to `eval set --`.
 - **Subdirectory invocation (`GIT_PREFIX`):**
-  - Running `git drev put ./build-output` from `<repo-root>/sub/dir` resolves `<source_directory>` to `<repo-root>/sub/dir/build-output`, while `.drev.json` and `.drev-put-hook` are resolved at `<repo-root>`.
+  - Running `git drev put ./build-output` from `<repo-root>/sub/dir` resolves `<source_directory>` to `<repo-root>/sub/dir/build-output`, while `.git-drev.yaml` and `.drev-put-hook` are resolved at `<repo-root>`.
 - **Detached `HEAD` state:**
   - Rejected immediately at precondition check before touching the network or filesystem (exit code `4`).
 

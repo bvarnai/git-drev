@@ -18,7 +18,7 @@
 
 - **Positional arguments:**
   1. `[<target_directory>]` (** optional**, cardinality `0..1`):
-     - **Omitted (`0` arguments):** Defaults to the repository's configured `workDir` resolved relative to `RepoRoot` (`filepath.Join(RepoRoot, cfg.WorkDir)`, where `cfg.WorkDir` defaults to `"data"`).
+     - **Omitted (`0` arguments):** Defaults to the repository's configured `workdir` resolved relative to `RepoRoot` (`filepath.Join(RepoRoot, cfg.WorkDir)`, where `cfg.WorkDir` defaults to `"data"`).
      - **Provided (`1` argument):** Resolved relative to `CallerDir` (`filepath.Join(RepoRoot, Prefix)`, the user's `PWD` at invocation time) before the process changes working directory to `RepoRoot`. If the user supplies an absolute path, it is cleaned via `filepath.Clean(arg)` and used directly.
      - **Validation rules:**
        - Passing more than 1 positional argument fails immediately with `ErrUsage` (exit code `2`).
@@ -28,7 +28,7 @@
 
 - **Preconditions & state assertions:**
   1. **Non-bare Git working tree:** Must be invoked inside a valid Git working tree (`git rev-parse --is-inside-work-tree` == `true`). Bare repositories or invocations inside `.git/` fail with `ErrNotRepository` (exit code `3`).
-  2. **Configuration validity:** `<RepoRoot>/.drev.json` (or `$GIT_DREV_CONFIG`) merged with `git config drev.*` overrides must exist, parse as valid UTF-8 JSON, and satisfy all schema constraints defined in `docs/spec/global.md` Section 5 (`remote.host`, `remote.path`, `workDir`). Missing or invalid configuration fails with `ErrConfig` (exit code `3`).
+  2. **Configuration validity:** The 3-tier YAML configuration (`config.Load(RepoRoot)`) must parse as valid YAML and satisfy all schema constraints defined in `docs/spec/global.md` Section 5 (`remote.host`, `remote.path`, `workdir`). Missing or invalid configuration fails with `ErrConfig` (exit code `3`).
   3. **Branch attachment check (conditional on `--latest`):**
      - When `--latest` (`-l`) is `false`: Detached `HEAD` state is **permitted** so users can retrieve revisions after running `git drev select <tag>` or `git drev select <uuid>`.
      - When `--latest` (`-l`) is `true`: `HEAD` MUST be a symbolic reference to a local branch (`git symbolic-ref --quiet --short HEAD`). If `HEAD` is detached, execution aborts before any network call with `ErrDetachedHead` (exit code `4`) and emits the remediation hint: `Use "git drev select <branch>" to select a branch first.`
@@ -46,7 +46,7 @@ import (
 	"context"
 	"io/fs"
 
-	"git-drev/internal/config"
+	"git-drev/internal/domain"
 	"git-drev/internal/git"
 	"git-drev/internal/term"
 	"git-drev/internal/transport"
@@ -97,7 +97,7 @@ type GetDeps struct {
 	Remote transport.RemoteRunner
 	FS     FS
 	Logger *term.Logger
-	Config config.Config
+	Config domain.ProjectConfig
 }
 
 // ResolveGetTargetDir resolves the user-supplied targetDirArg (if any) relative to callerDir,
@@ -116,11 +116,11 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
    - Verify global flag mutual exclusion (`opts.Verbose && opts.Quiet` returns `ErrUsage`, exit code `2`).
    - Verify positional argument count (`len(args) <= 1`; if `> 1`, return `ErrUsage`, exit code `2`).
    - Query `deps.Insp.RepoRoot(ctx, dir)` to obtain `repoRoot`, `prefix`, and validate that the caller is inside a non-bare working tree.
+   - Load and validate the 3-tier YAML configuration via `config.Load(repoRoot)`.
    - Compute `callerDir := filepath.Join(repoRoot, prefix)` and resolve `<target_directory>` via `ResolveGetTargetDir`:
      - If positional argument `targetDirArg` is provided, resolve `absTarget = filepath.Clean(filepath.Join(callerDir, targetDirArg))` (or `filepath.Clean(targetDirArg)` if already absolute).
      - If omitted, resolve `absTarget = filepath.Clean(filepath.Join(repoRoot, deps.Config.WorkDir))`.
      - Reject `absTarget` with `ErrUsage` if `absTarget == repoRoot`, `absTarget == gitDir`, or `strings.HasPrefix(absTarget, gitDir + string(filepath.Separator))`.
-   - Load and validate `.drev.json` + `git config drev.*` overrides from `repoRoot`.
 
 2. **Core algorithm:**
    - **Step 2.1: Ensure remote fetch refspec configuration:**
@@ -158,7 +158,7 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
        - `Verbose`: `opts.Verbose`
        - `Quiet`: `opts.Quiet`
        - `Stats`: `opts.Stats`
-       - `UserOptions`: `deps.Config.Remote.RsyncOptions.Get`
+       - `UserOptions`: `deps.Config.Remote.Rsync.Get`
      - If `RsyncGet` fails, return `ErrTransport` (exit code `7`) with message `Unable to get directory revision`.
    - **Step 2.7: Completion logging:**
      - Emit elapsed duration to `stderr` via `deps.Logger.Info(timer.String())` (`[drev] Took X min Y sec`, suppressed under `--quiet`).
@@ -196,7 +196,7 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
     3. Core archive & deletion flags:
        - `-a --delete-during`
     4. User-configured flags (appended last so user overrides win):
-       - Tokenized `remote.rsyncOptions.get` (or `drev.remote.rsyncGetOptions`).
+       - Tokenized `remote.rsync.get`.
     5. Transport & path arguments:
        - `-e`, `<resolved-ssh-command>` (default `ssh -T` or `$GIT_DREV_SSH_COMMAND`)
        - `--`
@@ -205,7 +205,7 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
 
 - **Filesystem & metadata mutations:**
   - **`.git/config`:** Adds `remote.origin.fetch = +refs/heads/*:refs/remotes/origin/*` only if missing.
-  - **`.git/HEAD` & working tree (when `--latest` is set):** Hard-resets tracked metadata files in `<RepoRoot>` to match `refs/remotes/origin/<branch>`. (Ignored files in `workDir` are untouched by `git reset --hard`.)
+  - **`.git/HEAD` & working tree (when `--latest` is set):** Hard-resets tracked metadata files in `<RepoRoot>` to match `refs/remotes/origin/<branch>`. (Ignored files in `workdir` are untouched by `git reset --hard`.)
   - **`<target_directory>`:**
     - Created with mode `0755` (`drwxr-xr-x` minus umask) via `os.MkdirAll` if not already present (only after remote revision existence is confirmed).
     - Synchronized in-place by `rsync -a --delete-during`: extraneous local files inside `<target_directory>` not present in `<remote.path>/<uuid>/` are deleted, and remote files, symlinks, permissions, and modification times are replicated locally.
@@ -233,7 +233,7 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
 | Unknown flag, extra positional args (`> 1`), or mutually exclusive `-v` and `-q` | `errcode.ErrUsage` | `2` | `[drev] ! <flag/argument validation error>` |
 | Target directory resolves to `<RepoRoot>` or inside `<GitDir>` | `errcode.ErrUsage` | `2` | `[drev] ! Invalid target directory '<path>': cannot overwrite repository root or .git directory` |
 | Invoked outside a Git working tree or inside a bare repository | `errcode.ErrNotRepository` | `3` | `[drev] ! Not inside a Git working tree` |
-| Missing or malformed `.drev.json`, or missing `remote.host` / `remote.path` | `errcode.ErrConfig` | `3` | `[drev] ! Configuration error: <details>` |
+| Missing or malformed `.git-drev.yaml`, or missing `remote.host` / `remote.path` | `errcode.ErrConfig` | `3` | `[drev] ! Configuration error: <details>` |
 | `--latest` passed while `HEAD` is detached | `errcode.ErrDetachedHead` | `4` | `[drev] ! Detached HEAD state detected, aborting`<br>`[drev] Hint: Use "git drev select <branch>" to select a branch first.` |
 | `--latest` passed when `origin/<branch>` does not exist on remote | `errcode.ErrGitState` | `4` | `[drev] ! Remote branch 'origin/<branch>' does not exist` |
 | `HEAD` commit is an empty branch creation marker (`"marker":"true"`) | `errcode.ErrGitState` | `4` | `[drev] ! No directory revision available yet on current branch` |
@@ -268,7 +268,7 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
      - *Modernized fix:* Both `term.Logger` and the `rsync` subprocess `cmd.Stdout` are bound to `stderr` so `stdout` remains clean.
 
 - **Boundary conditions:**
-  - **Subdirectory invocation (`GIT_PREFIX`):** If a user invokes `git drev get ./my-output` from `<repo-root>/sub/dir`, `<target_directory>` resolves to `<repo-root>/sub/dir/my-output`, whereas omitting `<target_directory>` always resolves `workDir` to `<repo-root>/<workDir>`.
+  - **Subdirectory invocation (`GIT_PREFIX`):** If a user invokes `git drev get ./my-output` from `<repo-root>/sub/dir`, `<target_directory>` resolves to `<repo-root>/sub/dir/my-output`, whereas omitting `<target_directory>` always resolves `workdir` to `<repo-root>/<workdir>`.
   - **Symlinks:**
     - If `<target_directory>` itself is a symlink pointing to an existing directory, `os.Stat` follows the symlink (`info.IsDir() == true`) and `rsync` synchronizes into the linked directory (trailing slash `<target_directory>/` ensures `rsync` traverses the symlink rather than replacing the symlink itself).
     - Symlinks *inside* the remote revision payload are preserved verbatim as symlinks by `rsync -a` (`-l` / `--links`).
@@ -280,7 +280,7 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
 
 | Scenario ID | Given (Repo & Filesystem State) | When (CLI Invocation) | Then (Expected Exit Code, `stdout`/`stderr`, & Repo/FS State) |
 | :--- | :--- | :--- | :--- |
-| `TC-01` | Valid repo with `.drev.json` (`workDir: "data"`), `HEAD` commit `{"uuid":"c1ca82b1-7f34-4f4c-9a76-05e3297b2a23","seq":"100"}`, remote directory `<path>/c1ca82b1-.../` containing `app.bin`, local `data/` contains stale `old.bin`. | `git drev get` | **Exit Code:** `0`<br>**`stdout`:** Empty<br>**`stderr`:** Contains `[drev] Directory revision uuid is 'c1ca82b1-7f34-4f4c-9a76-05e3297b2a23'`, `[drev] Checking revision on remote host`, `[drev] Getting directory revision from remote host`, `[drev] Took ...`<br>**FS State:** `data/app.bin` exists; `data/old.bin` is deleted by `--delete-during`. |
+| `TC-01` | Valid repo with `.git-drev.yaml` (`workdir: data`), `HEAD` commit `{"uuid":"c1ca82b1-7f34-4f4c-9a76-05e3297b2a23","seq":"100"}`, remote directory `<path>/c1ca82b1-.../` containing `app.bin`, local `data/` contains stale `old.bin`. | `git drev get` | **Exit Code:** `0`<br>**`stdout`:** Empty<br>**`stderr`:** Contains `[drev] Directory revision uuid is 'c1ca82b1-7f34-4f4c-9a76-05e3297b2a23'`, `[drev] Checking revision on remote host`, `[drev] Getting directory revision from remote host`, `[drev] Took ...`<br>**FS State:** `data/app.bin` exists; `data/old.bin` is deleted by `--delete-during`. |
 | `TC-02` | Caller `PWD` is `<repo-root>/subdir`; user specifies a relative `<target_directory>` `./custom out` (containing a space) that does not yet exist. | `git drev get "./custom out"` | **Exit Code:** `0`<br>**`stdout`:** Empty<br>**`stderr`:** Standard progress logs.<br>**FS State:** `<repo-root>/subdir/custom out/app.bin` is created and populated; default `<repo-root>/data` is untouched. |
 | `TC-03` | Local branch `main` is 1 commit behind `origin/main` (which points to revision UUID `b2b282b1-7f34-4f4c-9a76-05e3297b2a23` present on remote). | `git drev get --latest --quiet` | **Exit Code:** `0`<br>**`stdout`:** Empty<br>**`stderr`:** Empty (`--quiet` suppresses informational logs and `rsync` progress).<br>**Repo & FS State:** Local `main` `HEAD` equals `origin/main`; `data/` matches revision `b2b282b1-...`. |
 | `TC-04` | Repository is in detached `HEAD` state (e.g., after `git drev select v1.0`). | `git drev get --latest` | **Exit Code:** `4` (`ErrDetachedHead`)<br>**`stdout`:** Empty<br>**`stderr`:** `[drev] ! Detached HEAD state detected, aborting` and `[drev] Hint: Use "git drev select <branch>" to select a branch first.`<br>**Repo & FS State:** `HEAD` and `data/` remain completely unchanged; no network calls made. |

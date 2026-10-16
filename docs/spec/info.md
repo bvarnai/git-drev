@@ -20,8 +20,8 @@
 
 - **Preconditions & state assertions:**
   1. **Non-bare Git working tree:** Must be invoked inside a valid, non-bare Git working tree (`git rev-parse --is-inside-work-tree == "true"`). Invoking outside a Git repository or inside a bare repository fails with `errcode.ErrNotRepository` (exit code `3`).
-  2. **Working directory normalization:** The process resolves `RepoRoot` (`git rev-parse --show-toplevel`) and `Prefix` (`git rev-parse --show-prefix`) and changes the working directory (`os.Chdir`) to `RepoRoot` so `.drev.json`, `.drev-info-hook`, and hook-referenced metadata files (e.g., `env.json`) resolve deterministically relative to `RepoRoot` regardless of `GIT_PREFIX` or the caller's original `PWD`.
-  3. **Valid repository configuration:** `<repo-root>/.drev.json` (or the path specified by `GIT_DREV_CONFIG`) must exist, be readable, and pass schema validation along with any `git config drev.*` overrides (per Section 5 of `docs/spec/global.md`). Missing or malformed configuration fails with `errcode.ErrConfig` (exit code `3`).
+  2. **Working directory normalization:** The process resolves `RepoRoot` (`git rev-parse --show-toplevel`) and `Prefix` (`git rev-parse --show-prefix`) and changes the working directory (`os.Chdir`) to `RepoRoot` so `.git-drev.yaml`, `.drev-info-hook`, and hook-referenced metadata files (e.g., `env.json`) resolve deterministically relative to `RepoRoot` regardless of `GIT_PREFIX` or the caller's original `PWD`.
+  3. **Valid repository configuration:** Resolved configuration across the 3-tier YAML cascade (`~/.config/git-drev/config.yaml`, `$GIT_DREV_CONFIG`, `<repo-root>/.git-drev.yaml`) must pass `config.Load(repoRoot)` validation (per Section 5 of `docs/spec/global.md`). Missing or malformed configuration fails with `errcode.ErrConfig` (exit code `3`).
   4. **Detached `HEAD` permitted:** Unlike `put` or `update`, `info` is read-only with respect to Git refs and **permits** detached `HEAD` states (e.g., after `git drev select <tag>` or `git drev select <uuid>`). If `HEAD` is detached, `GIT_DREV_BRANCH` is set to `"HEAD"`.
   5. **Hook script presence (soft precondition):** `<repo-root>/.drev-info-hook` is inspected via `os.Stat`.
      - If `.drev-info-hook` does not exist (`errors.Is(err, fs.ErrNotExist)`), `info` logs `[drev] No info hook found` to `stderr` (unless `--quiet` is set) and exits cleanly with exit code `0`.
@@ -55,7 +55,7 @@ type Env struct {
 	UUID    string // GIT_DREV_UUID: active revision UUID (or empty/zero UUID if unavailable)
 	Seq     string // GIT_DREV_SEQ: active revision sequence string (or empty if marker/uncommitted)
 	Branch  string // GIT_DREV_BRANCH: current branch name or "HEAD" if detached
-	WorkDir string // GIT_DREV_WORK_DIR: absolute path to configured workDir
+	WorkDir string // GIT_DREV_WORK_DIR: absolute path to configured workdir
 	Root    string // GIT_DREV_ROOT: absolute path to repository working tree root
 }
 
@@ -84,7 +84,7 @@ import (
 	"io"
 	"time"
 
-	"git-drev/internal/config"
+	"git-drev/internal/domain"
 	"git-drev/internal/git"
 	"git-drev/internal/hook"
 	"git-drev/internal/term"
@@ -117,7 +117,7 @@ type InfoService struct {
 }
 
 // RunInfo validates preconditions, resolves revision metadata from HEAD, and executes .drev-info-hook.
-func (s *InfoService) RunInfo(ctx context.Context, cfg config.Config, opts InfoOptions) (InfoResult, error)
+func (s *InfoService) RunInfo(ctx context.Context, cfg domain.ProjectConfig, opts InfoOptions) (InfoResult, error)
 ```
 
 ## 4. Execution Flow (Step-by-Step Domain Logic)
@@ -127,7 +127,7 @@ func (s *InfoService) RunInfo(ctx context.Context, cfg config.Config, opts InfoO
    2. Validate mutual exclusivity of global `--verbose` and `--quiet` flags (`errcode.ErrUsage`).
    3. Parse `GIT_DREV_HOOK_TIMEOUT` from the environment if set (defaulting to `5 * time.Minute` per Section 2 of `docs/spec/global.md`). If invalid or `<= 0`, return `errcode.NewError(errcode.ErrUsage, ...)` (`exit code 2`).
    4. Query `Insp.RepoRoot(ctx, dir)` to verify the process is inside a non-bare Git working tree (`git rev-parse --is-inside-work-tree`, `--show-toplevel`, `--show-prefix`) and ensure the working directory is `RepoRoot`.
-   5. Load and validate `config.Config` from `<repo-root>/.drev.json` (or `GIT_DREV_CONFIG`) merged with `git config drev.*` overrides.
+   5. Load and validate `*domain.ProjectConfig` via `config.Load(repoRoot)`.
 
 2. **Core algorithm:**
    1. **Locate hook file:** Construct `hookPath := filepath.Join(opts.RepoRoot, ".drev-info-hook")` and inspect it via `os.Stat(hookPath)`:
@@ -177,7 +177,6 @@ func (s *InfoService) RunInfo(ctx context.Context, cfg config.Config, opts InfoO
   | Command & Flags | Working Dir | Expected Output Format | Failure Handling |
   | :--- | :--- | :--- | :--- |
   | `git rev-parse --is-inside-work-tree --show-toplevel --show-prefix` | Caller `PWD` | 3 newline-separated lines (`true`, `<abs-root>`, `<prefix>`) | Non-zero exit or `false` maps to `errcode.ErrNotRepository` (exit `3`). |
-  | `git config --get drev.<key>` | `RepoRoot` | Single line string per configured override key | Exit code `1` (key unset) is ignored; invalid syntax maps to `errcode.ErrConfig` (exit `3`). |
   | `git symbolic-ref --quiet --short HEAD` | `RepoRoot` | Single line `<branch-name>\n` | Exit code `1` indicates detached `HEAD` (`Branch = "HEAD"`); other non-zero exit codes map to `errcode.ErrGitExec` (exit `5`). |
   | `git log -1 --format=%s HEAD --` | `RepoRoot` | Single line commit subject (`{"uuid":"...","seq":"..."}`) | If `HEAD` is unborn or subject is not valid `RevisionMeta` JSON, `UUID` and `Seq` default to `""` without failing the command. |
 
@@ -206,8 +205,8 @@ func (s *InfoService) RunInfo(ctx context.Context, cfg config.Config, opts InfoO
 | Mutually exclusive `--verbose` and `--quiet` flags | `errcode.ErrUsage` | `2` | `[drev] ! --verbose and --quiet cannot be used together` |
 | Invalid `GIT_DREV_HOOK_TIMEOUT` duration | `errcode.ErrUsage` | `2` | `[drev] ! invalid GIT_DREV_HOOK_TIMEOUT "<val>": ...` |
 | Invoked outside a Git worktree or in bare repo | `errcode.ErrNotRepository` | `3` | `[drev] ! not inside a git working tree` |
-| Missing or unreadable `.drev.json` | `errcode.ErrConfig` | `3` | `[drev] ! configuration file ".drev.json" not found` |
-| Malformed JSON or invalid fields in `.drev.json` | `errcode.ErrConfig` | `3` | `[drev] ! invalid configuration in ".drev.json": ...` |
+| Missing or unreadable `.git-drev.yaml` | `errcode.ErrConfig` | `3` | `[drev] ! No configuration file found` |
+| Malformed YAML or invalid fields in `.git-drev.yaml` | `errcode.ErrConfig` | `3` | `[drev] ! <validation error>` |
 | `.drev-info-hook` is a directory or unreadable | `errcode.ErrRuntime` | `1` | `[drev] ! cannot execute info hook ".drev-info-hook": ...` |
 | `.drev-info-hook` exits with non-zero code `N` | `errcode.ErrRuntime` | `1` | `[drev] ! info hook ".drev-info-hook" failed with exit code <N>` |
 | `.drev-info-hook` exceeds `GIT_DREV_HOOK_TIMEOUT` | `errcode.ErrRuntime` | `1` | `[drev] ! info hook ".drev-info-hook" timed out after <duration>` |
@@ -224,7 +223,7 @@ func (s *InfoService) RunInfo(ctx context.Context, cfg config.Config, opts InfoO
      - *Modernized Go behavior:* Any positional arguments passed to `git drev info` immediately return `errcode.ErrUsage` (exit code `2`) to `stderr` before executing the hook.
   3. **Subdirectory invocation failure (`legacy/info.sh:14,20`):**
      - *Legacy flaw:* `info.sh` checked `[[ -f "drs.json" ]]` and `[[ -f "drs-info-hook.sh" ]]` relative to the current working directory without calling `git rev-parse --show-toplevel`. Invoking `drs/info.sh` from a subdirectory failed with `[drs] ! No configuration file 'drs.json' found`.
-     - *Modernized Go behavior:* Resolves `RepoRoot` via `git rev-parse --show-toplevel` and changes the working directory to `RepoRoot` prior to reading `.drev.json` or executing `.drev-info-hook`.
+     - *Modernized Go behavior:* Resolves `RepoRoot` via `git rev-parse --show-toplevel` and changes the working directory to `RepoRoot` prior to reading `.git-drev.yaml` or executing `.drev-info-hook`.
   4. **Operational chatter polluting `stdout` (`legacy/info.sh:25`):**
      - *Legacy flaw:* When no hook existed, `drs::common::log 'No info hook found'` printed `[drs] No info hook found` to `stdout`, breaking scripts or pipelines consuming `git drs-info` output.
      - *Modernized Go behavior:* Emits `[drev] No info hook found` to `stderr` (and suppresses it completely when `-q` / `--quiet` is active), leaving `stdout` completely empty when no hook is present.
@@ -233,7 +232,7 @@ func (s *InfoService) RunInfo(ctx context.Context, cfg config.Config, opts InfoO
   - **Symlinks:** If `<repo-root>/.drev-info-hook` is a symlink pointing to a regular file inside the repository, `os.Stat` follows the symlink and executes the target normally. If it is a broken/dangling symlink, `os.Stat` returns `fs.ErrNotExist`; to help diagnose misconfigured repos, `os.Lstat` is checked when `os.Stat` returns `fs.ErrNotExist`—if a dangling symlink exists at `.drev-info-hook`, `info` fails with `errcode.ErrRuntime` (exit code `1`, `[drev] ! info hook ".drev-info-hook" is a broken symlink`) rather than silently claiming no hook was found.
   - **Empty hook file (`0` bytes):** Treated as a valid no-op hook; executes cleanly, emits nothing to `stdout`, and exits `0`.
   - **Paths with spaces or Unicode characters:** `RepoRoot`, `GIT_DREV_ROOT`, `GIT_DREV_WORK_DIR`, and `hookPath` are passed as discrete elements in `exec.Cmd.Args` and `exec.Cmd.Env` (`"$1"` in the `bash -c` wrapper), preventing word-splitting on spaces or special characters.
-  - **Submodule boundaries:** `git rev-parse --show-toplevel` resolves the enclosing working tree root of the active repository/submodule where `.drev.json` resides.
+  - **Submodule boundaries:** `git rev-parse --show-toplevel` resolves the enclosing working tree root of the active repository/submodule where `.git-drev.yaml` resides.
   - **Detached `HEAD` and marker commits:**
     - When `HEAD` is detached at a revision commit, `GIT_DREV_BRANCH="HEAD"`, `GIT_DREV_UUID="<uuid>"`, and `GIT_DREV_SEQ="<seq>"`.
     - When `HEAD` points to a branch creation marker commit (`{"uuid":"...","marker":"true"}`), `GIT_DREV_UUID` is set to the marker's UUID (or `00000000-0000-0000-0000-000000000000`) and `GIT_DREV_SEQ=""`.
@@ -242,10 +241,10 @@ func (s *InfoService) RunInfo(ctx context.Context, cfg config.Config, opts InfoO
 
 | Scenario ID | Given (Repo & Filesystem State) | When (CLI Invocation) | Then (Expected Exit Code, `stdout`/`stderr`, & Repo/FS State) |
 | :--- | :--- | :--- | :--- |
-| `TC-01` | Valid Git repo with `.drev.json`, on branch `main` at commit `{"uuid":"c1ca82b1-7f34-4f4c-9a76-05e3297b2a23","seq":"1622824489"}`, and `.drev-info-hook` defining `info_hook() { echo "uuid=${GIT_DREV_UUID} seq=${GIT_DREV_SEQ} branch=${GIT_DREV_BRANCH}"; }`. | `git drev info` | Exit code `0`.<br>`stdout`: `uuid=c1ca82b1-7f34-4f4c-9a76-05e3297b2a23 seq=1622824489 branch=main\n`.<br>`stderr`: empty.<br>No repo/FS mutations. |
-| `TC-02` | Valid Git repo with `.drev.json`, executable `.drev-info-hook` (`0755`, `#!/bin/sh\necho "build: ok"`), invoked from subdirectory `sub/dir/`. | `git drev info` | Exit code `0`.<br>`stdout`: `build: ok\n`.<br>`stderr`: empty.<br>Hook executes with `PWD == <repo-root>`. |
-| `TC-03` | Valid Git repo with `.drev.json`, but no `.drev-info-hook` file exists. | `git drev info` | Exit code `0`.<br>`stdout`: empty (`0` bytes).<br>`stderr`: `[drev] No info hook found\n`. |
-| `TC-04` | Valid Git repo with `.drev.json` and `.drev-info-hook`. | `git drev info unexpected-arg` | Exit code `2` (`ErrUsage`).<br>`stdout`: empty.<br>`stderr`: `[drev] ! info takes no arguments (got: unexpected-arg)\n`.<br>Hook is NOT executed. |
-| `TC-05` | Valid Git repo with `.drev.json` and `.drev-info-hook` containing `info_hook() { echo "err" >&2; exit 42; }`. | `git drev info` | Exit code `1` (`ErrRuntime`).<br>`stdout`: empty.<br>`stderr`: `err\n[drev] ! info hook ".drev-info-hook" failed with exit code 42\n`. |
-| `TC-06` | Valid Git repo with `.drev.json` and `.drev-info-hook` containing `sleep 10`, with `GIT_DREV_HOOK_TIMEOUT=100ms`. | `git drev info` | Exit code `1` (`ErrRuntime`).<br>`stdout`: empty.<br>`stderr`: `[drev] ! info hook ".drev-info-hook" timed out after 100ms\n`.<br>Child process is terminated. |
-| `TC-07` | Directory outside any Git repository (or missing `.drev.json`). | `git drev info` | Exit code `3` (`ErrNotRepository` or `ErrConfig`).<br>`stdout`: empty.<br>`stderr`: `[drev] ! ...` diagnostic message. |
+| `TC-01` | Valid Git repo with `.git-drev.yaml`, on branch `main` at commit `{"uuid":"c1ca82b1-7f34-4f4c-9a76-05e3297b2a23","seq":"1622824489"}`, and `.drev-info-hook` defining `info_hook() { echo "uuid=${GIT_DREV_UUID} seq=${GIT_DREV_SEQ} branch=${GIT_DREV_BRANCH}"; }`. | `git drev info` | Exit code `0`.<br>`stdout`: `uuid=c1ca82b1-7f34-4f4c-9a76-05e3297b2a23 seq=1622824489 branch=main\n`.<br>`stderr`: empty.<br>No repo/FS mutations. |
+| `TC-02` | Valid Git repo with `.git-drev.yaml`, executable `.drev-info-hook` (`0755`, `#!/bin/sh\necho "build: ok"`), invoked from subdirectory `sub/dir/`. | `git drev info` | Exit code `0`.<br>`stdout`: `build: ok\n`.<br>`stderr`: empty.<br>Hook executes with `PWD == <repo-root>`. |
+| `TC-03` | Valid Git repo with `.git-drev.yaml`, but no `.drev-info-hook` file exists. | `git drev info` | Exit code `0`.<br>`stdout`: empty (`0` bytes).<br>`stderr`: `[drev] No info hook found\n`. |
+| `TC-04` | Valid Git repo with `.git-drev.yaml` and `.drev-info-hook`. | `git drev info unexpected-arg` | Exit code `2` (`ErrUsage`).<br>`stdout`: empty.<br>`stderr`: `[drev] ! info takes no arguments (got: unexpected-arg)\n`.<br>Hook is NOT executed. |
+| `TC-05` | Valid Git repo with `.git-drev.yaml` and `.drev-info-hook` containing `info_hook() { echo "err" >&2; exit 42; }`. | `git drev info` | Exit code `1` (`ErrRuntime`).<br>`stdout`: empty.<br>`stderr`: `err\n[drev] ! info hook ".drev-info-hook" failed with exit code 42\n`. |
+| `TC-06` | Valid Git repo with `.git-drev.yaml` and `.drev-info-hook` containing `sleep 10`, with `GIT_DREV_HOOK_TIMEOUT=100ms`. | `git drev info` | Exit code `1` (`ErrRuntime`).<br>`stdout`: empty.<br>`stderr`: `[drev] ! info hook ".drev-info-hook" timed out after 100ms\n`.<br>Child process is terminated. |
+| `TC-07` | Directory outside any Git repository (or missing `.git-drev.yaml`). | `git drev info` | Exit code `3` (`ErrNotRepository` or `ErrConfig`).<br>`stdout`: empty.<br>`stderr`: `[drev] ! ...` diagnostic message. |

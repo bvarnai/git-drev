@@ -21,7 +21,7 @@
 - **Preconditions & state assertions:**
   1. **Mutually exclusive global flags:** `--verbose` (`-v`) and `--quiet` (`-q`) must not be combined (`errcode.ErrUsage`, exit code `2`).
   2. **Non-bare Git working tree:** The caller must be inside a valid, non-bare Git working tree (`git rev-parse --is-inside-work-tree == "true"`). Invoking outside a Git repository or inside a bare repository fails with `errcode.ErrNotRepository` (exit code `3`).
-  3. **Valid configuration:** `<repo-root>/.drev.json` (or the file referenced by `GIT_DREV_CONFIG`), merged with any `drev.*` Git configuration overrides, must exist, parse as valid UTF-8 JSON, and define valid non-empty `remote.host` (not starting with `-`) and `remote.path` (absolute POSIX path, not `/`, free of shell metacharacters) values (`errcode.ErrConfig`, exit code `3`).
+  3. **Valid configuration:** Resolved configuration across the 3-tier YAML cascade (`~/.config/git-drev/config.yaml`, `$GIT_DREV_CONFIG`, `<repo-root>/.git-drev.yaml`) must define valid non-empty `remote.host` (not starting with `-`) and `remote.path` (absolute POSIX path, not `/`, free of shell metacharacters) values (`errcode.ErrConfig`, exit code `3`).
   4. **Detached `HEAD` state permitted:** `usage` is a read-only inspection subcommand across all refs (`--all`) and remote storage; it does **not** require `HEAD` to be a symbolic reference.
 
 ## 3. Subcommand Domain Models & Signatures
@@ -32,7 +32,6 @@ import (
 	"context"
 	"io"
 
-	"git-drev/internal/config"
 	"git-drev/internal/domain"
 	"git-drev/internal/git"
 	"git-drev/internal/term"
@@ -41,7 +40,7 @@ import (
 
 // UsageOptions encapsulates the validated parameters for executing the usage command.
 type UsageOptions struct {
-	Config  config.Config
+	Config  domain.ProjectConfig
 	Verbose bool
 	Quiet   bool
 }
@@ -89,7 +88,7 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
    - Verify global flag constraints (e.g., `--verbose` and `--quiet` are not both set).
    - Resolve `RepoRoot` and `Prefix` via `Insp.RepoRoot(ctx, dir)` (`git rev-parse --show-toplevel` and `--show-prefix`). If not inside a non-bare working tree, return `errcode.ErrNotRepository` (exit code `3`).
    - Change the process working directory to `RepoRoot`.
-   - Load and validate `config.Config` from `<repo-root>/.drev.json` (or `GIT_DREV_CONFIG`) merged with `git config drev.*` overrides. Strip any trailing slashes from `Config.Remote.Path`. If `Remote.Host` or `Remote.Path` is missing or invalid, return `errcode.ErrConfig` (exit code `3`).
+   - Load and validate `*domain.ProjectConfig` via `config.Load(repoRoot)`. Strip any trailing slashes from `Config.Remote.Path`. If `Remote.Host` or `Remote.Path` is missing or invalid, return `errcode.ErrConfig` (exit code `3`).
 
 2. **Core algorithm:**
    - **Step 2.1: Ensure remote fetch configuration:**
@@ -160,7 +159,6 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
   | Command & Flags | Working Dir | Expected Output Format | Failure Handling |
   | :--- | :--- | :--- | :--- |
   | `git rev-parse --is-inside-work-tree --show-toplevel --show-prefix` | Caller `PWD` | 3 newline-separated lines (`true`, `<abs-root>`, `<rel-prefix>`) | Non-zero exit or `false` maps to `errcode.ErrNotRepository` (exit `3`). |
-  | `git config --get-regexp ^drev\.` | `RepoRoot` | Newline-separated `<key> <value>` pairs | Exit code `1` (no matches) is treated as empty overrides; other non-zero exits map to `errcode.ErrConfig` (exit `3`). |
   | `git config --local --get-all remote.origin.fetch` | `RepoRoot` | Newline-separated refspec strings | Non-zero exit (key absent) triggers `git config --local --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/*`. |
   | `git log --all -z --format=%H%x00%h%x00%ad%x00%D%x00%s --date=unix` | `RepoRoot` | NUL-delimited records (`\x00` between fields and `\x00` between commits); only executed when `--verbose` is active and remote revisions exist | Empty repository (`HEAD` unborn) or non-zero exit is treated gracefully as zero known commits (all remote revisions marked `[orphaned]`). |
 
@@ -206,8 +204,8 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
 | :--- | :--- | :--- | :--- |
 | Unknown flag, unexpected positional argument, or `--verbose` combined with `--quiet` | `errcode.ErrUsage` | `2` | `[drev] ! <details>` |
 | Invoked outside a Git worktree or inside a bare repository | `errcode.ErrNotRepository` | `3` | `[drev] ! not a git repository (or any of the parent directories)` |
-| Missing/malformed `.drev.json` | `errcode.ErrConfig` | `3` | `[drev] ! configuration file '.drev.json' not found or invalid: <details>` |
-| Missing or invalid `remote.host` or `remote.path` in configuration | `errcode.ErrConfig` | `3` | `[drev] ! remote host or storage path is not configured in .drev.json` |
+| Missing/malformed `.git-drev.yaml` | `errcode.ErrConfig` | `3` | `[drev] ! No configuration file found` or `[drev] ! <details>` |
+| Missing or invalid `remote.host` or `remote.path` in configuration | `errcode.ErrConfig` | `3` | `[drev] ! missing required configuration key '<remote.host\|remote.path>'` |
 | Remote storage base path `<remote.path>` does not exist on `<remote.host>` | `errcode.ErrRemoteNotFound` | `6` | `[drev] ! Remote path '<path>' does not exist.` |
 | SSH connection failure, authentication failure, or missing `ssh` binary | `errcode.ErrTransport` | `7` | `[drev] ! Failed to connect to remote host '<host>' via SSH or command failed (exit code: <code>)`<br>`[drev] ! Details: <output>` |
 | Context canceled via `SIGINT` or `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[drev] ! operation interrupted` |
@@ -234,7 +232,7 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
      - *Modernized Go behavior:* Rejects unexpected positional arguments immediately with exit code `2` (`errcode.ErrUsage`).
   7. **Missing Repository Check from Subdirectories (`legacy/usage.sh:35`):**
      - *Legacy flaw:* Checked `[[ ! -f "drs.json" ]]` in the current working directory without resolving the Git top-level directory, failing when invoked from a subdirectory.
-     - *Modernized Go behavior:* Resolves `RepoRoot` via `git rev-parse --show-toplevel` first and loads `.drev.json` from `RepoRoot`.
+     - *Modernized Go behavior:* Resolves `RepoRoot` via `git rev-parse --show-toplevel` first and loads `.git-drev.yaml` from `RepoRoot`.
 
 - **Boundary conditions:**
   - **Empty branch marker commits:** Commits created by `git drev create` with `{"uuid":"...","marker":"true"}` or `domain.ZeroUUID` (`00000000-0000-0000-0000-000000000000`) are ignored when building the active revision commit map (unless a real `put` commit shares the parent UUID, in which case the `put` commit represents the revision), ensuring marker commits do not shadow actual revision metadata.
@@ -247,9 +245,9 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
 ## 8. Black-Box Verification Scenarios
 | Scenario ID | Given (Repo & Filesystem State) | When (CLI Invocation) | Then (Expected Exit Code, `stdout`/`stderr`, & Repo/FS State) |
 | :--- | :--- | :--- | :--- |
-| `TC-01` | Valid repo with `.drev.json` (`host: "store"`, `path: "/data/repo"`); remote `/data/repo` occupies `2.5G` and contains 2 UUID directories (`uuid-1`, `uuid-2`). | `git drev usage` | **Exit Code:** `0`<br>**`stdout`:** Contains `Summary:` and `Total space used:  2.5G` (no table).<br>**`stderr`:** Contains `[drev] Connecting to remote host 'store'...`, `[drev] Found 2 revision directory(ies) on remote storage.`, and `[drev] Hint: Use -v/--verbose...`. |
+| `TC-01` | Valid repo with `.git-drev.yaml` (`remote.host: store`, `remote.path: /data/repo`); remote `/data/repo` occupies `2.5G` and contains 2 UUID directories (`uuid-1`, `uuid-2`). | `git drev usage` | **Exit Code:** `0`<br>**`stdout`:** Contains `Summary:` and `Total space used:  2.5G` (no table).<br>**`stderr`:** Contains `[drev] Connecting to remote host 'store'...`, `[drev] Found 2 revision directory(ies) on remote storage.`, and `[drev] Hint: Use -v/--verbose...`. |
 | `TC-02` | Same state as `TC-01`; `uuid-1` matches local `HEAD` commit `a1b2c3d` on `main` (`{"uuid":"<uuid-1>","seq":"1700000000"}`), while `uuid-2` has no matching commit in `git log --all`. | `git drev usage --verbose` | **Exit Code:** `0`<br>**`stdout`:** Contains `Summary:` followed by `Revisions breakdown:` table where `uuid-1` shows commit `a1b2c3d`, branch `main`, message `seq: 1700000000`, and `uuid-2` shows commit `[orphaned]`, branch `-`, message `-`. |
-| `TC-03` | Valid repo with `.drev.json`, invoked from nested subdirectory `src/pkg/`; `.git/config` is missing the wildcard fetch refspec. | `git drev usage` | **Exit Code:** `0`<br>**`stdout`:** Prints `Summary:` with remote total space.<br>**Repo State:** `.git/config` contains `+refs/heads/*:refs/remotes/origin/*`. |
-| `TC-04` | Valid repo with `.drev.json` pointing to `path: "/data/nonexistent"`, which does not exist on the remote server. | `git drev usage` | **Exit Code:** `6` (`ErrRemoteNotFound`)<br>**`stdout`:** Empty.<br>**`stderr`:** Contains `[drev] ! Remote path '/data/nonexistent' does not exist.` |
-| `TC-05` | Valid repo with `.drev.json`; remote `/data/repo` exists and occupies `4.0K` but contains zero UUID subdirectories (only a `.keep` file). | `git drev usage -v` | **Exit Code:** `0`<br>**`stdout`:** Contains `Summary:` and `Total space used:  4.0K` (no `Revisions breakdown:` table printed).<br>**`stderr`:** Contains `[drev] No revision directories found on remote storage.` |
-| `TC-06` | Valid repo with `.drev.json`; caller passes an unexpected positional argument or conflicting flags. | `git drev usage extra-arg` | **Exit Code:** `2` (`ErrUsage`)<br>**`stdout`:** Empty.<br>**`stderr`:** Contains `[drev] !` usage error diagnostic rejecting positional arguments. |
+| `TC-03` | Valid repo with `.git-drev.yaml`, invoked from nested subdirectory `src/pkg/`; `.git/config` is missing the wildcard fetch refspec. | `git drev usage` | **Exit Code:** `0`<br>**`stdout`:** Prints `Summary:` with remote total space.<br>**Repo State:** `.git/config` contains `+refs/heads/*:refs/remotes/origin/*`. |
+| `TC-04` | Valid repo with `.git-drev.yaml` pointing to `remote.path: /data/nonexistent`, which does not exist on the remote server. | `git drev usage` | **Exit Code:** `6` (`ErrRemoteNotFound`)<br>**`stdout`:** Empty.<br>**`stderr`:** Contains `[drev] ! Remote path '/data/nonexistent' does not exist.` |
+| `TC-05` | Valid repo with `.git-drev.yaml`; remote `/data/repo` exists and occupies `4.0K` but contains zero UUID subdirectories (only a `.keep` file). | `git drev usage -v` | **Exit Code:** `0`<br>**`stdout`:** Contains `Summary:` and `Total space used:  4.0K` (no `Revisions breakdown:` table printed).<br>**`stderr`:** Contains `[drev] No revision directories found on remote storage.` |
+| `TC-06` | Valid repo with `.git-drev.yaml`; caller passes an unexpected positional argument or conflicting flags. | `git drev usage extra-arg` | **Exit Code:** `2` (`ErrUsage`)<br>**`stdout`:** Empty.<br>**`stderr`:** Contains `[drev] !` usage error diagnostic rejecting positional arguments. |

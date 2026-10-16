@@ -36,7 +36,7 @@
 - **Environment variables read:**
   | Variable | Purpose | Default Fallback | Validation Rules |
   | :--- | :--- | :--- | :--- |
-  | `GIT_DREV_CONFIG` | Override path to repository configuration file | `<repo-root>/.drev.json` | Must be a valid non-empty file path if set; resolved relative to worktree root if relative. |
+  | `GIT_DREV_CONFIG` | Explicit file path for shared global configuration overlay (Tier 2) | Search standard 3-tier configuration cascade | Must be a readable YAML file if provided. |
   | `GIT_DREV_COLOR` | Control ANSI color emission (`auto`, `always`, `never`) | `auto` | Case-insensitive enum: `auto`, `always`, `never`, `true`, `false`, `1`, `0`. Invalid values log a warning and fall back to `auto`. |
   | `GIT_DREV_SSH_COMMAND` | Override SSH executable or command prefix used by `git-drev` and `rsync -e` | `ssh -T` | Parsed via POSIX shell word-splitting rules; executable must exist in `$PATH` or as an absolute path. |
   | `GIT_DREV_HOOK_TIMEOUT` | Maximum execution duration for project hook scripts | `5m` | Parsed via `time.ParseDuration`; must be `> 0`. |
@@ -55,17 +55,17 @@
     - `GIT_DREV_UUID`: Active revision UUID (for `put` and `info` hooks).
     - `GIT_DREV_SEQ`: Active revision sequence string (for `put` and `info` hooks).
     - `GIT_DREV_BRANCH`: Current branch name (or `HEAD` if detached).
-    - `GIT_DREV_WORK_DIR`: Absolute path to the configured `workDir`.
+    - `GIT_DREV_WORK_DIR`: Absolute path to the configured `workdir`.
     - `GIT_DREV_ROOT`: Absolute path to the repository working tree root.
 - **Git context & path resolution:**
   - **Repository validation assertions:**
-    - All subcommands (`create`, `get`, `info`, `name`, `put`, `select`, `update`, `usage`) require a non-bare Git working tree (`git rev-parse --is-inside-work-tree` == `true`). Invoking inside a bare repository or inside the `.git/` directory itself fails immediately with `ErrNotRepository` (exit code `3`).
+    - Repository subcommands (`create`, `get`, `info`, `name`, `put`, `select`, `update`, `usage`) require a non-bare Git working tree (`git rev-parse --is-inside-work-tree` == `true`). Invoking inside a bare repository or inside the `.git/` directory itself fails immediately with `ErrNotRepository` (exit code `3`).
     - Subcommands that mutate branch state or require an upstream tracking branch (`put`, `update`) assert that `HEAD` is a symbolic reference (`git symbolic-ref -q HEAD`). If `HEAD` is detached, they fail with `ErrDetachedHead` (exit code `4`) and emit the remediation hint: `Use "git drev select <branch>" to select a branch first.`
   - **Handling of `GIT_PREFIX`, `GIT_DIR`, and `GIT_WORK_TREE`:**
     - When invoked as `git drev <subcommand>` from a subdirectory, Git changes the process `PWD` to the top-level working tree root and sets `GIT_PREFIX` to the caller's original relative subdirectory (with trailing slash).
     - When invoked directly as `git-drev <subcommand>` from a subdirectory, `GIT_PREFIX` is unset. `git-drev` MUST normalize both invocation modes at startup by querying `git rev-parse --show-toplevel` and `git rev-parse --show-prefix`, computing `CallerDir = filepath.Join(RepoRoot, Prefix)`, and chdir'ing the process to `RepoRoot` after resolving user-supplied paths.
   - **Working directory enforcement:**
-    - Repository metadata files (`.drev.json`, `.drev-put-hook`, `.drev-info-hook`) and the configured `workDir` (default `data`) ALWAYS resolve relative to `RepoRoot`.
+    - Repository metadata files (`.git-drev.yaml`, `.drev-put-hook`, `.drev-info-hook`) and the configured `workdir` (default `data`) ALWAYS resolve relative to `RepoRoot`.
     - User-supplied CLI path arguments (`<target_directory>` in `get`, `<source_directory>` in `put`) ALWAYS resolve relative to `CallerDir` (the user's `PWD` at invocation time) before changing directory to `RepoRoot`.
   - **Built-in help integration:**
     - When a user runs `git drev --help` or `git help drev`, the `git` wrapper binary intercepts `--help` before invoking `git-drev` and attempts to display the `git-drev(1)` man page (`man git-drev`).
@@ -79,7 +79,7 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
 | `0` | `nil` | Success | Command completed cleanly; `--help` or `--version` displayed; `put` dropped older revision due to newer sequence on remote. |
 | `1` | `ErrRuntime` | General Runtime Error | Unhandled I/O error, filesystem permission failure, hook script non-zero exit. |
 | `2` | `ErrUsage` | CLI Usage / Validation Error | Unknown flag, missing mandatory argument (`<branch>`), mutually exclusive flags (`-v` and `-q`), invalid integer/sequence format. |
-| `3` | `ErrConfig` / `ErrNotRepository` | Repository or Configuration Error | Not inside a Git working tree, missing or malformed `.drev.json`, missing required `remote.host` or `remote.path` keys. |
+| `3` | `ErrConfig` / `ErrNotRepository` | Repository or Configuration Error | Not inside a Git working tree, missing or malformed `.git-drev.yaml`, missing required `remote.host` or `remote.path` keys. |
 | `4` | `ErrGitState` / `ErrDetachedHead` | Invalid Git State | Detached `HEAD` during `put` or `update`, missing revision UUID in `HEAD` commit message, empty branch marker encountered on `get`, target UUID/branch not found in history. |
 | `5` | `ErrGitExec` | Git Subprocess Failure | `git fetch`, `git checkout`, `git switch`, `git commit`, `git reset`, `git rebase`, or non-stale `git push` failure. |
 | `6` | `ErrRemoteNotFound` | Remote Revision Missing | Target revision directory `<path>/<uuid>` does not exist on remote server during `get` or remote base path missing during `usage`. |
@@ -106,37 +106,29 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
 
 ## 5. Persistent Storage, Config Schema & Shared Domain Models
 - **Metadata & storage format:**
-  - **Repository Configuration File (`.drev.json`):**
-    - Located at `<repo-root>/.drev.json` (permissions `0644`, UTF-8 JSON).
+  - **Configuration Cascade & Schema (`.git-drev.yaml`):**
+    - Resolved across a 3-tier YAML cascade (`internal/config`):
+      1. **Tier 1 (User Global):** `~/.config/git-drev/config.yaml`, `~/.config/git-drev/config.yml`, `~/.git-drev.yaml`, `~/.git-drev.yml`, `~/.git-drev/config.yaml`, `~/.git-drev/config.yml`.
+      2. **Tier 2 (Shared Global):** File path specified by `$GIT_DREV_CONFIG`.
+      3. **Tier 3 (Repository Local):** `<repo-root>/.git-drev.yaml`, `<repo-root>/.git-drev.yml`, `<repo-root>/.git-drev/config.yaml`, `<repo-root>/.git-drev/config.yml`.
     - Schema:
-      ```json
-      {
-        "workDir": "data",
-        "defaultBranch": "main",
-        "remote": {
-          "host": "drev-server",
-          "path": "/var/drev/myproject",
-          "rsyncOptions": {
-            "get": "-az --delete-during --stats",
-            "put": "-az --delete-during --whole-file --stats"
-          }
-        }
-      }
+      ```yaml
+      workdir: data
+      branch:
+        default: main
+      remote:
+        host: drev-server
+        path: /var/drev/myproject
+        rsync:
+          get: -az --delete-during --stats
+          put: -az --delete-during --whole-file --stats
       ```
     - Validation rules:
       - `remote.host` (required, non-empty string): SSH host alias or hostname; must not start with `-` (prevents SSH option injection).
       - `remote.path` (required, non-empty string): Absolute POSIX path on remote host; trailing slashes are stripped automatically; must not be `/` or contain shell metacharacters (`` ` ``, `$`, `;`, `&`, `|`, `\n`, `\x00`).
-      - `workDir` (optional, default `"data"`): Relative path within `<repo-root>`; must not escape `<repo-root>` (`..` traversal rejected).
-      - `defaultBranch` (optional, default `"main"`): Default branch name for `select` when no argument is provided.
-      - `remote.rsyncOptions.get` / `remote.rsyncOptions.put` (optional, default `""`): Space-separated custom `rsync` flags appended after implicit flags (`-a --delete-during` and verbosity/progress flags) so user flags take precedence.
-  - **Git Config Keys (`drev.*`):**
-    - Local/global Git config overrides (`git config drev.<key>`) are supported as higher-priority overrides over `.drev.json`:
-      - `drev.workDir` overrides `.workDir`
-      - `drev.defaultBranch` overrides `.defaultBranch`
-      - `drev.remote.host` overrides `.remote.host`
-      - `drev.remote.path` overrides `.remote.path`
-      - `drev.remote.rsyncGetOptions` overrides `.remote.rsyncOptions.get`
-      - `drev.remote.rsyncPutOptions` overrides `.remote.rsyncOptions.put`
+      - `workdir` (optional, default `"data"`): Relative path within `<repo-root>`; must not escape `<repo-root>` (`..` traversal rejected).
+      - `branch.default` (optional, default `"main"`): Default branch name for `select` when no argument is provided.
+      - `remote.rsync.get` / `remote.rsync.put` (optional, default `""`): Space-separated custom `rsync` flags appended after implicit flags (`-a --delete-during` and verbosity/progress flags) so user flags take precedence.
   - **Commit Message Metadata Schema:**
     - Every `git-drev` revision commit stores a compact single-line JSON object as the commit subject (`%s`):
       - Standard revision commit (`put`): `{"uuid":"<uuid-v4>","seq":"<uint64-string>"}`
@@ -159,6 +151,7 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
   ├── internal/
   │   ├── cli/                     # Root dispatcher, global flags, subcommand handlers
   │   │   ├── root.go
+  │   │   ├── config.go            # git drev config
   │   │   ├── create.go            # git drev create
   │   │   ├── get.go               # git drev get
   │   │   ├── info.go              # git drev info
@@ -167,8 +160,13 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
   │   │   ├── selectcmd.go         # git drev select
   │   │   ├── update.go            # git drev update
   │   │   └── usage.go             # git drev usage
-  │   ├── config/                  # .drev.json + git config drev.* loader & validation
-  │   ├── domain/                  # Shared value types (UUID, RevisionMeta, StorageEntry)
+  │   ├── config/                  # 3-tier YAML config loader, merger, provenance report & validator
+  │   │   ├── loader.go
+  │   │   ├── merge.go
+  │   │   └── report.go
+  │   ├── domain/                  # Shared value types (ProjectConfig, RevisionMeta, RemoteRevision)
+  │   │   ├── config.go
+  │   │   └── domain.go
   │   ├── errcode/                 # Sentinel errors and exit code mapping
   │   ├── git/                     # GitRunner interface & plumbing implementation
   │   │   ├── runner.go            # Runner interface and subprocess execution core
@@ -188,6 +186,31 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
   package domain
 
   import "time"
+
+  // ProjectConfig defines the unified application configuration.
+  type ProjectConfig struct {
+      WorkDir string       `yaml:"workdir,omitempty"`
+      Branch  BranchConfig `yaml:"branch,omitempty"`
+      Remote  RemoteConfig `yaml:"remote,omitempty"`
+  }
+
+  // BranchConfig defines branch configuration settings.
+  type BranchConfig struct {
+      Default string `yaml:"default,omitempty"`
+  }
+
+  // RemoteConfig defines the SSH/rsync storage backend parameters.
+  type RemoteConfig struct {
+      Host  string      `yaml:"host,omitempty"`
+      Path  string      `yaml:"path,omitempty"`
+      Rsync RsyncConfig `yaml:"rsync,omitempty"`
+  }
+
+  // RsyncConfig defines per-direction custom rsync arguments.
+  type RsyncConfig struct {
+      Get string `yaml:"get,omitempty"`
+      Put string `yaml:"put,omitempty"`
+  }
 
   // ZeroUUID is the placeholder UUID used on empty branch marker commits.
   const ZeroUUID = "00000000-0000-0000-0000-000000000000"
@@ -217,29 +240,6 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
       Meta       RevisionMeta
       RawSubject string
       Orphaned   bool
-  }
-  ```
-  ```go
-  package config
-
-  // Config holds the resolved configuration from .drev.json and git config drev.*.
-  type Config struct {
-      WorkDir       string       `json:"workDir"`
-      DefaultBranch string       `json:"defaultBranch"`
-      Remote        RemoteConfig `json:"remote"`
-  }
-
-  // RemoteConfig defines the SSH/rsync storage backend parameters.
-  type RemoteConfig struct {
-      Host         string       `json:"host"`
-      Path         string       `json:"path"`
-      RsyncOptions RsyncOptions `json:"rsyncOptions"`
-  }
-
-  // RsyncOptions defines per-direction custom rsync arguments.
-  type RsyncOptions struct {
-      Get string `json:"get"`
-      Put string `json:"put"`
   }
   ```
   ```go
@@ -321,11 +321,12 @@ All core legacy commands are consolidated into subcommands of the single `git-dr
 | `create` | `legacy/create.sh` | `internal/cli` (`create.go`) | Creates a new revision metadata branch with an initial marker commit (or switches to it if it already exists locally/remotely) and pushes it to `origin`. |
 | `get` | `legacy/get.sh` | `internal/cli` (`get.go`) | Synchronizes the local working directory (or `<target_directory>`) with the remote directory revision referenced by `HEAD` (optionally updating to `--latest` first). |
 | `put` | `legacy/put.sh` | `internal/cli` (`put.go`) | Uploads local directory contents to a new remote UUID directory (cloning the previous revision as a server-side baseline when possible), runs `.drev-put-hook`, commits metadata with sequence number, and pushes with optimistic concurrency retry. |
-| `select` | `legacy/select.sh` | `internal/cli` (`selectcmd.go`) | Selects and checks out a target branch, tag, or specific revision commit resolved by UUID (falling back to `defaultBranch` when omitted). |
+| `select` | `legacy/select.sh` | `internal/cli` (`selectcmd.go`) | Selects and checks out a target branch, tag, or specific revision commit resolved by UUID (falling back to `branch.default` when omitted). |
 | `update` | `legacy/update.sh` | `internal/cli` (`update.go`) | Fetches all remote changes and hard-resets the current active branch to `origin/<branch>`. |
 | `info` | `legacy/info.sh` | `internal/cli` (`info.go`) | Executes the repository's `.drev-info-hook` to display project-specific revision metadata. |
 | `name` | `legacy/name.sh` | `internal/cli` (`name.go`) | Prints the current local branch name (or detached `HEAD` status) to `stdout`. |
 | `usage` | `legacy/usage.sh` | `internal/cli` (`usage.go`) | Queries the remote host via SSH for total storage consumption and (`-v`) correlates remote UUID directories against local Git history to display active vs. `[orphaned]` revisions. |
+| `config` | *N/A (Go native)* | `internal/cli` (`config.go`) | Prints the effective resolved cascading configuration and source provenance in YAML format. |
 
 ## 7. Legacy Discrepancies, Anti-Patterns & Modernization Decisions
 - **Legacy quirks & fixes:**
@@ -337,7 +338,7 @@ All core legacy commands are consolidated into subcommands of the single `git-dr
      - *Modernized Go behavior:* `EnsureRemoteFetchConfig` inspects `git config --local --get-all remote.origin.fetch` read-only. Only if the wildcard refspec `+refs/heads/*:refs/remotes/origin/*` is missing (e.g., single-branch clone) does it idempotently add `+refs/heads/*:refs/remotes/origin/*` without unsetting existing config or making network calls; stale remote-tracking branches are pruned atomically via `git fetch --all --prune`.
   3. **Unquoted `$rsyncOptions` Expansion (`get.sh:156`, `put.sh:166`):**
      - *Legacy flaw:* `rsync $rsyncOptions -e 'ssh -T' ...` relied on Bash word splitting, which expanded globs (`--exclude=*.tmp`) against the local current directory before invoking `rsync`.
-     - *Modernized Go behavior:* Parse `rsyncOptions` using a deterministic shell-word tokenizer (supporting quoted substrings without glob expansion) and pass arguments directly as `[]string` to `exec.CommandContext`.
+     - *Modernized Go behavior:* Parse `remote.rsync` options using a deterministic shell-word tokenizer (supporting quoted substrings without glob expansion) and pass arguments directly as `[]string` to `exec.CommandContext`.
   4. **Unquoted SSH Remote Paths & Command Injection (`get.sh:122`, `put.sh:128`):**
      - *Legacy flaw:* `ssh "${host}" "[ -d ${path}/${uuid} ]"` and `ssh -T "${host}" cp -R -a "${path}/${last_uuid}" "${path}/${uuid}"` interpolated `${path}` directly into the remote shell command string without shell escaping, failing on paths with spaces and risking remote command injection.
      - *Modernized Go behavior:* Validate `uuid` strictly against RFC 4122 hex format before interpolation, validate `remote.path`, and pass paths as POSIX-escaped single-quoted tokens (`'...'`) or positional arguments to `/bin/sh -c '... "$1" "$2"' --`.
@@ -365,19 +366,18 @@ All core legacy commands are consolidated into subcommands of the single `git-dr
        - Use NUL-byte (`\x00`) delimiters in `git log` formatting.
   9. **Missing `check_repository` Precondition in Most Commands (`common.sh:67`):**
      - *Legacy flaw:* `drs::common::read_repository` was only called in `name.sh`; all other commands only checked `[[ ! -f "drs.json" ]]`, which failed if the user ran a command from a subdirectory of the repository or outside Git entirely with an unhelpful `"No configuration file 'drs.json' found"` message.
-     - *Modernized Go behavior:* All subcommands first verify the Git repository and resolve `RepoRoot` via `git rev-parse --show-toplevel`, locating `.drev.json` at `RepoRoot` even when invoked from a subdirectory.
+     - *Modernized Go behavior:* All repository subcommands first verify the Git repository and resolve `RepoRoot` via `git rev-parse --show-toplevel`, resolving configuration across the 3-tier YAML cascade (`~/.config/git-drev/config.yaml`, `$GIT_DREV_CONFIG`, `<repo-root>/.git-drev.yaml`).
 
 - **Legacy-to-Modern identifier map:**
   | Category | Legacy (`drs`) Identifier | Modern (`git-drev`) Identifier | Notes |
   | :--- | :--- | :--- | :--- |
   | **Binary / Invocation** | `git drs-<cmd>` / `$DRS_HOME/<cmd>.sh` | `git drev <cmd>` / `git-drev <cmd>` | Single self-contained Go binary on `$PATH` |
-  | **Config File** | `drs.json` (`DRS_CONFIG_FILE`) | `.drev.json` (`GIT_DREV_CONFIG`) | Dotfile at `<repo-root>/.drev.json` |
+  | **Config File** | `drs.json` (`DRS_CONFIG_FILE`) | `.git-drev.yaml` / `.git-drev/config.yaml` | 3-tier YAML cascade (User Global, `$GIT_DREV_CONFIG`, Repo Local) |
   | **Put Hook File** | `drs-put-hook.sh` (`DRS_PUT_HOOK_FILE`) | `.drev-put-hook` | Supports executable script or `put_hook()` shell function |
   | **Info Hook File** | `drs-info-hook.sh` (`DRS_INFO_HOOK_FILE`) | `.drev-info-hook` | Supports executable script or `info_hook()` shell function |
   | **Log Prefix** | `[drs]` (`DRS_LOG_PREFIX`) | `[drev]` | Emitted to `stderr` instead of `stdout` |
   | **Env: Home Dir** | `DRS_HOME` | *(Retired)* | Replaced by single binary on `$PATH` |
-  | **Env: Config Path** | *(Hardcoded `drs.json`)* | `GIT_DREV_CONFIG` | Optional path override for `.drev.json` |
+  | **Env: Config Path** | *(Hardcoded `drs.json`)* | `GIT_DREV_CONFIG` | Tier 2 shared global YAML configuration file path |
   | **Env: Color Control** | *(None)* | `GIT_DREV_COLOR` / `NO_COLOR` | Controls ANSI color output |
   | **Env: SSH Override** | *(Hardcoded `ssh -T`)* | `GIT_DREV_SSH_COMMAND` | Overrides SSH client command |
   | **Env: Hook Timeout** | *(None)* | `GIT_DREV_HOOK_TIMEOUT` | Default `5m` execution timeout |
-  | **Git Config Section** | `alias.drs-*` | `drev.*` (`drev.workDir`, `drev.defaultBranch`, `drev.remote.*`) | Optional Git config overrides for `.drev.json` |

@@ -22,7 +22,7 @@
 
 - **Preconditions & state assertions:**
   1. **Non-bare Git working tree:** Must be executed inside a valid, non-bare Git working tree (`git rev-parse --is-inside-work-tree` == `"true"`). Executing outside a Git repository, inside a bare repository, or directly inside the `.git/` directory fails with `ErrNotRepository` (exit code `3`).
-  2. **Configuration file independence:** Unlike commands that interact with remote storage (`get`, `put`, `usage`, `select`), `name` is a purely local Git inspection command and **does not** require `.drev.json` to exist or be valid.
+  2. **Configuration file independence:** Unlike commands that interact with remote storage (`get`, `put`, `usage`, `select`), `name` is a purely local Git inspection command and **does not** require `.git-drev.yaml` to exist or be valid.
   3. **Unborn branch compatibility:** Must succeed on newly initialized repositories with an unborn `HEAD` (where `HEAD` is a symbolic ref pointing to `refs/heads/<branch>` before the initial commit exists), whereas legacy `git rev-parse --abbrev-ref HEAD` failed with `fatal: ambiguous argument 'HEAD': unknown revision or path not in the working tree`.
 
 ## 3. Subcommand Domain Models & Signatures
@@ -95,7 +95,7 @@ func RunName(ctx context.Context, insp *git.Inspector, logger *term.Logger, stdo
   | `git symbolic-ref --quiet --short HEAD` | `RepoRoot` | Single line `<branch-name>\n` (e.g., `main\n`, `feature/foo\n`) when on a branch; empty output on exit code `1` | Exit code `0`: attached branch. Exit code `1`: detached `HEAD` (`NameResult{Detached: true}`). Exit code `> 1` (e.g., `128` corrupt `.git/HEAD`): returns `errcode.ErrGitExec` (exit code `5`). |
 
 - **Filesystem & metadata mutations:**
-  - **None.** `git drev name` is completely side-effect-free. It does not read or modify `.drev.json`, `.git/config`, the Git index, or the working tree.
+  - **None.** `git drev name` is completely side-effect-free. It does not read or modify `.git-drev.yaml`, `.git/config`, the Git index, or the working tree.
 
 - **Standard output (`stdout`):**
   - On attached branch (committed or unborn): `<branch-name>\n` (e.g., `main\n`), with LF (`\n`) line ending across all platforms (Linux, macOS, Windows).
@@ -146,7 +146,7 @@ func RunName(ctx context.Context, insp *git.Inspector, logger *term.Logger, stdo
 ## 8. Black-Box Verification Scenarios
 | Scenario ID | Given (Repo & Filesystem State) | When (CLI Invocation) | Then (Expected Exit Code, `stdout`/`stderr`, & Repo/FS State) |
 | :--- | :--- | :--- | :--- |
-| `TC-01` | Valid Git repository on branch `feature/build-42` with at least one commit; no `.drev.json` present. | `git drev name` | **Exit Code:** `0`<br>**`stdout`:** `feature/build-42\n`<br>**`stderr`:** *(empty)*<br>**Repo/FS State:** Unchanged. |
+| `TC-01` | Valid Git repository on branch `feature/build-42` with at least one commit; no `.git-drev.yaml` present. | `git drev name` | **Exit Code:** `0`<br>**`stdout`:** `feature/build-42\n`<br>**`stderr`:** *(empty)*<br>**Repo/FS State:** Unchanged. |
 | `TC-02` | Valid Git repository in detached `HEAD` state (e.g., after `git checkout --detach HEAD` or `git drev select <uuid>`). | `git drev name` | **Exit Code:** `0`<br>**`stdout`:** `No branch (detached HEAD state)\n`<br>**`stderr`:** *(empty)*<br>**Repo/FS State:** Remains in detached `HEAD` state. |
 | `TC-03` | Newly initialized Git repository (`git init -b main`) with an unborn `HEAD` (zero commits) and a nested subdirectory `sub/dir` as caller `PWD`. | `git drev name` (executed from `sub/dir`) | **Exit Code:** `0`<br>**`stdout`:** `main\n`<br>**`stderr`:** *(empty)*<br>**Repo/FS State:** Unchanged. |
 | `TC-04` | Valid Git repository on branch `main`. | `git drev name unexpected-arg` | **Exit Code:** `2` (`ErrUsage`)<br>**`stdout`:** *(empty)*<br>**`stderr`:** Contains `[drev] !` and message indicating `name` takes no arguments.<br>**Repo/FS State:** Unchanged. |

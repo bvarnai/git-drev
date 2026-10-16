@@ -40,7 +40,7 @@ func TestExitCode(t *testing.T) {
 		},
 		{
 			name:     "ErrConfig maps to 3",
-			err:      errcode.NewError(errcode.ErrConfig, "missing .drev.json"),
+			err:      errcode.NewError(errcode.ErrConfig, "missing .git-drev.yaml"),
 			wantCode: errcode.ExitConfig,
 		},
 		{
