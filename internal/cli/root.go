@@ -45,6 +45,7 @@ func NewApp(stdout, stderr io.Writer, runner git.Runner) *App {
 		Stdout: stdout,
 		Stderr: stderr,
 		Logger: term.New(term.Options{
+			Stdout:      stdout,
 			Stderr:      stderr,
 			NoColorFlag: false,
 			Quiet:       false,
@@ -79,6 +80,7 @@ on remote SSH/rsync storage hosts, binding them to Git commit metadata and branc
 				return errcode.NewError(errcode.ErrUsage, "flags --verbose and --quiet cannot be used together")
 			}
 			app.Logger = term.New(term.Options{
+				Stdout:      stdout,
 				Stderr:      stderr,
 				NoColorFlag: app.Opts.NoColor,
 				Quiet:       app.Opts.Quiet,
@@ -95,8 +97,8 @@ on remote SSH/rsync storage hosts, binding them to Git commit metadata and branc
 
 	// Global persistent flags
 	rootCmd.PersistentFlags().BoolVarP(&app.Opts.Verbose, "verbose", "v", false, "Enable verbose diagnostic output")
-	rootCmd.PersistentFlags().BoolVarP(&app.Opts.Quiet, "quiet", "q", false, "Suppress informational progress and status logs")
-	rootCmd.PersistentFlags().BoolVar(&app.Opts.NoColor, "no-color", false, "Disable ANSI color escape sequences")
+	rootCmd.PersistentFlags().BoolVarP(&app.Opts.Quiet, "quiet", "q", false, "Suppress informational notices and hints")
+	rootCmd.PersistentFlags().BoolVar(&app.Opts.NoColor, "no-color", false, "Disable ANSI color styling")
 
 	// Register subcommands
 	rootCmd.AddCommand(app.newConfigCmd())
@@ -136,6 +138,7 @@ func RunInDir(ctx context.Context, dir string, args []string, stdout, stderr io.
 
 	if app.Logger == nil {
 		app.Logger = term.New(term.Options{
+			Stdout:      stdout,
 			Stderr:      stderr,
 			NoColorFlag: app.Opts.NoColor,
 			Quiet:       app.Opts.Quiet,

@@ -25,6 +25,7 @@ const (
 
 // Options configures a Logger instance.
 type Options struct {
+	Stdout      io.Writer
 	Stderr      io.Writer
 	Verbose     bool
 	Quiet       bool
@@ -34,18 +35,24 @@ type Options struct {
 }
 
 // Logger emits structured operational diagnostics, warnings, hints, and errors
-// to stderr.
+// to stderr, and provides stream and terminal formatting utilities.
 type Logger struct {
-	mu       sync.Mutex
-	stderr   io.Writer
-	verbose  bool
-	quiet    bool
-	useColor bool
+	mu        sync.Mutex
+	stdout    io.Writer
+	stderr    io.Writer
+	verbose   bool
+	quiet     bool
+	useColor  bool
+	envLookup func(key string) (string, bool)
 }
 
 // New constructs a Logger from Options, evaluating color policy and emitting a
 // warning to stderr if GIT_DREV_COLOR contains an unrecognized value.
 func New(opts Options) *Logger {
+	stdout := opts.Stdout
+	if stdout == nil {
+		stdout = os.Stdout
+	}
 	stderr := opts.Stderr
 	if stderr == nil {
 		stderr = os.Stderr
@@ -58,10 +65,12 @@ func New(opts Options) *Logger {
 	useColor, invalidColorVal := ResolveColorPolicy(opts.NoColorFlag, opts.IsTTY, envLookup)
 
 	l := &Logger{
-		stderr:   stderr,
-		verbose:  opts.Verbose,
-		quiet:    opts.Quiet,
-		useColor: useColor,
+		stdout:    stdout,
+		stderr:    stderr,
+		verbose:   opts.Verbose,
+		quiet:     opts.Quiet,
+		useColor:  useColor,
+		envLookup: envLookup,
 	}
 
 	if invalidColorVal != "" {
@@ -142,6 +151,11 @@ func (l *Logger) Writer() io.Writer {
 	return l.stderr
 }
 
+// Stdout returns the underlying stdout io.Writer.
+func (l *Logger) Stdout() io.Writer {
+	return l.stdout
+}
+
 // Verbose reports whether verbose logging is enabled.
 func (l *Logger) Verbose() bool {
 	return l.verbose
@@ -155,6 +169,17 @@ func (l *Logger) Quiet() bool {
 // UseColor reports whether ANSI escape sequences are enabled on this logger.
 func (l *Logger) UseColor() bool {
 	return l.useColor
+}
+
+// Out writes functional data to stdout followed by a newline.
+func (l *Logger) Out(format string, args ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(args) == 0 {
+		_, _ = fmt.Fprintln(l.stdout, format)
+	} else {
+		_, _ = fmt.Fprintf(l.stdout, format+"\n", args...)
+	}
 }
 
 // Info emits `[git-drev] <msg>` to stderr unless Quiet is enabled.
@@ -173,15 +198,15 @@ func (l *Logger) Infof(format string, args ...any) {
 	l.Info(fmt.Sprintf(format, args...))
 }
 
-// Debug emits `[git-drev] <msg>` to stderr only when Verbose is enabled and Quiet is false.
+// Debug emits `[git-drev] [debug] <msg>` to stderr only when Verbose is enabled and Quiet is false.
 func (l *Logger) Debug(msg string) {
 	if !l.verbose || l.quiet {
 		return
 	}
-	l.writeLine(fmt.Sprintf("%s %s", Prefix, msg))
+	l.writeLine(fmt.Sprintf("%s [debug] %s", Prefix, msg))
 }
 
-// Debugf emits a formatted `[git-drev] <msg>` line to stderr only when Verbose is enabled.
+// Debugf emits a formatted `[git-drev] [debug] <msg>` line to stderr only when Verbose is enabled.
 func (l *Logger) Debugf(format string, args ...any) {
 	if !l.verbose || l.quiet {
 		return
@@ -245,6 +270,76 @@ func (l *Logger) LogError(err error) {
 	if hint := errcode.Hint(err); hint != "" {
 		l.HintAlways(hint)
 	}
+}
+
+// Hyperlink formats a URL as an OSC 8 clickable terminal hyperlink if color is enabled.
+// If text is empty, the URL itself is used as the link text.
+func (l *Logger) Hyperlink(url, text string) string {
+	if text == "" {
+		text = url
+	}
+	if !l.useColor || url == "" {
+		return text
+	}
+	// OSC 8 hyperlink escape sequence: \033]8;;URL\033\TEXT\033]8;;\033\
+	return fmt.Sprintf("\033]8;;%s\033\\%s\033]8;;\033\\", url, text)
+}
+
+// Width returns the detected terminal width in columns, defaulting to 80 if undetermined.
+func (l *Logger) Width() int {
+	lookup := l.envLookup
+	if lookup == nil {
+		lookup = os.LookupEnv
+	}
+	if cols, ok := lookup("COLUMNS"); ok && cols != "" {
+		var c int
+		if _, err := fmt.Sscanf(cols, "%d", &c); err == nil && c > 20 {
+			return c
+		}
+	}
+	return 80
+}
+
+// WrapText word-wraps text with hanging indentation to fit within maxCols.
+// prefix is prepended to the first line.
+// indent is prepended to all subsequent lines.
+func (l *Logger) WrapText(prefix, indent, text string, maxCols int) []string {
+	if maxCols <= 0 {
+		maxCols = l.Width()
+	}
+
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return []string{prefix}
+	}
+
+	var lines []string
+	current := prefix
+	currMax := maxCols
+
+	for _, word := range words {
+		spaceNeeded := 0
+		if current != prefix && current != indent {
+			spaceNeeded = 1
+		}
+
+		if len(current)+spaceNeeded+len(word) > currMax && (current != prefix && current != indent) {
+			lines = append(lines, current)
+			current = indent + word
+		} else {
+			if spaceNeeded > 0 {
+				current += " " + word
+			} else {
+				current += word
+			}
+		}
+	}
+
+	if current != "" {
+		lines = append(lines, current)
+	}
+
+	return lines
 }
 
 func (l *Logger) writeLine(line string) {
