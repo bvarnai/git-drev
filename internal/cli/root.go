@@ -94,6 +94,7 @@ on remote SSH/rsync storage hosts, binding them to Git commit metadata and branc
 	rootCmd.SetVersionTemplate("{{.Version}}\n")
 	rootCmd.SetOut(stdout)
 	rootCmd.SetErr(stderr)
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
 
 	// Global persistent flags
 	rootCmd.PersistentFlags().BoolVarP(&app.Opts.Verbose, "verbose", "v", false, "Enable verbose diagnostic output")
@@ -110,6 +111,7 @@ on remote SSH/rsync storage hosts, binding them to Git commit metadata and branc
 	rootCmd.AddCommand(app.newUsageCmd())
 	rootCmd.AddCommand(app.newGetCmd())
 	rootCmd.AddCommand(app.newPutCmd())
+	rootCmd.AddCommand(app.newCompletionCmd())
 
 	app.RootCmd = rootCmd
 	return app

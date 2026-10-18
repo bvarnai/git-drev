@@ -115,6 +115,20 @@ remote:
 			expectedCode: errcode.ExitGitState,
 			errSubstr:    "No commit was found with uuid '" + missingUUID + "'",
 		},
+		{
+			name: "mistyped branch suggests closest existing branch name",
+			args: []string{"select", "feautre-login"},
+			mockResponses: map[string]mockGitResponse{
+				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
+				"config --local --get-all remote.origin.fetch":                  {out: git.WildcardFetchRefspec},
+				"fetch --all --prune":                                           {out: ""},
+				"-c advice.detachedHead=false checkout feautre-login":           {err: errors.New("error: pathspec 'feautre-login' did not match any file(s) known to git")},
+				"for-each-ref --format=%(refname:short) refs/heads refs/remotes/origin": {out: "feature-login\nmain\n"},
+				"tag -l": {out: ""},
+			},
+			expectedCode: errcode.ExitGitExec,
+			errSubstr:    "Checkout failed",
+		},
 	}
 
 	for _, tt := range tests {
@@ -140,6 +154,9 @@ remote:
 				assert.Equal(t, tt.expectedCode, errcode.ExitCode(appErr))
 				if tt.errSubstr != "" {
 					assert.Contains(t, appErr.Error(), tt.errSubstr)
+				}
+				if tt.name == "mistyped branch suggests closest existing branch name" {
+					assert.Contains(t, appErr.Hint, "Did you mean 'feature-login'?")
 				}
 			}
 		})
