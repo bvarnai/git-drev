@@ -19,10 +19,11 @@
     - **UUID argument (`1` argument matching UUID format):** Recognized when the argument matches the case-insensitive RFC 4122 hex UUID pattern `^\{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}?$` (optional surrounding braces `{` and `}` are stripped before matching). Resolves to the full 40-character Git commit SHA-1 hash whose commit subject JSON (`domain.RevisionMeta`) has a matching `uuid` field and is not a branch creation marker (`!meta.IsMarker()`). Does not match `domain.ZeroUUID` (`00000000-0000-0000-0000-000000000000`) when associated only with marker commits.
     - **Branch or tag reference (`1` argument not matching UUID format):** Treated as a Git branch or tag reference name. Must not be empty or start with a leading dash `-` (rejected via `git check-ref-format --allow-onelevel` validation or leading-dash guard to prevent Git flag injection).
     - **Path resolution:** Not applicable. `<target>` is a logical Git reference or revision UUID, never a filesystem path; `GIT_PREFIX` does not alter `<target>`.
+    - **Dynamic autocompletion:** Shell completion dynamically provides local branch names, remote-tracking branch names (stripped of `origin/`), and tags.
     - **Excess arguments (`> 1` arguments):** Fails immediately with `errcode.ErrUsage` (exit code `2`).
 
 - **Preconditions & state assertions:**
-  1. **Non-bare Git working tree:** Must be invoked inside a valid, non-bare Git working tree (`git rev-parse --is-inside-work-tree` == `true`). Invoking outside a Git repository or inside a bare repository fails with `errcode.ErrNotRepository` (exit code `3`).
+  1. **Non-bare Git working tree (`checks.InsideWorkTree`):** Must be invoked inside a valid, non-bare Git working tree (`git rev-parse --is-inside-work-tree` == `true`). Invoking outside a Git repository or inside a bare repository fails with `errcode.ErrNotRepository` (exit code `3`).
   2. **Configuration presence & validity:** Resolved configuration across the 3-tier YAML cascade (`~/.config/git-drev/config.yaml`, `$GIT_DREV_CONFIG`, `<repo-root>/.git-drev.yaml`) must pass `config.Load(repoRoot)` validation. Missing or invalid configuration fails with `errcode.ErrConfig` (exit code `3`).
   3. **Detached `HEAD` state allowed:** Unlike `put` and `update`, `select` MUST permit execution when `HEAD` is already detached. It is the designated recovery command (`Use "git drev select <branch>" to select a branch first.`) and also intentionally detaches `HEAD` when selecting a tag or UUID commit.
   4. **Working tree cleanliness:** Standard `git checkout` semantics apply; untracked files in the ignored `workdir` are unaffected, while uncommitted modifications to tracked metadata files that conflict with the target commit cause `git checkout` to fail with `errcode.ErrGitExec` (exit code `5`).
@@ -115,7 +116,10 @@ func RunSelect(
        - Set `requested = opts.Target`, `resolvedRef = opts.Target`, and `kind = SelectTargetRef`.
    - **Step 2.4 — Checkout resolved reference:**
      - Invoke `ops.Checkout(ctx, repoRoot, resolvedRef, false)` (`git -c advice.detachedHead=false checkout <resolvedRef>`).
-     - If `Checkout` fails (e.g., branch/tag does not exist locally or on `origin`, or conflicting local tracked changes), log `[git-drev] Error: Checkout failed (git checkout <resolvedRef>)` to `stderr` and return `errcode.ErrGitExec` (exit code `5`).
+     - If `Checkout` fails:
+       - When `kind == SelectTargetRef`, inspect available candidate branch names (`insp.ListAllBranchNames`) and tags (`insp.ListAllTags`).
+       - If a close candidate exists (`suggest.Closest(requested, candidates, 3)`), attach `[git-drev] Hint: Did you mean '<closest>'?` to the error.
+       - Return `errcode.ErrGitExec` (exit code `5`) with `[git-drev] Error: Checkout failed (git checkout <resolvedRef>)`.
    - **Step 2.5 — Return result:**
      - Return `SelectResult{Kind: kind, RequestedTarget: requested, ResolvedRef: resolvedRef}, nil`.
 
@@ -164,7 +168,7 @@ func RunSelect(
 | Target UUID not found in any non-marker commit in repository history | `errcode.ErrGitState` | `4` | `[git-drev] Error: No commit was found with uuid '<uuid>'` |
 | `git config` refspec update fails | `errcode.ErrGitExec` | `5` | `[git-drev] Error: Failed to configure remote.origin.fetch: <details>` |
 | `git fetch --all --prune` fails (network/auth error or invalid remote) | `errcode.ErrGitExec` | `5` | `[git-drev] Error: Fetch failed (git fetch --all --prune)` |
-| `git checkout <resolvedRef>` fails (missing branch/tag or dirty tracked files) | `errcode.ErrGitExec` | `5` | `[git-drev] Error: Checkout failed (git checkout <resolvedRef>)` |
+| `git checkout <resolvedRef>` fails (missing branch/tag or dirty tracked files) | `errcode.ErrGitExec` | `5` | `[git-drev] Error: Checkout failed (git checkout <resolvedRef>)`<br>*(optional)* `[git-drev] Hint: Did you mean '<closest>'?` |
 | `git` binary missing from `$PATH` | `errcode.ErrTransport` | `7` | `[git-drev] Error: Required binary 'git' not found in $PATH` |
 | Context canceled via `SIGINT` or `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[git-drev] Error: Operation interrupted` |
 

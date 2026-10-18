@@ -6,20 +6,23 @@
   | Flag | Short | Type | Default | Description |
   | :--- | :--- | :--- | :--- | :--- |
   | `--verbose` | `-v` | `bool` | `false` | Enable verbose diagnostic logging and detailed command/transfer output (e.g., `rsync --itemize-changes` or detailed table breakdowns). Mutually exclusive with `--quiet`. |
-  | `--quiet` | `-q` | `bool` | `false` | Suppress informational progress and status logs, emitting only errors or strict porcelain output. Mutually exclusive with `--verbose`. |
-  | `--no-color` | — | `bool` | `false` | Disable ANSI color escape sequences on `stdout` and `stderr` regardless of TTY status. |
+  | `--quiet` | `-q` | `bool` | `false` | Suppress informational notices and hints, emitting only errors or strict porcelain output. Mutually exclusive with `--verbose`. |
+  | `--no-color` | — | `bool` | `false` | Disable ANSI color styling on `stdout` and `stderr` regardless of TTY status. |
   | `--version` | — | `bool` | `false` | Print `git-drev version <semver> (<commit> <os>/<arch>)` to `stdout` and exit `0`. |
   | `--help` | `-h` | `bool` | `false` | Print usage and flag reference for `git-drev` or the active subcommand to `stdout` and exit `0` (replaces legacy positional `help` argument which exited `1` to `stderr`). |
 - **Output protocols:**
   - **Standard output (`stdout`) conventions:**
-    - Reserved strictly for primary command results, machine-parseable porcelain output (e.g., `git-drev name`, `git-drev info`, `git-drev usage` tables, `git-drev config`), and requested `--help`/`--version` text.
+    - Reserved strictly for primary command results, machine-parseable porcelain output (e.g., `git-drev name`, `git-drev info`, `git-drev usage` tables, `git-drev config`, `git-drev completion`), and requested `--help`/`--version` text.
     - When piped or redirected (non-TTY), tables and outputs omit decorative spinners or dynamic carriage-return progress bars (`\r`).
   - **Standard error (`stderr`) conventions:**
     - All operational progress logs, elapsed time summaries (`[git-drev] Took X min Y sec`), warnings, hints, and error diagnostics MUST be written to `stderr` (fixing the legacy anti-pattern where `drs::common::log` wrote operational chatter to `stdout`).
     - Operational log format: `[git-drev] <message>` (suppressed when `--quiet` is active).
+    - Debug diagnostic format: `[git-drev] [debug] <message>` (emitted only when `--verbose` is active).
     - Warning format: `[git-drev] Warning: <message>`.
     - Error format: `[git-drev] Error: <message>` followed by optional `[git-drev] Hint: <actionable remediation>`.
-  - **Terminal color handling:**
+  - **Terminal ergonomics & color handling:**
+    - Clickable hyperlinks: Emits OSC 8 ANSI hyperlinks (`\033]8;;URL\033\TEXT\033]8;;\033\`) for web and CI URLs when color is enabled.
+    - Word wrapping: Terminal width is dynamically inspected via `$COLUMNS` (fallback 80 columns) for hanging indentation formatting.
     - Color output is enabled by default only when the target stream (`stdout` or `stderr` evaluated independently via `os.File.Stat()` and `os.ModeCharDevice`) is an interactive TTY.
     - Color MUST be disabled if any of the following hold:
       1. `--no-color` flag is passed.
@@ -97,6 +100,16 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
     - Commit log scanning: `git log --all -z --format=%H%x00%h%x00%ad%x00%D%x00%s --date=unix` (NUL-delimited fields and records so commit subjects containing pipes `|` or newlines cannot corrupt parsing, fixing legacy `IFS='|'` bugs in `usage.sh`).
   - Always pass `--` before positional ref or path arguments where supported to prevent leading-dash argument injection (e.g., branch names starting with `-`).
   - Always enforce `LC_ALL=C` in subprocess environments.
+- **Preflight safety assertions (`internal/checks`):**
+  - Standardized preflight integrity checks protect repository and command state prior to execution:
+    - **`InsideWorkTree`:** Asserts the command is invoked inside a valid non-bare Git repository and returns normalized `RepoRoot` and `Prefix`.
+    - **`AttachedBranch`:** Asserts `HEAD` is attached to a concrete local branch (enforced on `put` and `update`; detached `HEAD` fails with `errcode.ErrDetachedHead`).
+    - **`NoIndexLock`:** Asserts `.git/index.lock` is not present, failing early with actionable remediation if another Git process is running.
+    - **`RemoteConfigured`:** Asserts remote host and remote path are non-empty in configuration prior to executing network commands.
+    - **`NoActiveOperation`:** Asserts no interactive Git operation (merge, rebase, cherry-pick, revert) is currently active.
+- **Fuzzy typo suggestions (`internal/suggest`):**
+  - When user-supplied branch, tag, or subcommand arguments fail lookup, the CLI computes Levenshtein edit distance against candidate names within max distance `3`.
+  - On match, enriches `errcode.AppError` with `[git-drev] Hint: Did you mean '<candidate>'?`.
 - **Interruption & signal handling:**
   - `main()` initializes a root `context.Context` via `signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)`.
   - All external commands (`exec.CommandContext`) bind to this context. On cancellation:
@@ -327,6 +340,7 @@ All core legacy commands are consolidated into subcommands of the single `git-dr
 | `name` | `legacy/name.sh` | `internal/cli` (`name.go`) | Prints the current local branch name (or detached `HEAD` status) to `stdout`. |
 | `usage` | `legacy/usage.sh` | `internal/cli` (`usage.go`) | Queries the remote host via SSH for total storage consumption and (`-v`) correlates remote UUID directories against local Git history to display active vs. `[orphaned]` revisions. |
 | `config` | *N/A (Go native)* | `internal/cli` (`config.go`) | Prints the effective resolved cascading configuration and source provenance in YAML format. |
+| `completion` | *N/A (Go native)* | `internal/cli` (`completion.go`) | Generates shell autocompletion scripts for `bash`, `zsh`, `fish`, and `powershell` with dynamic branch/tag completion. |
 
 ## 7. Legacy Discrepancies, Anti-Patterns & Modernization Decisions
 - **Legacy quirks & fixes:**

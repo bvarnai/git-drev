@@ -21,9 +21,10 @@
        - Passing more than 1 positional argument fails with `ErrUsage` (exit code `2`).
        - Must not start with `-` unless preceded by `--`, and even after `--` a branch name starting with `-` is rejected by Git ref format validation (`ErrUsage`, exit code `2`).
        - Must be a valid Git branch name as verified by `git check-ref-format refs/heads/<branch>`, rejecting control characters, spaces, `..`, `~`, `^`, `:`, `?`, `*`, `[`, `\`, trailing `/`, `.lock` suffixes, `@`, and `HEAD`. Invalid branch names fail with `ErrUsage` (exit code `2`).
+     - **Dynamic autocompletion:** Shell completion dynamically suggests existing local and remote branches to aid in idempotently switching to existing branches.
 
 - **Preconditions & state assertions:**
-  1. **Non-bare Git working tree:** Must be invoked inside a valid Git working tree (`git rev-parse --is-inside-work-tree == true`). Bare repositories or invocations outside a Git worktree fail immediately with `ErrNotRepository` (exit code `3`).
+  1. **Non-bare Git working tree (`checks.InsideWorkTree`):** Must be invoked inside a valid Git working tree (`git rev-parse --is-inside-work-tree == true`). Bare repositories or invocations outside a Git worktree fail immediately with `ErrNotRepository` (exit code `3`).
   2. **Working directory normalization:** The process resolves `RepoRoot` via `git rev-parse --show-toplevel` and changes its working directory to `RepoRoot` prior to loading configuration.
   3. **Valid configuration:** Resolved configuration across the 3-tier YAML cascade (`~/.config/git-drev/config.yaml`, `$GIT_DREV_CONFIG`, `<repo-root>/.git-drev.yaml`) must pass `config.Load(repoRoot)` validation. Missing or invalid configuration fails with `ErrConfig` (exit code `3`).
   4. **HEAD state:** `create` is permitted from both an active branch and a detached `HEAD` state (e.g., after selecting a historical tag or UUID via `git drev select <uuid>`, allowing a user or CI job to branch off an exact revision). If the repository is an unborn branch (fresh `git init` with zero commits), reading `HEAD` commit metadata gracefully falls back to `domain.ZeroUUID`.
