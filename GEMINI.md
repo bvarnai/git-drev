@@ -49,3 +49,15 @@ In accordance with the [Google Go Style Guide](https://google.github.io/stylegui
 - Enforce stream separation:
   - `stdout`: strictly for primary command output, machine-parseable porcelain (`name`, `info`, `usage` tables, `config`), and `--help`/`--version`.
   - `stderr`: all operational logs (`[git-drev] <message>`), warnings (`[git-drev] Warning: <message>`), errors (`[git-drev] Error: <message>`), hints (`[git-drev] Hint: <remediation>`), and elapsed time summaries.
+
+# Git Workflow Policy
+
+- Always use `git-brx` (or `git brx`) CLI commands for Git branch operations:
+  - Creating topic branches: `git brx create <branch> -y`
+  - Upstream synchronization: `git brx sync`
+  - Pulling collaborator commits: `git brx update`
+  - Pushing branches: `git brx publish`
+  - Submitting PRs: `git brx review`
+  - Cleaning merged branches: `git brx delete <branch>`
+
+- Do not run manual `git checkout -b`, `git push -f`, or raw API scripts for PR creation.

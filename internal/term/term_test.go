@@ -125,7 +125,7 @@ func TestLoggerOutputFormatsAndQuiet(t *testing.T) {
 		lines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 		wantLines := []string{
 			"[git-drev] Checking branch 'main'",
-			"[git-drev] Verbose diagnostic",
+			"[git-drev] [debug] Verbose diagnostic",
 			"[git-drev] Warning: Something minor",
 			"[git-drev] Hint: Use -v for details",
 			"[git-drev] Error: Detached HEAD state detected, aborting",
@@ -192,5 +192,69 @@ func TestTimer(t *testing.T) {
 	}
 	if got := term.FormatDuration(-5 * time.Second); got != "Took 0 min 0 sec" {
 		t.Errorf("FormatDuration(-5s) = %q, want %q", got, "Took 0 min 0 sec")
+	}
+}
+
+func TestLoggerOutAndErgonomics(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr bytes.Buffer
+	logger := term.New(term.Options{
+		Stdout:      &stdout,
+		Stderr:      &stderr,
+		NoColorFlag: false,
+		IsTTY:       true,
+		EnvLookup:   mapEnv(map[string]string{"COLUMNS": "60"}),
+	})
+
+	// Test Out
+	logger.Out("Hello %s", "World")
+	if got := stdout.String(); got != "Hello World\n" {
+		t.Errorf("logger.Out = %q, want %q", got, "Hello World\n")
+	}
+
+	// Test Hyperlink with color enabled on TTY
+	link := logger.Hyperlink("https://example.com", "Example")
+	wantLink := "\033]8;;https://example.com\033\\Example\033]8;;\033\\"
+	if link != wantLink {
+		t.Errorf("logger.Hyperlink = %q, want %q", link, wantLink)
+	}
+
+	// Test Hyperlink with no color
+	noColorLogger := term.New(term.Options{
+		NoColorFlag: true,
+	})
+	if plain := noColorLogger.Hyperlink("https://example.com", "Example"); plain != "Example" {
+		t.Errorf("noColorLogger.Hyperlink = %q, want %q", plain, "Example")
+	}
+	if plain := noColorLogger.Hyperlink("https://example.com", ""); plain != "https://example.com" {
+		t.Errorf("noColorLogger.Hyperlink empty text = %q, want %q", plain, "https://example.com")
+	}
+
+	// Test Width
+	if w := logger.Width(); w != 60 {
+		t.Errorf("logger.Width() = %d, want 60", w)
+	}
+	defaultLogger := term.New(term.Options{
+		EnvLookup: mapEnv(nil),
+	})
+	if w := defaultLogger.Width(); w != 80 {
+		t.Errorf("defaultLogger.Width() = %d, want 80", w)
+	}
+
+	// Test WrapText
+	wrapped := logger.WrapText("  * ", "    ", "The quick brown fox jumps over the lazy dog", 25)
+	expectedWrapped := []string{
+		"  * The quick brown fox",
+		"    jumps over the lazy",
+		"    dog",
+	}
+	if len(wrapped) != len(expectedWrapped) {
+		t.Fatalf("WrapText produced %d lines, want %d: %v", len(wrapped), len(expectedWrapped), wrapped)
+	}
+	for i := range expectedWrapped {
+		if wrapped[i] != expectedWrapped[i] {
+			t.Errorf("WrapText[%d] = %q, want %q", i, wrapped[i], expectedWrapped[i])
+		}
 	}
 }
