@@ -19,7 +19,7 @@
   <a href="#quick-start">Quick start</a> •
   <a href="#key-advantages">Key advantages</a> •
   <a href="#installation">Installation</a> •
-  <a href="#user-guide-wiki">User guide wiki</a>
+  <a href="#documentation-wiki">Documentation wiki</a>
 </p>
 
 </div>
@@ -28,29 +28,28 @@
 
 ## Why git-drev?
 
-Modern software projects often produce massive directory outputs:
+Software projects often produce massive directory outputs:
 - **Prebuilt toolchains, compiler sysroots, and cross-compilation SDKs** (massive directory trees that rarely change)
 - **Java / JVM distribution bundles** containing hundreds of `.jar` files where only a few change between builds
-- **Embedded firmware & OS root filesystems** (>5GB)
+- **Embedded firmware & OS root filesystems**
 - **Game assets, audio banks, and pre-rendered textures**
 
-Tracking massive directory snapshots directly in Git causes immediate **repository bloat**, resulting in sluggish local operations, multi-gigabyte clones, and packfile memory thrashing. While Git LFS and cloud object stores (S3, GCS) exist, they treat files in isolation and re-upload whole blobs without native directory-level delta synchronization.
+Tracking massive directory snapshots directly in Git causes immediate **repository bloat**, resulting in sluggish local operations and multi-gigabyte clones. While Git LFS and cloud object stores (S3, GCS) exist, they treat files in isolation and re-upload whole blobs without native directory-level delta synchronization.
 
 **`git-drev` solves this by decoupling metadata from directory data and combining two battle-tested features:**
 1. **POSIX filesystem hardlinks (`cp -al`): native off-the-shelf deduplication**
-   - On standard Linux/UNIX filesystems (ext4, XFS, Btrfs, ZFS), files are represented by **inodes** pointing to physical data blocks in the storage pool. A hardlink is simply another directory entry pointing to an existing inode.
-   - When a new revision is created on the remote server, `git-drev` executes `cp -al <parent_uuid> <new_uuid>`. Duplicating a 10GB or 50GB directory snapshot completes in **milliseconds** and consumes **0 additional disk blocks**.
-   - You get enterprise-grade storage deduplication out of the box—without specialized storage appliances, background daemons, or complex snapshot engines. Only files that are modified or replaced break their hardlinks, ensuring that physical storage grows strictly by the delta between builds.
+   - On standard Linux/UNIX filesystems (ext4, XFS, Btrfs, ZFS), files are represented by **inodes** pointing to physical data blocks in the storage pool. A hardlink is simply another directory entry pointing to an existing inode
+   - When a new revision is created on the remote server, `git-drev` executes `cp -al <parent_uuid> <new_uuid>`. Duplicating a 10GB or 50GB directory snapshot completes in **milliseconds** and consumes **0 additional disk blocks**
+   - You get enterprise-grade storage deduplication out of the box—without specialized storage appliances, background daemons, or complex snapshot engines. Only files that are modified or replaced break their hardlinks, ensuring that physical storage grows strictly by the delta between builds
 2. **rsync rolling-checksum engine: true block-level delta transfers**
-   - Traditional sync tools and cloud object stores re-upload or re-download entire files whenever a change occurs. `rsync` uses a rolling-checksum delta algorithm that inspects both ends, transmitting **only the modified byte ranges**.
-   - Identical files are skipped entirely over the wire based on size and timestamp verification. A 5GB build with 50MB of modified libraries transfers in seconds rather than minutes.
+   - Traditional sync tools and cloud object stores re-upload or re-download entire files whenever a change occurs. `rsync` uses a rolling-checksum delta algorithm that inspects both ends, transmitting **only the modified byte ranges**
+   - Identical files are skipped entirely over the wire based on size and timestamp verification. A 5GB build with 50MB of modified libraries transfers in seconds rather than minutes
 
-`git-drev` uses a Git repository to store lightweight revision metadata (stored as pure JSON inside Git commits). The Git repository remains tiny (<10 MB) and clones in seconds.
-Simple commands (`git drev create`, `put`, `update`, `select`) automatically resolve baselines, execute server-side copies, manage rsync sessions, and commit transactional revision records with leased push safety.
+`git-drev` uses a Git repository to store lightweight revision metadata, so the Git repository remains tiny (<10 MB) and clones in seconds. Simple commands (`git drev create`, `put`, `get`, etc.) automatically resolve baselines, execute server-side actions, manage rsync sessions, and commit transactional revisions. Sharing across team members is zero-friction: you just share a Git repository.
 
 ---
 
-## The Producer & Consumer Model
+## The Producer & Consumer model
 
 `git-drev` organizes directory synchronization around two core roles:
 
@@ -112,16 +111,16 @@ git drev info
 
 ---
 
-## Key Advantages
+## Key advantages
 
 | Feature | `git-drev` | Git LFS | Cloud S3 / GCS |
 | :--- | :--- | :--- | :--- |
-| **Storage Unit** | Entire cohesive directory trees | Individual file blobs | Individual object keys |
-| **Transfer Efficiency** | Rsync block-level deltas | Full file re-uploads | Full object re-uploads |
-| **Server Overhead** | Zero background daemons (SSH + rsync) | Requires LFS HTTP API server | Requires cloud IAM & bucket orchestration |
-| **Storage Deduplication** | Server-side hardlinks (`cp -al`) | Dedupes identical files only | Duplicate full storage unless custom scripted |
-| **Git Clone Speed** | Instant (only metadata commits in Git) | Can still bloat pointer histories | N/A (separate tooling required) |
-| **History Navigation** | Full Git branch, tag, and checkout semantics | Git branches track pointers | Custom bucket versioning required |
+| **Storage unit** | Entire cohesive directory trees | Individual file blobs | Individual object keys |
+| **Transfer efficiency** | Rsync block-level deltas | Full file re-uploads | Full object re-uploads |
+| **Server overhead** | Zero background daemons (SSH + rsync) | Requires LFS HTTP API server | Requires cloud IAM & bucket orchestration |
+| **Storage deduplication** | Server-side hardlinks (`cp -al`) | Dedupes identical files only | Duplicate full storage unless custom scripted |
+| **Git clone speed** | Instant (only metadata commits in Git) | Can still bloat pointer histories | N/A (separate tooling required) |
+| **History navigation** | Full Git branch, tag, and checkout semantics | Git branches track pointers | Custom bucket versioning required |
 
 ---
 
@@ -178,7 +177,7 @@ git drev config
 
 ---
 
-## User Guide Wiki
+## Documentation wiki
 
 For in-depth tutorials, CI pipeline examples, and command references, explore the complete User Guide:
 
@@ -201,3 +200,11 @@ We welcome contributions! Please review our [Contributing Guidelines](CONTRIBUTI
 ## License
 
 `git-drev` is open-source software licensed under the [MIT License](LICENSE).
+
+---
+
+## 🤖 AI Disclosure
+
+![AI Assisted](https://img.shields.io/badge/AI-Assisted-blue?style=flat-square)
+
+This project was developed with the assistance of AI tools. All AI-generated code has been reviewed, tested, and manually refined.
