@@ -15,7 +15,7 @@
 
 <p align="center">
   <a href="#why-git-drev">Why git-drev?</a> •
-  <a href="#the-producer--consumer-model">Producer & Consumer Model</a> •
+  <a href="#the-producer--consumer-model">Producer & Consumer model</a> •
   <a href="#quick-start">Quick start</a> •
   <a href="#key-advantages">Key advantages</a> •
   <a href="#installation">Installation</a> •
@@ -55,24 +55,24 @@ Tracking massive directory snapshots directly in Git causes immediate **reposito
 
 ```mermaid
 flowchart LR
-    subgraph Producer["1. Producer (CI / Build System)"]
-        P1["git drev create release/2.0"] --> P2["Execute Build into workdir/"]
+    subgraph Producer["1. Producer (CI / build system)"]
+        P1["git drev create release/2.0"] --> P2["Execute build into workdir/"]
         P2 --> P3["git drev put -m 'Nightly build'"]
     end
 
     subgraph Infrastructure["2. Storage & Metadata"]
-        GitRemote[("Git Remote<br/>(Lightweight Commits)")]
-        StorageHost[("SSH Storage Host<br/>(Deduplicated UUID Directories)")]
+        GitRemote[("Git remote<br/>(Lightweight commits)")]
+        StorageHost[("SSH storage host<br/>(Deduplicated UUID directories)")]
     end
 
-    subgraph Consumer["3. Consumer (Tester / Developer)"]
+    subgraph Consumer["3. Consumer (tester / developer)"]
         C1["git drev select release/2.0"] --> C2["git drev update"]
         C2 --> C3["workdir/ is synced with zero compile time"]
     end
 
-    P3 -->|"Push JSON Commit"| GitRemote
+    P3 -->|"push JSON Commit"| GitRemote
     P3 -->|"rsync deltas"| StorageHost
-    GitRemote -->|"Fetch Commit"| C1
+    GitRemote -->|"fetch commit"| C1
     StorageHost -->|"rsync deltas"| C2
 ```
 

@@ -4,7 +4,7 @@ Welcome to the **`git-drev` user guide**. This documentation provides comprehens
 
 ---
 
-## Table of Contents
+## Table of contents
 
 | Chapter | Title | Focus Area |
 | :---: | :--- | :--- |
@@ -18,22 +18,22 @@ Welcome to the **`git-drev` user guide**. This documentation provides comprehens
 
 ---
 
-## Reading Paths
+## Reading paths
 
-### For CI / DevOps Engineers (Producers)
+### For CI / DevOps engineers (producers)
 If you are automating build pipelines and artifact distribution:
-1. Read [The git-drev Philosophy](01-philosophy.md) to understand how `git-drev` avoids Git repository bloat.
-2. Follow [Getting Started](02-getting-started.md) to configure SSH keys and `.git-drev.yaml`.
-3. Review [Project Hooks & CI/CD Automation](04-hooks-and-ci.md) for Jenkins/GitHub Actions pipeline templates.
-4. Set up the automated cleanup script in [Storage Architecture & Retention](05-storage-and-retention.md).
+1. Read [The git-drev Philosophy](01-philosophy.md) to understand how `git-drev` avoids Git repository bloat
+2. Follow [Getting Started](02-getting-started.md) to configure SSH keys and `.git-drev.yaml`
+3. Review [Project Hooks & CI/CD Automation](04-hooks-and-ci.md) for Jenkins/GitHub Actions pipeline templates
+4. Set up the automated cleanup script in [Storage Architecture & Retention](05-storage-and-retention.md)
 
-### For Developers & Testers (Consumers)
+### For developers & testers (consumers)
 If you need to download and test exact build snapshots without compiling:
-1. Start with the [Quick Start in the README](../../README.md#quick-start).
-2. Read [The Revision Lifecycle](03-revision-lifecycle.md) to learn how to switch snapshots (`select`) and update workdirs (`update`).
-3. Check [Complete Command Reference](06-command-reference.md) for flag options and porcelain queries.
+1. Start with the [Quick Start in the README](../../README.md#quick-start)
+2. Read [The Revision Lifecycle](03-revision-lifecycle.md) to learn how to switch snapshots (`select`) and update workdirs (`update`)
+3. Check [Complete Command Reference](06-command-reference.md) for flag options and porcelain queries
 
 ---
 
-## Technical Specifications
-For internal Go implementation details, error code contracts, and architecture diagrams, consult the [Technical Specifications](../spec/global.md).
+## Technical specifications
+For internal Go implementation details, error code contracts, and architecture diagrams, consult the [Technical specifications](../spec/global.md).

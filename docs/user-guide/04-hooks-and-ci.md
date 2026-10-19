@@ -1,50 +1,50 @@
-# Chapter 4: Project Hooks and CI/CD Automation
+# Chapter 4: Project hooks and CI/CD automation
 
 `git-drev` provides customizable lifecycle hooks that allow teams and CI/CD pipelines to inject custom build metadata, notify external systems, and correlate revision snapshots with CI build runs.
 
 ---
 
-## 1. Supported Project Hooks
+## 1. Supported project hooks
 
 `git-drev` looks for executable hook scripts in the root directory of your repository:
 
-| Hook Script | Trigger Point | Execution Context | Common Use Cases |
+| Hook script | Trigger point | Execution context | Common use cases |
 | :--- | :--- | :--- | :--- |
-| `.git-drev-put-hook` | Immediately after `rsync` upload succeeds during `git drev put`, before the Git commit is finalized. | Invoked in repository root. Subprocess environment receives revision metadata. | Injecting CI build URLs, commit hashes, or generating checksum manifest files inside the revision directory. |
-| `.git-drev-info-hook` | Triggered when `git drev info` is executed. | Invoked in repository root. Output is appended to the standard `info` output. | Displaying linked CI build numbers, test results, or download metrics. |
+| `.git-drev-put-hook` | Immediately after `rsync` upload succeeds during `git drev put`, before the Git commit is finalized | Invoked in repository root. Subprocess environment receives revision metadata | Injecting CI build URLs, commit hashes, or generating checksum manifest files inside the revision directory |
+| `.git-drev-info-hook` | Triggered when `git drev info` is executed | Invoked in repository root. Output is appended to the standard `info` output | Displaying linked CI build numbers, test results, or download metrics |
 
 ---
 
-## 2. Injected Environment Variables
+## 2. Injected environment variables
 
 When executing a hook, `git-drev` sanitizes the environment (`LC_ALL=C`, `LANG=C`) and injects the following contextual variables:
 
-| Environment Variable | Description | Example Value |
+| Environment variable | Description | Example value |
 | :--- | :--- | :--- |
-| `GIT_DREV_VERSION` | Semantic version of the running `git-drev` binary. | `1.0.0` |
-| `GIT_DREV_UUID` | Active revision UUID. | `4a123f89-8d7b-4b10-8f6a-49321ef19b12` |
-| `GIT_DREV_SEQ` | Monotonic revision sequence number on the active branch. | `14` |
-| `GIT_DREV_BRANCH` | Current branch name (or `HEAD` if detached). | `main` |
+| `GIT_DREV_VERSION` | Semantic version of the running `git-drev` binary | `1.0.0` |
+| `GIT_DREV_UUID` | Active revision UUID | `4a123f89-8d7b-4b10-8f6a-49321ef19b12` |
+| `GIT_DREV_SEQ` | Monotonic revision sequence number on the active branch | `14` |
+| `GIT_DREV_BRANCH` | Current branch name (or `HEAD` if detached) | `main` |
 
 ---
 
-## 3. Hook Execution Rules & Timeout
+## 3. Hook execution rules & timeout
 
-1. **Executable Permissions:** On POSIX systems (Linux, macOS, Git Bash), hooks must have the executable bit set (`chmod +x .git-drev-put-hook`).
-2. **Timeout Control:** By default, hook execution is capped at **5 minutes**. You can adjust this timeout by setting `GIT_DREV_HOOK_TIMEOUT`:
+1. **Executable permissions:** On POSIX systems (Linux, macOS, Git Bash), hooks must have the executable bit set (`chmod +x .git-drev-put-hook`)
+2. **Timeout control:** By default, hook execution is capped at **5 minutes**. You can adjust this timeout by setting `GIT_DREV_HOOK_TIMEOUT`:
    ```bash
    export GIT_DREV_HOOK_TIMEOUT=10m
    ```
-3. **Failure Handling:** If `.git-drev-put-hook` exits with a non-zero status code:
-   - `git drev put` immediately halts execution.
-   - The pending Git commit is aborted.
-   - The remote staging directory is safely cleaned up to prevent leaving half-published snapshots on the storage host.
+3. **Failure handling:** If `.git-drev-put-hook` exits with a non-zero status code:
+   - `git drev put` immediately halts execution
+   - The pending Git commit is aborted
+   - The remote staging directory is safely cleaned up to prevent leaving half-published snapshots on the storage host
 
 ---
 
-## 4. Hook Examples
+## 4. Hook examples
 
-### Example 1: Checksum Manifest Generation (`.git-drev-put-hook`)
+### Example 1: Checksum manifest generation (`.git-drev-put-hook`)
 Generate a `SHA256SUMS` manifest inside `workdir/` before recording the revision:
 
 ```bash
@@ -57,7 +57,7 @@ sha256sum $(find . -type f ! -name "SHA256SUMS") > SHA256SUMS
 echo "[hook] Checksums generated successfully."
 ```
 
-### Example 2: Correlating Jenkins CI Build Info (`.git-drev-put-hook`)
+### Example 2: Correlating Jenkins CI build info (`.git-drev-put-hook`)
 If running inside Jenkins, record the build URL and executor details in a metadata file:
 
 ```bash
@@ -78,7 +78,7 @@ EOF
 fi
 ```
 
-### Example 3: Permanent Build Logs & SBOMs in Git (`.git-drev-put-hook`)
+### Example 3: Permanent build logs & SBOMs in Git (`.git-drev-put-hook`)
 Because `git drev put` automatically stages the repository root (`git add --all`) before committing, any lightweight files placed outside `workdir/` are committed directly into Git. This permanently preserves build provenance even if older remote snapshots are eventually purged:
 
 ```bash
@@ -106,7 +106,7 @@ fi
 
 ---
 
-## 5. CI/CD Integration Patterns
+## 5. CI/CD integration patterns
 
 ### Jenkins Pipeline (`Jenkinsfile`)
 Here is a complete declarative Jenkins pipeline using `git-drev` as a Producer:
@@ -114,7 +114,7 @@ Here is a complete declarative Jenkins pipeline using `git-drev` as a Producer:
 ```groovy
 pipeline {
     agent { label 'linux-builder' }
-    
+
     environment {
         GIT_DREV_HOOK_TIMEOUT = '10m'
     }
@@ -152,7 +152,7 @@ pipeline {
 }
 ```
 
-### GitHub Actions Workflow (`.github/workflows/build.yml`)
+### GitHub actions workflow (`.github/workflows/build.yml`)
 ```yaml
 name: Nightly Build Publisher
 

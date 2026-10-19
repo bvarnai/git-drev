@@ -4,9 +4,9 @@ This chapter addresses common operational questions, edge cases, and diagnostic 
 
 ---
 
-## 1. Common Troubleshooting Scenarios
+## 1. Common troubleshooting scenarios
 
-### 1. SSH Authentication Failure (`Permission denied (publickey)`)
+### 1. SSH authentication failure (`Permission denied (publickey)`)
 
 **Symptom:**
 ```
@@ -35,7 +35,7 @@ This chapter addresses common operational questions, edge cases, and diagnostic 
 
 ---
 
-### 2. Detached HEAD State (`HEAD is detached`)
+### 2. Detached HEAD state (`HEAD is detached`)
 
 **Symptom:**
 ```
@@ -58,7 +58,7 @@ Mutating commands like `put` and `update` require an attached branch so that new
 
 ---
 
-### 3. Git Index Lock Error (`.git/index.lock exists`)
+### 3. Git index lock error (`.git/index.lock exists`)
 
 **Symptom:**
 ```
@@ -81,7 +81,7 @@ Another Git process crashed, was forcefully killed, or an IDE extension is curre
 
 ---
 
-### 4. Interrupted Uploads or Network Disconnections
+### 4. Interrupted uploads or network disconnections
 
 **What happens if `git drev put` is interrupted (Ctrl+C or network drop)?**
 1. Subprocesses receive `SIGTERM` followed by `SIGKILL` after 3 seconds.
@@ -93,7 +93,7 @@ Another Git process crashed, was forcefully killed, or an IDE extension is curre
 
 ---
 
-### 5. Stale-Push Concurrency Conflict
+### 5. Stale-push concurrency conflict
 
 **Symptom:**
 Multiple builders pushed a revision to the same branch at almost the exact same second.
@@ -115,11 +115,11 @@ Multiple builders pushed a revision to the same branch at almost the exact same 
 
 | Feature | `git-drev` | Git LFS |
 | :--- | :--- | :--- |
-| **Storage Unit** | Entire cohesive directory trees | Individual file blobs |
-| **Delta Efficiency** | Rsync block-level deltas + hardlink baselines (`cp -al`) | Full file uploads for every modification |
-| **Git Clone Size** | Pure JSON commits (<10 MB total repository) | Bloated pointer histories & packfiles |
+| **Storage unit** | Entire cohesive directory trees | Individual file blobs |
+| **Delta efficiency** | Rsync block-level deltas + hardlink baselines (`cp -al`) | Full file uploads for every modification |
+| **Git clone size** | Pure JSON commits (<10 MB total repository) | Bloated pointer histories & packfiles |
 | **Infrastructure** | Standard OpenSSH + rsync (no server daemons) | Specialized LFS HTTP server / S3 backend |
-| **Best For** | Large software builds, firmware, toolchains, test datasets | Mixed assets in web apps (images, videos) |
+| **Best for** | Large software builds, firmware, toolchains, test datasets | Mixed assets in web apps (images, videos) |
 
 ---
 
@@ -130,8 +130,8 @@ Yes. Every revision has a unique UUID. When you create a new branch with `git dr
 
 ### Does `git-drev` work on Windows?
 Yes! `git-drev` is fully supported on Windows:
-- Run within [Git Bash](https://gitforwindows.org/) with `rsync` installed via [Scoop](https://scoop.sh/).
-- Terminal colors, hyperlinks, and dynamic path conversions (`/c/Users/...` to Windows paths) are handled natively.
+- Run within [Git Bash](https://gitforwindows.org/) with `rsync` installed via [Scoop](https://scoop.sh/)
+- Terminal colors, hyperlinks, and dynamic path conversions (`/c/Users/...` to Windows paths) are handled natively
 
 ---
 

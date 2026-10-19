@@ -6,7 +6,7 @@ This guide walks you through setting up `git-drev`, configuring SSH access to yo
 
 ## 1. Prerequisites
 
-### Client Prerequisites
+### Client prerequisites
 `git-drev` requires the following standard CLI tools in your system `$PATH`:
 - **Git** (version 2.25.0 or later)
 - **OpenSSH client** (`ssh`)
@@ -37,7 +37,7 @@ brew install git openssh rsync
 
 ---
 
-### Storage Server Prerequisites
+### Storage server prerequisites
 The remote storage host requires:
 - An OpenSSH server (`sshd`) with public key authentication enabled.
 - `rsync` (version 3.1.0 or later).
@@ -48,7 +48,7 @@ The remote storage host requires:
 
 ## 2. Installation
 
-### Option A: Binary Release
+### Option A: Binary release
 Download the precompiled archive for your OS and architecture from [GitHub Releases](https://github.com/bvarnai/git-drev/releases):
 
 ```bash
@@ -57,13 +57,13 @@ curl -sSL https://github.com/bvarnai/git-drev/releases/latest/download/git-drev_
 sudo mv git-drev /usr/local/bin/
 ```
 
-### Option B: Using Go Install
+### Option B: Using Go install
 If you have Go 1.22+ installed:
 ```bash
 go install github.com/bvarnai/git-drev/cmd/git-drev@latest
 ```
 
-### Option C: Build from Source
+### Option C: Build from source
 ```bash
 git clone https://github.com/bvarnai/git-drev.git
 cd git-drev
@@ -82,11 +82,11 @@ git-drev --version
 
 ---
 
-## 3. SSH Configuration
+## 3. SSH configuration
 
 `git-drev` communicates with the storage host over OpenSSH. For seamless automated operation without interactive password prompts, configure SSH key-based authentication.
 
-### Generate and Deploy an SSH Key
+### Generate and deploy an SSH key
 ```bash
 # Generate a modern Ed25519 key pair if you don't already have one
 ssh-keygen -t ed25519 -C "drev-client@example.com"
@@ -113,9 +113,9 @@ ssh storage-server "rsync --version"
 
 ---
 
-## 4. Initializing a Metadata Repository
+## 4. Initializing a metadata repository
 
-### Step 1: Create or Clone a Git Repository
+### Step 1: Create or clone a Git repository
 Create a fresh Git repository to store revision metadata:
 ```bash
 mkdir my-build-storage
@@ -163,7 +163,7 @@ This prints the cascading configuration and provenance source for each parameter
 
 ---
 
-## 5. Your First Revision
+## 5. Your first revision
 
 Now that your repository is set up, create your initial revision branch and push your first directory snapshot:
 
