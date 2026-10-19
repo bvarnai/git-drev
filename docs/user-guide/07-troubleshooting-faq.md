@@ -1,0 +1,144 @@
+# Chapter 7: Troubleshooting and FAQ
+
+This chapter addresses common operational questions, edge cases, and diagnostic steps for `git-drev`.
+
+---
+
+## 1. Common Troubleshooting Scenarios
+
+### 1. SSH Authentication Failure (`Permission denied (publickey)`)
+
+**Symptom:**
+```
+[git-drev] Error: SSH command failed: Permission denied (publickey).
+[git-drev] Hint: Verify SSH access to 'storage-server' using 'ssh -Tv storage-server'.
+```
+
+**Diagnosis & Remediation:**
+1. Test SSH connectivity directly using verbose mode:
+   ```bash
+   ssh -Tv storage-server
+   ```
+2. Verify that your SSH private key permissions are restrictive:
+   ```bash
+   chmod 600 ~/.ssh/id_ed25519
+   chmod 700 ~/.ssh
+   ```
+3. Ensure the SSH public key is added to `~/.ssh/authorized_keys` on the storage server.
+4. If using non-default SSH key files, define them in `~/.ssh/config`:
+   ```ssh-config
+   Host storage-server
+       HostName storage.internal.net
+       User builduser
+       IdentityFile ~/.ssh/id_ed25519
+   ```
+
+---
+
+### 2. Detached HEAD State (`HEAD is detached`)
+
+**Symptom:**
+```
+[git-drev] Error: Cannot execute put: HEAD is detached
+[git-drev] Hint: Use "git drev select <branch>" to select an existing branch or "git drev create <branch>" to start a new branch.
+```
+
+**Why this happens:**
+Mutating commands like `put` and `update` require an attached branch so that new commits can be pushed to `origin`. `HEAD` becomes detached when you checkout a specific commit SHA, tag, or UUID via `git drev select <uuid>`.
+
+**Remediation:**
+- To switch to an existing branch:
+  ```bash
+  git drev select main
+  ```
+- To start a new branch from this exact snapshot:
+  ```bash
+  git drev create feature/hotfix-patch
+  ```
+
+---
+
+### 3. Git Index Lock Error (`.git/index.lock exists`)
+
+**Symptom:**
+```
+[git-drev] Error: Git index is locked (.git/index.lock)
+[git-drev] Hint: Another Git process may be running. If not, delete .git/index.lock manually.
+```
+
+**Why this happens:**
+Another Git process crashed, was forcefully killed, or an IDE extension is currently querying Git.
+
+**Remediation:**
+1. Check if any background Git processes are still running:
+   ```bash
+   pgrep -fl git
+   ```
+2. If no Git processes are active, delete the stale lock file:
+   ```bash
+   rm -f .git/index.lock
+   ```
+
+---
+
+### 4. Interrupted Uploads or Network Disconnections
+
+**What happens if `git drev put` is interrupted (Ctrl+C or network drop)?**
+1. Subprocesses receive `SIGTERM` followed by `SIGKILL` after 3 seconds.
+2. `git-drev` executes transactional cleanup:
+   - A best-effort remote command removes the incomplete staging directory `<path>/<uuid>` from the storage server.
+   - No Git commit is created.
+   - Your local working tree and repository remain untouched.
+3. You can safely re-run `git drev put` once the connection is restored.
+
+---
+
+### 5. Stale-Push Concurrency Conflict
+
+**Symptom:**
+Multiple builders pushed a revision to the same branch at almost the exact same second.
+
+**Resolution:**
+`git-drev` features automatic retry handling. When `git push --force-with-lease` is rejected due to a concurrent push:
+1. `git-drev` logs:
+   ```
+   [git-drev] Remote branch has diverged; retrying with linear rebase (attempt 1/3)...
+   ```
+2. Fetches upstream changes and rebases your local commit linearly on top of upstream.
+3. Re-pushes with lease verification. If rebase fails due to conflicting tracked files, it safely aborts via `git rebase --abort`.
+
+---
+
+## 2. Frequently Asked Questions (FAQ)
+
+### How does `git-drev` compare to Git LFS?
+
+| Feature | `git-drev` | Git LFS |
+| :--- | :--- | :--- |
+| **Storage Unit** | Entire cohesive directory trees | Individual file blobs |
+| **Delta Efficiency** | Rsync block-level deltas + hardlink baselines (`cp -al`) | Full file uploads for every modification |
+| **Git Clone Size** | Pure JSON commits (<10 MB total repository) | Bloated pointer histories & packfiles |
+| **Infrastructure** | Standard OpenSSH + rsync (no server daemons) | Specialized LFS HTTP server / S3 backend |
+| **Best For** | Large software builds, firmware, models, test datasets | Mixed assets in web apps (images, videos) |
+
+---
+
+### Can I have multiple branches with different baselines?
+Yes. Every revision has a unique UUID. When you create a new branch with `git drev create <branch>`, it records the UUID of the commit you branched from as its baseline. When you publish a revision on that branch, `git drev put` hardlink-clones from that specific baseline.
+
+---
+
+### Does `git-drev` work on Windows?
+Yes! `git-drev` is fully supported on Windows:
+- Run within [Git Bash](https://gitforwindows.org/) with `rsync` installed via [Scoop](https://scoop.sh/).
+- Terminal colors, hyperlinks, and dynamic path conversions (`/c/Users/...` to Windows paths) are handled natively.
+
+---
+
+### What happens when I delete a Git branch?
+Deleting a Git branch removes the ref pointer in Git, but the remote snapshot directories on the storage server remain intact.
+To find snapshots that are no longer referenced by any Git commit, run:
+```bash
+git drev usage -v
+```
+To clean up unreferenced snapshots, run the retention cleanup script described in [Chapter 5: Storage and Retention](05-storage-and-retention.md).

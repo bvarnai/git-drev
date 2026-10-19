@@ -1,0 +1,58 @@
+name: Bug report
+description: Create a report to help us improve git-drev
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the sections below.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Description
+      description: A clear and concise description of what the bug is.
+      placeholder: What happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Exact commands executed in your terminal.
+      placeholder: |
+        1. git drev select main
+        2. git drev put -m "..."
+        3. See error ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Terminal Output / Diagnostic Logs
+      description: Please paste the full terminal output (run with -v/--verbose if possible).
+      render: shell
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment Info
+      description: Please provide your environment details.
+      value: |
+        - `git-drev --version`: 
+        - `git --version`: 
+        - `rsync --version`: 
+        - `ssh -V`: 
+        - OS & Architecture (e.g. Ubuntu 24.04 x64, macOS Sonoma ARM, Windows Git Bash): 
+    validations:
+      required: true
