@@ -8,7 +8,7 @@
 
 Modern software engineering frequently involves large directory artifacts:
 - Embedded firmware images and cross-compiled root filesystems (>5GB).
-- Machine learning model weights, training checkpoints, and datasets.
+- Prebuilt toolchains, compiler sysroots, and cross-compilation SDKs (massive directory trees that rarely change).
 - Java application builds containing hundreds of third-party `.jar` dependencies where only 1 or 2 change between builds.
 - Game engine asset directories and pre-rendered textures.
 
@@ -48,16 +48,16 @@ flowchart TD
      ```json
      {"uuid":"018f24a0-7b32-7e9b-a012-3456789abcde","timestamp":"2026-10-19 10:00:00","author":"ci-builder","message":"Nightly build #42"}
      ```
-   - The Git repository stays feather-light (under a few megabytes), cloning in seconds.
+   - The Git repository stays feather-light (under 10 megabytes), cloning in seconds.
 
-2. **Rsync Delta Synchronization over OpenSSH:**
-   - Directory contents are stored on a dedicated remote storage server accessible via SSH.
-   - When uploading (`git drev put`) or downloading (`git drev get`), `git-drev` uses the proven `rsync` algorithm to transfer **only modified byte blocks**, reducing multi-gigabyte transfers to seconds.
+2. **POSIX Filesystem Hardlinks (`cp -al`): Native Off-the-Shelf Deduplication:**
+   - On standard Linux/UNIX filesystems (ext4, XFS, Btrfs, ZFS), files are represented by **inodes** pointing to physical data blocks in the storage pool. A hardlink is simply another directory entry pointing to an existing inode.
+   - When a new revision is created on the remote server, `git-drev` executes `cp -al <parent_uuid> <new_uuid>`. Duplicating a 10GB or 50GB directory snapshot completes in **milliseconds** and consumes **0 additional disk blocks**.
+   - You get enterprise-grade storage deduplication out of the box—without specialized storage appliances, background daemons, or complex snapshot engines. Only files that are modified or replaced break their hardlinks, ensuring that physical storage grows strictly by the delta between builds.
 
-3. **Server-Side Baseline Hardlink Cloning:**
-   - Before uploading new files, `git drev put` copies the parent revision on the remote server using hardlinks (`cp -al` or `rsync --link-dest`).
-   - Unchanged files consume **zero additional disk space** on the remote server.
-   - Build-to-build storage overhead is limited strictly to the actual bytes modified.
+3. **rsync Rolling-Checksum Engine: True Block-Level Delta Transfers:**
+   - Traditional sync tools and cloud object stores re-upload or re-download entire files whenever a change occurs. `rsync` uses a rolling-checksum delta algorithm that inspects both ends, transmitting **only the modified byte ranges**.
+   - Identical files are skipped entirely over the wire based on size and timestamp verification. A 5GB build with 50MB of modified libraries transfers in seconds rather than minutes.
 
 ---
 

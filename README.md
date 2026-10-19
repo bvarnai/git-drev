@@ -4,7 +4,7 @@
 
 # git-drev
 
-**Minimalistic directory revision storage for Git**
+**Minimalistic directory revision manager for Git**
 
 [![CI](https://github.com/bvarnai/git-drev/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bvarnai/git-drev/actions/workflows/ci.yml)
 [![GitHub Release](https://img.shields.io/github/v/release/bvarnai/git-drev?color=blue)](https://github.com/bvarnai/git-drev/releases)
@@ -29,17 +29,24 @@
 ## Why git-drev?
 
 Modern software projects often produce massive directory outputs:
-- **Embedded firmware & OS root filesystems** (>5GB).
-- **Machine learning checkpoints, weights, and dataset bundles**.
-- **Java / JVM distribution bundles** containing hundreds of `.jar` files where only a few change between builds.
-- **Game assets, audio banks, and pre-rendered textures**.
+- **Prebuilt toolchains, compiler sysroots, and cross-compilation SDKs** (massive directory trees that rarely change)
+- **Java / JVM distribution bundles** containing hundreds of `.jar` files where only a few change between builds
+- **Embedded firmware & OS root filesystems** (>5GB)
+- **Game assets, audio banks, and pre-rendered textures**
 
-Tracking these large directory snapshots directly in Git causes immediate **repository bloat**, resulting in sluggish operations, multi-gigabyte clones, and memory thrashing. While Git LFS and cloud object stores (S3, GCS) exist, they track individual files rather than directory trees and lack **block-level delta compression**.
+Tracking massive directory snapshots directly in Git causes immediate **repository bloat**, resulting in sluggish local operations, multi-gigabyte clones, and packfile memory thrashing. While Git LFS and cloud object stores (S3, GCS) exist, they treat files in isolation and re-upload whole blobs without native directory-level delta synchronization.
 
-**`git-drev` solves this by decoupling metadata from directory data:**
-- **Git** is used as a transactional, feather-light metadata database. Commits store deterministic JSON records carrying revision UUIDs and timestamps. The repository remains tiny (<10 MB) and clones in seconds.
-- **Remote Storage** holds the actual files on an SSH-accessible server. Transfers leverage the battle-tested `rsync` algorithm to upload and download **only changed byte blocks**.
-- **Server-Side Hardlink Cloning (`cp -al`)** duplicates the parent baseline instantly on the remote server with **zero disk space duplication**, storing only the delta between successive builds.
+**`git-drev` solves this by decoupling metadata from directory data and combining two battle-tested features:**
+1. **POSIX filesystem hardlinks (`cp -al`): native off-the-shelf deduplication**
+   - On standard Linux/UNIX filesystems (ext4, XFS, Btrfs, ZFS), files are represented by **inodes** pointing to physical data blocks in the storage pool. A hardlink is simply another directory entry pointing to an existing inode.
+   - When a new revision is created on the remote server, `git-drev` executes `cp -al <parent_uuid> <new_uuid>`. Duplicating a 10GB or 50GB directory snapshot completes in **milliseconds** and consumes **0 additional disk blocks**.
+   - You get enterprise-grade storage deduplication out of the box—without specialized storage appliances, background daemons, or complex snapshot engines. Only files that are modified or replaced break their hardlinks, ensuring that physical storage grows strictly by the delta between builds.
+2. **rsync rolling-checksum engine: true block-level delta transfers**
+   - Traditional sync tools and cloud object stores re-upload or re-download entire files whenever a change occurs. `rsync` uses a rolling-checksum delta algorithm that inspects both ends, transmitting **only the modified byte ranges**.
+   - Identical files are skipped entirely over the wire based on size and timestamp verification. A 5GB build with 50MB of modified libraries transfers in seconds rather than minutes.
+
+`git-drev` uses a Git repository to store lightweight revision metadata (stored as pure JSON inside Git commits). The Git repository remains tiny (<10 MB) and clones in seconds.
+Simple commands (`git drev create`, `put`, `update`, `select`) automatically resolve baselines, execute server-side copies, manage rsync sessions, and commit transactional revision records with leased push safety.
 
 ---
 

@@ -119,7 +119,7 @@ Multiple builders pushed a revision to the same branch at almost the exact same 
 | **Delta Efficiency** | Rsync block-level deltas + hardlink baselines (`cp -al`) | Full file uploads for every modification |
 | **Git Clone Size** | Pure JSON commits (<10 MB total repository) | Bloated pointer histories & packfiles |
 | **Infrastructure** | Standard OpenSSH + rsync (no server daemons) | Specialized LFS HTTP server / S3 backend |
-| **Best For** | Large software builds, firmware, models, test datasets | Mixed assets in web apps (images, videos) |
+| **Best For** | Large software builds, firmware, toolchains, test datasets | Mixed assets in web apps (images, videos) |
 
 ---
 
