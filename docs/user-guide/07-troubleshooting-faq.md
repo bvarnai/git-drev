@@ -117,7 +117,7 @@ Multiple builders pushed a revision to the same branch at almost the exact same 
 | Feature | `git-drev` | Git LFS |
 | :--- | :--- | :--- |
 | **Storage unit** | Cohesive directory trees | Individual file blobs |
-| **Delta efficiency** | Rsync block-level deltas + hardlink baselines (`cp -al`) | Full file uploads for every modification |
+| **Transfer & storage** | Incremental `rsync` transfers + hardlink baselines (`cp -al`) | Full file uploads for every modification |
 | **Git clone size** | Compact JSON commits (<10 MB total repository) | Pointer history grows with file count |
 | **Infrastructure** | Standard OpenSSH + `rsync` (no server daemons) | Specialized LFS HTTP server / S3 backend |
 | **Best for** | Large software builds, firmware, toolchains, test datasets | Mixed assets in web apps (images, videos) |

@@ -38,7 +38,7 @@ flowchart TD
     end
 
     GitRepo <-->|"git push / fetch (metadata only)"| GitRemote
-    WorkDir <-->|"rsync over SSH (block deltas)"| StorageServer
+    WorkDir <-->|"rsync over SSH"| StorageServer
     GitRepo -.->|"correlates UUID"| StorageServer
 ```
 
@@ -48,16 +48,16 @@ flowchart TD
      ```json
      {"uuid":"018f24a0-7b32-7e9b-a012-3456789abcde","seq":"1729332000"}
      ```
-   - Because the working directory (`workdir`) is ignored via `.gitignore`, the Git repository stays under a few megabytes regardless of how many terabytes of builds are published.
-   - **Permanent build provenance:** Any small files placed outside `workdir/`—such as `build.log`, compiler flags, test summaries, or SBOMs—are staged (`git add --all`) and committed alongside the revision UUID. Even after old binary snapshots are pruned from the storage server, the Git history permanently preserves the build logs and metadata.
+   - Because the working directory (`workdir`) is ignored via `.gitignore`, the Git repository stays under a few megabytes regardless of how many builds are published.
+   - **Permanent build provenance:** Any small files placed outside `workdir/`—such as `build.log`, compiler flags, test summaries, or SBOMs—are staged (`git add --all`) and committed alongside the revision UUID. Even after old binary snapshots are pruned from the storage server, the Git history retains the build logs and metadata.
 
-2. **Server-side deduplication via POSIX hardlinks (`cp -al`):**
-   - Before uploading a new revision, `git-drev` checks the UUID of the parent commit on the active branch and runs `cp -al -- <parent_uuid> <new_uuid>` on the storage server.
-   - Because hardlinks only create directory entries pointing to existing inodes, cloning a 50 GB baseline takes milliseconds and uses zero additional data blocks.
-   - When `rsync` uploads the new build, unchanged files are untouched (keeping their shared inodes), while modified files are written to temporary files and atomically renamed into place.
+2. **Server-side deduplication via hardlinks (`cp -al`):**
+   - Before uploading a new revision, `git-drev` reads the UUID of the parent commit on the active branch and runs `cp -al -- <parent_uuid> <new_uuid>` on the storage server.
+   - Because hardlinks point to existing inodes, cloning a large baseline directory takes milliseconds and uses zero additional data blocks.
+   - When `rsync` uploads the new build, unchanged files keep their shared inodes, while modified files are written to temporary files and atomically renamed into place.
 
-3. **Network delta transfer via `rsync`:**
-   - Both `put` (upload) and `get` (download) stream changes over SSH using `rsync`.
+3. **Incremental transfers (`rsync` over SSH):**
+   - Both `put` (upload) and `get` (download) transfer files over SSH using `rsync`.
    - If a Consumer switches from build `#101` to build `#102` and 95% of the files are identical, `rsync` skips the unchanged files and transfers only the 5% that changed.
 
 ---
