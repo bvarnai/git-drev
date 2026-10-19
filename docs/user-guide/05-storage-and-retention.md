@@ -24,15 +24,15 @@ On the remote storage host specified in `.git-drev.yaml` (`remote.host` and `rem
 ```
 
 ### Why flat UUID directories?
-1. **Branch-agnostic deduplication:** Multiple branches can branch off each other without path nesting or conflicts
-2. **Immutable integrity:** Once published, a UUID directory is treated as read-only
-3. **Safe concurrency:** Builders targeting different branches or revisions operate on independent UUID targets without locking collisions
+1. **Branch-agnostic deduplication:** Multiple branches can branch off each other without path nesting or conflicts.
+2. **Immutable integrity:** Once published, a UUID directory is treated as read-only.
+3. **Safe concurrency:** Builders targeting different branches or revisions operate on independent UUID targets without locking collisions.
 
 ---
 
 ## 2. Hardlink baseline cloning (`cp -al`)
 
-The primary innovation of `git-drev` for large builds is **server-side baseline cloning**:
+`git-drev` minimizes remote storage growth through **server-side baseline cloning**:
 
 ```mermaid
 flowchart TD
@@ -46,9 +46,9 @@ flowchart TD
 ```
 
 When publishing a revision whose branch has a parent commit:
-1. `git drev put` invokes `cp -al -- <parent_uuid> <new_uuid>` on the remote storage host via SSH
-2. The operating system creates hard links for all files in the parent directory. This operation completes in milliseconds and consumes **zero additional disk blocks** (only standard filesystem directory entries)
-3. `rsync` uploads the builder's changes into `<new_uuid>`. By default, when `rsync` transfers a modified file, it writes the updated payload to a temporary file (`.filename.XXXXXX`) in a new inode and atomically `rename()`s it over the destination path—cleanly breaking the hardlink for that specific file without mutating the parent revision. Unchanged files continue sharing storage inodes with the parent snapshot
+1. `git drev put` invokes `cp -al -- <parent_uuid> <new_uuid>` on the remote storage host via SSH.
+2. The operating system creates hard links for all files in the parent directory. This operation completes in milliseconds and consumes **zero additional disk blocks** (only standard filesystem directory entries).
+3. `rsync` uploads the builder's changes into `<new_uuid>`. By default, when `rsync` transfers a modified file, it writes the updated payload to a temporary file (`.filename.XXXXXX`) in a new inode and atomically `rename()`s it over the destination path—cleanly breaking the hardlink for that specific file without mutating the parent revision. Unchanged files continue sharing storage inodes with the parent snapshot.
 
 > [!WARNING]
 > **Why `--inplace`, `--append`, and `--append-verify` are prohibited on `put`:**
@@ -71,13 +71,13 @@ remote:
 
 ### Implicit & recommended flags explained
 `git-drev` always passes `-a --delete-during -e "ssh -T"` before appending your custom `get` or `put` options:
-- `-a` (`--archive`): Recursively preserves file permissions, timestamps, symlinks, and directory hierarchies
-- `-z` (`--compress`): Compresses file data during network transfer
-- `-H` (`--hard-links`): Preserves internal hardlinks within the snapshot
-- `-A` (`--acls`): Preserves POSIX Access Control Lists
-- `-X` (`--xattrs`): Preserves extended file attributes (vital for SELinux contexts or macOS metadata)
-- `--delete-during`: Deletes files from the target that no longer exist in the source while minimizing memory overhead on large file trees
-- `--whole-file`: Speeds up local-LAN or high-bandwidth server uploads after `cp -al` when modified build artifacts are completely regenerated
+- `-a` (`--archive`): Recursively preserves file permissions, timestamps, symlinks, and directory hierarchies.
+- `-z` (`--compress`): Compresses file data during network transfer.
+- `-H` (`--hard-links`): Preserves internal hardlinks within the snapshot.
+- `-A` (`--acls`): Preserves POSIX Access Control Lists.
+- `-X` (`--xattrs`): Preserves extended file attributes (useful for SELinux contexts or macOS metadata).
+- `--delete-during`: Deletes files from the target that no longer exist in the source while minimizing memory overhead on large file trees.
+- `--whole-file`: Speeds up local-LAN or high-bandwidth server uploads after `cp -al` when modified build artifacts are completely regenerated.
 
 ---
 
@@ -94,7 +94,7 @@ Total size on remote is 8.1G (/srv/drev/my-project)
 ```
 
 ### Correlating active vs. orphaned revisions (`-v`)
-When developers delete old Git branches, force-push rebases, or delete tags, some remote UUID directories may no longer be referenced by any Git commit in repository history. These are **orphaned revisions**.
+When developers delete old Git branches, drop older concurrent builds, or delete tags, some remote UUID directories may no longer be referenced by any Git commit in repository history. These are **orphaned revisions**.
 
 Running `git drev usage -v` scans your Git commit history (`git log --all`) and correlates every known UUID against directories on the remote host:
 
@@ -102,7 +102,7 @@ Running `git drev usage -v` scans your Git commit history (`git log --all`) and 
 git drev usage -v
 ```
 
-Example Output:
+Example output:
 ```
 Total size on remote is 8.1G (/srv/drev/my-project)
 
@@ -116,49 +116,53 @@ UUID                                  Size  Created     Commit      Branch/Tag  
 
 ## 5. Automated retention management
 
-To reclaim disk space consumed by orphaned revisions, run an automated retention cleanup script on the storage host or via CI.
+Because hardlinks are reference-counted by the filesystem kernel, running `rm -rf` on an old `<uuid>` directory is completely safe: any inode still referenced by a newer revision remains intact on disk, and disk blocks are freed only when the last revision pointing to an inode is removed.
+
+Teams typically combine two retention rules:
+1. **Orphan removal:** Delete any `<uuid>` directory not referenced by any commit in Git.
+2. **Sliding-window pruning (optional):** Prune binary snapshots for commits older than $N$ days (e.g., 30 days), while **always keeping** the latest commit (`HEAD`) of every branch and every Git tag so active branches always have a valid baseline for `cp -al` and `get`. (Even when an old binary directory is pruned, its commit and any tracked build logs remain in Git forever.)
 
 ### Server-side retention cleanup script (`cleanup.sh`)
-Deploy this script to your storage server to clean up orphaned directories:
-
 ```bash
 #!/usr/bin/env bash
-# cleanup.sh - Clean up orphaned git-drev revisions
+# cleanup.sh - Prune orphaned and expired git-drev revisions while preserving branch tips & tags
 set -euo pipefail
 
 STORAGE_PATH="/srv/drev/my-project"
 GIT_REPO_PATH="/srv/git/my-project.git"
+RETENTION_DAYS="${RETENTION_DAYS:-30}"
 
-echo "=== Starting git-drev retention cleanup ==="
+echo "=== Starting git-drev retention cleanup (window: ${RETENTION_DAYS} days) ==="
 
-# 1. Extract all valid revision UUIDs referenced across all Git commits
-mapfile -t VALID_UUIDS < <(
-  git --git-dir="${GIT_REPO_PATH}" log --all --format=%s \
-    | grep -oE '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' \
+# 1. Collect UUIDs from commits within the retention window PLUS all current branch tips and tags
+mapfile -t KEEP_UUIDS < <(
+  {
+    git --git-dir="${GIT_REPO_PATH}" log --all --since="${RETENTION_DAYS} days ago" --format=%s
+    git --git-dir="${GIT_REPO_PATH}" for-each-ref --format='%(subject)' refs/heads/ refs/tags/
+  } | grep -oE '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' \
+    | tr '[:upper:]' '[:lower:]' \
     | sort -u
 )
 
-echo "Found ${#VALID_UUIDS[@]} active revision UUIDs in Git history."
+echo "Retaining ${#KEEP_UUIDS[@]} active revision UUIDs."
 
-# 2. Iterate through physical directories on the storage host
+# 2. Remove UUID directories not in KEEP_UUIDS
 for dir in "${STORAGE_PATH}"/*; do
   [[ -d "${dir}" ]] || continue
-  uuid=$(basename "${dir}")
+  uuid=$(basename "${dir}" | tr '[:upper:]' '[:lower:]')
 
-  # Check if directory name is a valid UUID
-  if [[ "${uuid}" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
-    # Check if UUID exists in the valid list
-    if ! printf '%s\n' "${VALID_UUIDS[@]}" | grep -qi "^${uuid}$"; then
-      echo "Removing orphaned revision: ${uuid}"
-      rm -rf "${dir}"
+  if [[ "${uuid}" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+    if ! printf '%s\n' "${KEEP_UUIDS[@]}" | grep -qx "${uuid}"; then
+      echo "Removing expired/orphaned revision: ${uuid}"
+      rm -rf -- "${dir}"
     fi
   fi
 done
 
-echo "=== Cleanup completed successfully ==="
+echo "=== Cleanup completed ==="
 ```
 
-### Scheduling with Cron
+### Scheduling with cron
 Set up a weekly cron job on the storage server:
 
 ```cron

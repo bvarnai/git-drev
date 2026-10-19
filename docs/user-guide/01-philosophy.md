@@ -1,29 +1,29 @@
-# Chapter 1: The git-drev Philosophy
+# Chapter 1: The git-drev philosophy
 
-`git-drev` is a lightweight Git CLI extension designed to manage and synchronize large directory snapshots efficiently without bloating your Git repository.
-
----
-
-## The Problem: large build artifacts in Git
-
-Modern software engineering frequently involves large directory artifacts:
-- Embedded firmware images and cross-compiled root filesystems (>5GB)
-- Prebuilt toolchains, compiler sysroots, and cross-compilation SDKs (massive directory trees that rarely change)
-- Java application builds containing hundreds of third-party `.jar` dependencies where only 1 or 2 change between builds
-- Game engine asset directories and pre-rendered textures
-
-Attempting to track these directory snapshots in standard Git repositories quickly leads to catastrophic repository bloat:
-1. **Cloning slowdown:** Git stores the complete history of every version in `.git/objects`. A few 5GB builds turn a clone into an hours-long, multi-gigabyte download
-2. **Poor delta compression:** Git's packfile delta compression is designed for text files and small objects; packing massive multi-gigabyte binary directories causes high memory usage and packfile thrashing
-3. **Git LFS and S3 overhead:**
-   - Git LFS tracks individual files rather than cohesive directory trees. When hundreds of files change slightly across builds, LFS still re-uploads entire files without block-level delta compression
-   - Cloud blob storage (Amazon S3, Google Cloud Storage) lacks native block-level delta synchronization, requiring full object uploads/downloads and custom orchestration scripts
+`git-drev` is a Git CLI extension that versions and synchronizes large directory trees using Git for revision metadata and SSH + `rsync` for storage and transfer.
 
 ---
 
-## The Core Concept: metadata in Git, data on remote storage
+## The problem: large build directories in Git
 
-`git-drev` solves this by decoupling **metadata** from **data**:
+Many engineering workflows produce directory trees that are too large for standard Git but still need branch, tag, and commit semantics:
+- **Embedded firmware images and OS root filesystems** (often 2–20 GB per build)
+- **Prebuilt toolchains, sysroots, and cross-compilation SDKs** (tens of thousands of header and library files that rarely change between releases)
+- **JVM / Java application bundles** containing hundreds of `.jar` archives where only a handful change per build
+- **Game engine asset trees, audio banks, and compiled shaders**
+
+Tracking these directories directly in Git degrades repository performance:
+1. **Slow clones and fetches:** Git stores every historical blob inside `.git/objects`. A few multi-gigabyte builds turn `git clone` into a slow, bandwidth-heavy download.
+2. **Packfile thrashing:** Git's packfile compression is tuned for source code; repacking multi-gigabyte binary trees consumes gigabytes of RAM and CPU time.
+3. **Why Git LFS and S3 fall short for directory trees:**
+   - **Git LFS** versions individual files rather than cohesive directory snapshots. When files change slightly, LFS transfers full file blobs without block-level delta compression.
+   - **Cloud object stores (S3, GCS)** treat every file as an independent object key. Without a custom manifest tool, you have to tar/untar archives or re-upload unchanged files on every build.
+
+---
+
+## The core concept: metadata in Git, data on remote storage
+
+`git-drev` splits directory versioning into two layers:
 
 ```mermaid
 flowchart TD
@@ -33,38 +33,53 @@ flowchart TD
     end
 
     subgraph Remote["Remote infrastructure"]
-        GitRemote["Git remote<br/>(GitHub / GitLab / Bitbucket)"]
+        GitRemote["Git remote<br/>(GitHub / GitLab / Gitea)"]
         StorageServer["SSH storage host<br/>(remote directory snapshots by UUID)"]
     end
 
-    GitRepo <-->|"git push / pull (metadata only)"| GitRemote
+    GitRepo <-->|"git push / fetch (metadata only)"| GitRemote
     WorkDir <-->|"rsync over SSH (block deltas)"| StorageServer
     GitRepo -.->|"correlates UUID"| StorageServer
 ```
 
-1. **Git as a transactional metadata database:**
-   - Every directory revision is assigned an RFC 4122 UUID (`018f24a0-7b32-7e9b-a012-3456789abcde`)
-   - Git commits carry compact JSON metadata in their commit subjects (while Git natively records commit author and timestamp in the commit header):
+1. **Git as the revision ledger:**
+   - Each published directory snapshot is assigned an RFC 4122 UUID (`018f24a0-7b32-7e9b-a012-3456789abcde`).
+   - `git drev put` creates a commit whose subject is a compact JSON string (while Git natively records the author and timestamp in the commit header):
      ```json
      {"uuid":"018f24a0-7b32-7e9b-a012-3456789abcde","seq":"1729332000"}
      ```
-   - The Git repository stays feather-light (under 10 megabytes), cloning in seconds
-   - **Permanent build provenance:** Because `workdir/` is the only ignored path in `.gitignore`, any lightweight text or metadata files placed in the repository (such as `build.log`, `manifest.json`, compiler options, or SBOMs) are staged and committed directly into Git. Even if a remote 50GB binary snapshot is eventually purged by retention cleanup scripts months later, the Git repository permanently retains the complete build recipe, logs, and audit trail needed to reproduce the build
+   - Because the working directory (`workdir`) is ignored via `.gitignore`, the Git repository stays under a few megabytes regardless of how many terabytes of builds are published.
+   - **Permanent build provenance:** Any small files placed outside `workdir/`—such as `build.log`, compiler flags, test summaries, or SBOMs—are staged (`git add --all`) and committed alongside the revision UUID. Even after old binary snapshots are pruned from the storage server, the Git history permanently preserves the build logs and metadata.
 
-2. **POSIX filesystem hardlinks (`cp -al`): native off-the-shelf deduplication:**
-   - On standard Linux/UNIX filesystems (ext4, XFS, Btrfs, ZFS), files are represented by **inodes** pointing to physical data blocks in the storage pool. A hardlink is simply another directory entry pointing to an existing inode
-   - When a new revision is created on the remote server, `git-drev` executes `cp -al -- <parent_uuid> <new_uuid>`. Duplicating a 10GB or 50GB directory snapshot completes in **milliseconds** and consumes **0 additional disk blocks**
-   - You get enterprise-grade storage deduplication out of the box—without specialized storage appliances, background daemons, or complex snapshot engines. Only files that are modified or replaced break their hardlinks, ensuring that physical storage grows strictly by the delta between builds
+2. **Server-side deduplication via POSIX hardlinks (`cp -al`):**
+   - Before uploading a new revision, `git-drev` checks the UUID of the parent commit on the active branch and runs `cp -al -- <parent_uuid> <new_uuid>` on the storage server.
+   - Because hardlinks only create directory entries pointing to existing inodes, cloning a 50 GB baseline takes milliseconds and uses zero additional data blocks.
+   - When `rsync` uploads the new build, unchanged files are untouched (keeping their shared inodes), while modified files are written to temporary files and atomically renamed into place.
 
-3. **rsync rolling-checksum engine: true block-level delta transfers:**
-   - Traditional sync tools and cloud object stores re-upload or re-download entire files whenever a change occurs. `rsync` uses a rolling-checksum delta algorithm that inspects both ends, transmitting **only the modified byte ranges**
-   - Identical files are skipped entirely over the wire based on size and timestamp verification. A 5GB build with 50MB of modified libraries transfers in seconds rather than minutes
+3. **Network delta transfer via `rsync`:**
+   - Both `put` (upload) and `get` (download) stream changes over SSH using `rsync`.
+   - If a Consumer switches from build `#101` to build `#102` and 95% of the files are identical, `rsync` skips the unchanged files and transfers only the 5% that changed.
 
 ---
 
-## The Producer & Consumer paradigm
+## Repository topology: dedicated repo vs. Git submodule
 
-`git-drev` workflows are structured around two distinct operational roles:
+> [!IMPORTANT]
+> **Do not run `git-drev` directly inside your primary source-code branch.**
+> Because `git drev put`, `update`, and `select` manage their own commit subjects (`{"uuid":"...","seq":"..."}`) and use `git reset --hard` / `git rebase -X theirs` to synchronize state, `git-drev` should always live in a **dedicated metadata repository**.
+
+Teams typically use one of two layouts:
+
+1. **Standalone artifact repository (simplest for QA / test teams):**
+   - A dedicated Git repository (e.g., `myproject-builds.git`) containing `.git-drev.yaml`, optional hooks (`.git-drev-put-hook`, `.git-drev-info-hook`), and the ignored `workdir/` (`data/`).
+   - CI pipelines push new build revisions to `myproject-builds.git`, and testers clone `myproject-builds.git` to pull ready-to-run builds without needing source code or compilers.
+2. **Git submodule inside your source repository (best for prebuilt SDKs / toolchains):**
+   - Add the `git-drev` metadata repository as a Git submodule inside your main source tree (for example, at `third_party/sdk/`).
+   - Developers clone the source repository, run `git drev get` inside `third_party/sdk/` to fetch the prebuilt toolchain, and pin the exact SDK revision in the parent source repo using standard submodule commits.
+
+---
+
+## The Producer & Consumer workflow
 
 ```mermaid
 sequenceDiagram
@@ -76,36 +91,34 @@ sequenceDiagram
 
     Note over Producer: Step 1: Initialize revision branch
     Producer->>Git: git drev create release/1.0
-    Producer->>Producer: Execute build pipeline into workdir/
-    Note over Producer: Step 2: Upload revision
+    Producer->>Producer: Build artifacts into workdir/
+    Note over Producer: Step 2: Publish revision
     Producer->>Storage: cp -al -- parent_uuid new_uuid (server-side)
     Producer->>Storage: rsync workdir/ -> new_uuid/ (deltas)
-    Producer->>Git: git commit (metadata) & git push
+    Producer->>Git: git commit (JSON subject) & git push
 
     Note over Consumer: Step 3: Consume revision
     Consumer->>Git: git drev select release/1.0
     Consumer->>Storage: git drev get (rsync new_uuid/ -> workdir/)
-    Note over Consumer: Local workdir is now byte-for-byte identical
+    Note over Consumer: Local workdir matches remote snapshot
 ```
 
-### The Producer (CI / release automation)
-- Runs in headless CI pipelines (Jenkins, GitHub Actions, GitLab CI)
-- Automatically creates branches via `git drev create <branch>`
-- Executes compilation or packaging to populate the local `workdir`
-- Publishes snapshots via `git drev put` (optionally passing `-s <sequence>` to attach an explicit monotonic CI build number)
-- Interacts with project hooks (`.git-drev-put-hook`) to inject CI build metadata into commit records
+### The Producer (CI / build automation)
+- Runs in CI pipelines (Jenkins, GitHub Actions, GitLab CI).
+- Creates or switches to target branches with `git drev create <branch>`.
+- Compiles or packages artifacts into `workdir`.
+- Publishes snapshots with `git drev put` (optionally passing `-s <sequence>` to attach a monotonic CI build number) and uses `.git-drev-put-hook` to record build metadata.
 
-### The Consumer (tester / developer)
-- Developers or QA engineers who need to test exact builds without recompiling
-- Switches between builds instantly via `git drev select <branch>|<uuid>`
-- Synchronizes the local working directory via `git drev get` (or `git drev get --latest` to update the active branch from `origin` and download in a single step)
-- Only changed files are fetched over the network; if 95% of dependencies are identical to the previous build, only 5% of data is downloaded
+### The Consumer (developer / QA engineer)
+- Pulls prebuilt artifacts without compiling locally.
+- Switches between branches, tags, or historical UUIDs with `git drev select [<branch>|<tag>|<uuid>]`.
+- Downloads the snapshot into `workdir` with `git drev get`, or runs `git drev get --latest` (`-l`) to update the active branch from `origin` and download in one command.
 
 ---
 
-## Guiding principles
+## Design principles
 
-1. **Zero Daemon Overhead:** No custom servers, daemons, or background agents. `git-drev` uses standard `git`, OpenSSH (`ssh`), and `rsync`
-2. **POSIX & Cross-Platform Integrity:** Built with Go 1.22+, supporting Linux, macOS, and Windows (Git Bash)
-3. **Deterministic & Safe:** All Git mutations validate working tree state and index locks; all pushes use safe leasing; all subprocesses respect strict cancellation timeouts
-4. **Transparent Retention:** Server-side revisions are simple directories named after UUIDs (`<path>/<uuid>`). Correlating active versus orphaned revisions is easily inspected with `git drev usage -v`
+1. **No custom server daemons:** Requires only standard `git`, OpenSSH (`ssh`), and `rsync` on the client, and `sshd`, `rsync`, and POSIX `cp` / `du` on the storage host.
+2. **Cross-platform client:** Written in Go 1.22+ with zero external runtime dependencies beyond `git`, `ssh`, and `rsync`; runs on Linux, macOS, and Windows (Git Bash).
+3. **Transactional safety:** All mutating commands check worktree state and `.git/index.lock` before running, push with `--force-with-lease`, and clean up incomplete remote staging directories if interrupted (`SIGINT` / `SIGTERM`).
+4. **Simple retention:** Remote revisions are plain `<path>/<uuid>/` directories on disk. Auditing active vs. orphaned snapshots takes a single command (`git drev usage -v`).

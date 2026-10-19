@@ -1,16 +1,16 @@
-# Chapter 2: Getting Started
+# Chapter 2: Getting started
 
-This guide walks you through setting up `git-drev`, configuring SSH access to your remote storage server, and initializing your first revision repository.
+This guide walks you through installing `git-drev`, configuring SSH access to your storage server, initializing a dedicated metadata repository, and running your first Producer/Consumer round-trip.
 
 ---
 
 ## 1. Prerequisites
 
 ### Client prerequisites
-`git-drev` requires the following standard CLI tools in your system `$PATH`:
-- **Git** (version 2.25.0 or later)
+`git-drev` requires the following tools in your `$PATH`:
+- **Git** (2.25.0 or later)
 - **OpenSSH client** (`ssh`)
-- **rsync** (version 3.1.0 or later)
+- **rsync** (3.1.0 or later)
 
 #### Ubuntu / Debian
 ```bash
@@ -24,13 +24,10 @@ brew install git openssh rsync
 ```
 
 #### Windows (Git for Windows / Scoop)
-- Install [Git for Windows](https://gitforwindows.org/) (which provides Git Bash and OpenSSH).
-- Install `rsync` via [Scoop](https://scoop.sh/):
+- Install [Git for Windows](https://gitforwindows.org/) (provides Git Bash and OpenSSH).
+- Install `rsync` and `git-drev` via [Scoop](https://scoop.sh/):
   ```powershell
   scoop install rsync
-  ```
-- Or install `git-drev` directly via the Scoop bucket:
-  ```powershell
   scoop bucket add bvarnai https://github.com/bvarnai/scoop-bucket
   scoop install git-drev
   ```
@@ -39,17 +36,17 @@ brew install git openssh rsync
 
 ### Storage server prerequisites
 The remote storage host requires:
-- An OpenSSH server (`sshd`) with public key authentication enabled.
-- `rsync` (version 3.1.0 or later).
-- Standard POSIX utilities: `cp` (supporting `-a` and `-l` hardlink flags) and `mkdir`.
-- Write permissions for the connecting user on the target storage directory.
+- An OpenSSH server (`sshd`) with public key authentication enabled
+- `rsync` (3.1.0 or later)
+- Standard POSIX utilities: `cp` (supporting `-a` and `-l` hardlink flags), `du`, `stat`, and `rm`
+- Write permissions for the SSH user on the target storage directory (e.g., `/srv/drev/`)
 
 ---
 
 ## 2. Installation
 
-### Option A: Binary release
-Download the precompiled archive for your OS and architecture from [GitHub Releases](https://github.com/bvarnai/git-drev/releases):
+### Option A: Precompiled binary release
+Download the archive for your OS and architecture from [GitHub Releases](https://github.com/bvarnai/git-drev/releases):
 
 ```bash
 # Example for Linux AMD64
@@ -57,7 +54,7 @@ curl -sSL https://github.com/bvarnai/git-drev/releases/latest/download/git-drev_
 sudo mv git-drev /usr/local/bin/
 ```
 
-### Option B: Using Go install
+### Option B: Via `go install`
 If you have Go 1.22+ installed:
 ```bash
 go install github.com/bvarnai/git-drev/cmd/git-drev@latest
@@ -74,29 +71,28 @@ sudo mv git-drev /usr/local/bin/
 Verify the installation:
 ```bash
 git-drev --version
-# Output: git-drev version 1.0.0 (commit: abc1234, built: 2026-10-19)
 ```
 
 > [!TIP]
-> Since the binary is named `git-drev`, Git automatically recognizes it as a Git extension. You can invoke it either as `git-drev <cmd>` or as `git drev <cmd>`.
+> Because the binary is named `git-drev`, Git automatically discovers it as a subcommand when placed in your `$PATH`. You can run either `git-drev <cmd>` or `git drev <cmd>`.
 
 ---
 
 ## 3. SSH configuration
 
-`git-drev` communicates with the storage host over OpenSSH. For seamless automated operation without interactive password prompts, configure SSH key-based authentication.
+`git-drev` runs non-interactive `ssh -T` and `rsync` sessions (`GIT_TERMINAL_PROMPT=0`), so passwordless SSH key authentication (or `ssh-agent`) is required.
 
 ### Generate and deploy an SSH key
 ```bash
-# Generate a modern Ed25519 key pair if you don't already have one
+# Generate an Ed25519 key pair if you don't already have one
 ssh-keygen -t ed25519 -C "drev-client@example.com"
 
 # Copy the public key to the storage server
-ssh-copy-id -i ~/.ssh/id_ed25519.pub user@storage.internal.net
+ssh-copy-id -i ~/.ssh/id_ed25519.pub builduser@storage.internal.net
 ```
 
 ### Configure `~/.ssh/config`
-Using SSH host aliases simplifies configuration across all team members:
+Defining an SSH host alias keeps `.git-drev.yaml` portable across machines and CI runners:
 
 ```ssh-config
 Host storage-server
@@ -106,25 +102,27 @@ Host storage-server
     Port 22
 ```
 
-Test the connection:
+Verify non-interactive access and check that the target base directory exists:
 ```bash
-ssh storage-server "rsync --version"
+ssh -T storage-server "mkdir -p /srv/drev && rsync --version"
 ```
 
 ---
 
 ## 4. Initializing a metadata repository
 
-### Step 1: Create or clone a Git repository
-Create a fresh Git repository to store revision metadata:
+As covered in [Chapter 1](01-philosophy.md#repository-topology-dedicated-repo-vs-git-submodule), `git-drev` operates in a dedicated metadata repository (which can be used standalone or mounted as a Git submodule).
+
+### Step 1: Create a metadata repository and add a Git remote
 ```bash
 mkdir my-build-storage
 cd my-build-storage
 git init
+git remote add origin git@github.com:myorg/my-build-storage.git
 ```
 
 ### Step 2: Configure `.git-drev.yaml`
-Create a `.git-drev.yaml` configuration file in the repository root:
+Create `.git-drev.yaml` in the repository root:
 
 ```yaml
 # Directory containing active revision files (relative to repo root)
@@ -144,43 +142,60 @@ remote:
 ```
 
 > [!TIP]
-> `remote.path` supports `{repo}` and `{project}` placeholders, which automatically expand to the repository name (derived from the `origin` URL slug or directory name). If `remote.path` is defined in a user-global config (`~/.config/git-drev/config.yaml`) without a placeholder, `git-drev` automatically appends `/{repo}` to isolate repositories on the server.
+> `remote.path` supports `{repo}` and `{project}` placeholders, which expand to the repository name (derived from the `origin` URL slug or directory name). If `remote.path` is defined in a user-global config (`~/.config/git-drev/config.yaml`) without a placeholder, `git-drev` automatically appends `/{repo}` to isolate repositories on the server.
 
-### Step 3: Configure `.gitignore`
-The working directory contains the actual large files, which **must never be committed to Git**:
+### Step 3: Ignore `workdir` in `.gitignore`
+The working directory holds the large payload files and **must be ignored by Git**:
 
 ```bash
 echo "/data" >> .gitignore
 ```
 
-### Step 4: Commit Initial Metadata Configuration
+### Step 4: Commit initial metadata configuration
 ```bash
 git add .git-drev.yaml .gitignore
 git commit -m "chore: initialize git-drev configuration"
 ```
 
-Verify your effective configuration and see which tier provided each setting with `git drev config`:
+Verify your effective configuration and see which tier provided each setting:
 ```bash
 git drev config --sources
 ```
 
 ---
 
-## 5. Your first revision
+## 5. Your first Producer & Consumer round-trip
 
-Now that your repository is set up, create your initial revision branch and push your first directory snapshot:
+### Publish a snapshot (Producer)
+Initialize the `main` revision branch, populate `data/`, and upload your first revision:
 
 ```bash
-# 1. Create a new revision branch
+# 1. Create or switch to the revision branch
 git drev create main
 
-# 2. Populate your working directory with build files
+# 2. Populate workdir (./data) with sample artifacts
 mkdir -p data
 echo "Build v1.0 payload" > data/build.txt
-dd if=/dev/urandom of=data/artifact.bin bs=1M count=100
+dd if=/dev/urandom of=data/artifact.bin bs=1M count=50
 
-# 3. Publish the revision to remote storage and record the metadata commit
+# 3. Upload data/ to storage-server and push the metadata commit
 git drev put
 ```
 
-Congratulations! Your first revision is securely stored on the remote host and tracked via a lightweight Git commit.
+Inspect the commit that `git-drev` created:
+```bash
+git log -n 1 --oneline
+# a1b2c3d {"uuid":"018f24a0-7b32-7e9b-a012-3456789abcde","seq":"1729348200"}
+```
+
+### Download the snapshot on another machine (Consumer)
+Now any teammate or test runner can clone the lightweight metadata repository and pull the snapshot into `data/`:
+
+```bash
+git clone git@github.com:myorg/my-build-storage.git
+cd my-build-storage
+
+# Select the branch and download the revision payload into ./data
+git drev select main
+git drev get
+```

@@ -1,6 +1,6 @@
-# Chapter 3: The Revision lifecycle
+# Chapter 3: The revision lifecycle
 
-This chapter covers the complete day-to-day lifecycle of directory revisions in `git-drev`: creating revision branches, publishing snapshots, synchronizing updates, and switching between historical versions.
+This chapter covers the day-to-day lifecycle of directory revisions in `git-drev`: creating revision branches, publishing snapshots, switching between historical versions, and synchronizing updates.
 
 ---
 
@@ -12,13 +12,13 @@ Unlike standard Git commits that store tracked directory tree blobs, `git-drev` 
 {"uuid":"4a123f89-8d7b-4b10-8f6a-49321ef19b12","seq":"1729348200"}
 ```
 
-- **`uuid`:** RFC 4122 canonical UUID identifying the exact directory snapshot stored at `<remote.path>/<uuid>` on the storage host
-- **`seq`:** Monotonically increasing unsigned 64-bit integer serialized as a decimal string. When `-s` (`--sequence`) is not explicitly passed to `git drev put`, `seq` defaults to the current Unix epoch timestamp in seconds (or can be set to an explicit CI build number via `-s <uint64>`)
+- **`uuid`:** RFC 4122 canonical UUID identifying the directory snapshot stored at `<remote.path>/<uuid>` on the storage host.
+- **`seq`:** Monotonically increasing unsigned 64-bit integer serialized as a decimal string. When `-s` (`--sequence`) is not explicitly passed to `git drev put`, `seq` defaults to the current Unix epoch timestamp in seconds (or can be set to an explicit CI build number via `-s <uint64>`).
 - **Marker commits:** When a branch is first initialized via `git drev create`, an initial marker commit is created:
   ```json
   {"uuid":"4a123f89-8d7b-4b10-8f6a-49321ef19b12","marker":"true"}
   ```
-  The marker stores the parent revision's UUID (or `00000000-0000-0000-0000-000000000000` if no parent revision exists) to establish the baseline linkage for future `cp -al --` server clones
+  The marker stores the parent revision's UUID (or `00000000-0000-0000-0000-000000000000` if no parent revision exists) to establish the baseline linkage for future `cp -al --` server clones.
 
 ---
 
@@ -31,12 +31,12 @@ git drev create release/2.0
 ```
 
 ### What happens under the hood
-1. **Local check:** Checks if `refs/heads/release/2.0` already exists locally. If so, checks it out idempotently
-2. **Remote check:** Checks if `refs/remotes/origin/release/2.0` exists on `origin`. If so, creates a local tracking branch and switches to it
+1. **Local check:** Checks if `refs/heads/release/2.0` already exists locally. If so, checks it out idempotently.
+2. **Remote check:** Checks if `refs/remotes/origin/release/2.0` exists on `origin`. If so, creates a local tracking branch and switches to it.
 3. **New branch initialization:** If the branch does not exist anywhere:
-   - Reads the UUID of the current `HEAD` commit (or `00000000-0000-0000-0000-000000000000` if none)
-   - Creates an empty marker commit (`{"uuid":"<parent-uuid>","marker":"true"}`) on the new branch
-   - Pushes the new branch and marker commit to `origin`
+   - Reads the UUID of the current `HEAD` commit (or `00000000-0000-0000-0000-000000000000` if none).
+   - Creates an empty marker commit (`{"uuid":"<parent-uuid>","marker":"true"}`) on the new branch.
+   - Pushes the new branch and marker commit to `origin`.
 
 ```
 * (release/2.0) [Marker Commit: {"uuid":"4a123f89-...","marker":"true"}]
@@ -48,7 +48,7 @@ git drev create release/2.0
 
 ## 3. Publishing revisions (`put`)
 
-The `put` command is the workhorse of the Producer (CI or build system). It uploads the current contents of `workdir` (or an optional `<source_directory>`) to the remote storage host and commits the new revision metadata to Git:
+`put` uploads the contents of `workdir` (or an optional `<source_directory>`) to the remote storage host and commits the new revision metadata to Git:
 
 ```bash
 # Populate or update your build output in workdir/
@@ -61,7 +61,7 @@ git drev put
 git drev put -s "${BUILD_NUMBER}" --stats
 ```
 
-### The 5-Stage publishing flow
+### The 5-stage publishing flow
 
 ```mermaid
 flowchart TD
@@ -71,61 +71,25 @@ flowchart TD
     D --> E["Stage 5: Transactional Git Commit & Leased Push<br/>(git commit & git push --force-with-lease)"]
 ```
 
-1. **Preflight assertions:** Verifies that `HEAD` is attached to a valid branch, no `.git/index.lock` exists, and `remote.host` / `remote.path` are configured
+1. **Preflight assertions:** Verifies that `HEAD` is attached to a valid branch, no `.git/index.lock` exists, and `remote.host` / `remote.path` are configured.
 2. **Server-side hardlink clone:**
-   - If a parent revision UUID exists on the branch (and is not a marker commit or `ZeroUUID`), `git-drev` executes `cp -al -- <parent_uuid> <new_uuid>` directly on the remote server
-   - This creates an instant duplicate of the previous build in milliseconds without consuming disk space
+   - If a parent revision UUID exists on the branch (and is not a marker commit or `ZeroUUID`), `git-drev` executes `cp -al -- <parent_uuid> <new_uuid>` directly on the remote server.
+   - This creates a hardlinked baseline of the previous build in milliseconds without consuming extra data blocks.
 3. **Rsync delta upload:**
-   - Runs `rsync` from your local `workdir` (or `<source_directory>`) to the remote `<path>/<new_uuid>/` directory
-   - Only new or modified files/blocks are transmitted across the network. Unmodified files remain hardlinked
+   - Runs `rsync` from your local `workdir` (or `<source_directory>`) to the remote `<path>/<new_uuid>/` directory.
+   - Only new or modified files and byte ranges are transmitted over the network. Unmodified files remain hardlinked.
 4. **Project hook execution:**
-   - If `.git-drev-put-hook` exists in the repository root, it executes with `GIT_DREV_*` environment variables injected (see [Chapter 4](04-hooks-and-ci.md))
+   - If `.git-drev-put-hook` exists in the repository root, it runs with `GIT_DREV_*` environment variables injected (see [Chapter 4](04-hooks-and-ci.md)).
 5. **Transactional commit & push:**
-   - Stages any metadata files modified in the repository root (`git add --all`) and records the revision commit in Git
-   - Pushes to `origin` using `--force-with-lease`
+   - Stages any metadata files modified in the repository root (`git add --all`) and records the revision commit in Git.
+   - Pushes to `origin` using `--force-with-lease`.
    - **Sequence-aware stale-push resolution:** If another builder pushed concurrently:
-     - If the remote commit has a strictly newer sequence (`remoteSeq > localSeq`) and `--no-sequence-check` is not set, `git-drev` drops the older local commit and hard-resets to `origin/<branch>`
-     - Otherwise, `git-drev` rebases with `--strategy-option=theirs` onto `origin/<branch>` and retries the push (up to 5 attempts)
+     - If the remote commit has a strictly newer sequence (`remoteSeq > localSeq`) and `--no-sequence-check` is not set, `git-drev` drops the older local commit and hard-resets to `origin/<branch>`.
+     - Otherwise, `git-drev` rebases with `--strategy-option=theirs` onto `origin/<branch>` and retries the push (up to 5 attempts).
 
 ---
 
-## 4. Synchronizing branch metadata (`update`)
-
-`update` synchronizes the active local Git branch with `origin/<branch>` **without** downloading the remote directory payload:
-
-```bash
-git drev update
-```
-
-### What happens under the hood
-1. Verifies that `HEAD` is attached to a local branch
-2. Ensures `+refs/heads/*:refs/remotes/origin/*` is configured on `remote.origin.fetch`
-3. Executes `git fetch --all --prune`
-4. Hard-resets the local branch to `refs/remotes/origin/<branch>`
-
-> [!TIP]
-> Use `git drev update` when you want to inspect the latest commit metadata or run `git drev info` before downloading multi-gigabyte files, or on a Producer node before starting a new build. To update the branch **and** download the files into `workdir` in a single command, use `git drev get --latest` (`-l`).
-
----
-
-## 5. Downloading snapshot content (`get`)
-
-`get` downloads the remote directory snapshot referenced by the current `HEAD` commit into `workdir` (or an optional `<target_directory>`):
-
-```bash
-# Download the snapshot for the currently checked-out commit
-git drev get
-
-# Update the current branch from origin AND download the latest snapshot in one step
-git drev get --latest
-
-# Download into a custom directory with rsync transfer statistics
-git drev get --stats ./custom-output
-```
-
----
-
-## 6. Switching revisions (`select`)
+## 4. Switching revisions (`select`)
 
 `select` fetches from `origin` and checks out an existing branch, tag, or specific historical revision commit resolved by UUID:
 
@@ -151,6 +115,42 @@ $ git drev select featrue/login
 [git-drev] Error: Checkout failed (git checkout featrue/login)
 [git-drev] Hint: Did you mean 'feature/login'?
 ```
+
+---
+
+## 5. Downloading snapshot content (`get`)
+
+`get` downloads the remote directory snapshot referenced by the current `HEAD` commit into `workdir` (or an optional `<target_directory>`):
+
+```bash
+# Download the snapshot for the currently checked-out commit
+git drev get
+
+# Update the current branch from origin AND download the latest snapshot in one step
+git drev get --latest
+
+# Download into a custom directory with rsync transfer statistics
+git drev get --stats ./custom-output
+```
+
+---
+
+## 6. Synchronizing branch metadata (`update`)
+
+`update` synchronizes the active local Git branch with `origin/<branch>` **without** downloading the remote directory payload:
+
+```bash
+git drev update
+```
+
+### What happens under the hood
+1. Verifies that `HEAD` is attached to a local branch.
+2. Ensures `+refs/heads/*:refs/remotes/origin/*` is configured on `remote.origin.fetch`.
+3. Executes `git fetch --all --prune`.
+4. Hard-resets the local branch to `refs/remotes/origin/<branch>`.
+
+> [!TIP]
+> Use `git drev update` when you want to inspect the latest commit metadata or run `git drev info` before downloading multi-gigabyte files, or on a Producer node before starting a new build. To update the branch **and** download the files into `workdir` in a single command, use `git drev get --latest` (`-l`).
 
 ---
 
@@ -189,4 +189,4 @@ UUID                                  Size  Created     Commit      Branch/Tag  
 9f8e7d6c-5b4a-3a21-10fe-dcba98765432  120M  2026-10-18  1f2e3d4     main, v1.0.1  {"uuid":"9f8e7d6c-5b4a-3a21-10fe-dcba98765432","seq":"100"}
 01234567-89ab-cdef-0123-456789abcdef  3.8G  2026-10-15  [orphaned]  -             -
 ```
-*(See [Chapter 5: Storage and Retention](05-storage-and-retention.md) for automated cleanup of orphaned revisions).*
+*(See [Chapter 5: Storage architecture & retention](05-storage-and-retention.md) for automated cleanup of orphaned revisions).*

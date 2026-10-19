@@ -110,17 +110,22 @@ Multiple builders pushed a revision to the same branch at almost the exact same 
 
 ---
 
-## 2. Frequently Asked Questions (FAQ)
+## 2. Frequently asked questions (FAQ)
 
 ### How does `git-drev` compare to Git LFS?
 
 | Feature | `git-drev` | Git LFS |
 | :--- | :--- | :--- |
-| **Storage unit** | Entire cohesive directory trees | Individual file blobs |
+| **Storage unit** | Cohesive directory trees | Individual file blobs |
 | **Delta efficiency** | Rsync block-level deltas + hardlink baselines (`cp -al`) | Full file uploads for every modification |
-| **Git clone size** | Pure JSON commits (<10 MB total repository) | Bloated pointer histories & packfiles |
-| **Infrastructure** | Standard OpenSSH + rsync (no server daemons) | Specialized LFS HTTP server / S3 backend |
+| **Git clone size** | Compact JSON commits (<10 MB total repository) | Pointer history grows with file count |
+| **Infrastructure** | Standard OpenSSH + `rsync` (no server daemons) | Specialized LFS HTTP server / S3 backend |
 | **Best for** | Large software builds, firmware, toolchains, test datasets | Mixed assets in web apps (images, videos) |
+
+---
+
+### Should I run `git-drev` inside my main source-code repository?
+No. `git-drev` creates commits whose subjects are JSON strings (`{"uuid":"...","seq":"..."}`) and uses `git reset --hard` and `git rebase -X theirs` to synchronize branches. Always run `git-drev` in a **dedicated metadata repository** (either standalone or mounted as a Git submodule inside your main source tree). See [Chapter 1: Repository topology](01-philosophy.md#repository-topology-dedicated-repo-vs-git-submodule).
 
 ---
 
@@ -130,16 +135,16 @@ Yes. Every revision has a unique UUID. When you create a new branch with `git dr
 ---
 
 ### Does `git-drev` work on Windows?
-Yes! `git-drev` is fully supported on Windows:
-- Run within [Git Bash](https://gitforwindows.org/) with `rsync` installed via [Scoop](https://scoop.sh/)
-- Terminal colors, hyperlinks, and dynamic path conversions (`/c/Users/...` to Windows paths) are handled natively
+Yes. `git-drev` is supported on Windows:
+- Run within [Git Bash](https://gitforwindows.org/) with `rsync` installed via [Scoop](https://scoop.sh/) (`scoop install rsync`).
+- Terminal colors, hyperlinks, and dynamic path conversions (`/c/Users/...` to Windows paths) are handled natively.
 
 ---
 
 ### What happens when I delete a Git branch?
-Deleting a Git branch removes the ref pointer in Git, but the remote snapshot directories on the storage server remain intact.
-To find snapshots that are no longer referenced by any Git commit, run:
+Deleting a Git branch removes the ref pointer in Git, while the remote snapshot directories on the storage server remain intact until pruned.
+To inspect snapshots that are no longer referenced by any Git commit, run:
 ```bash
 git drev usage -v
 ```
-To clean up unreferenced snapshots, run the retention cleanup script described in [Chapter 5: Storage and Retention](05-storage-and-retention.md).
+To prune unreferenced or expired snapshots, use the retention cleanup script in [Chapter 5: Storage architecture & retention](05-storage-and-retention.md).

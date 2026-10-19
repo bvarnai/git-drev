@@ -28,30 +28,30 @@
 
 ## Why git-drev?
 
-Software projects often produce massive directory outputs:
-- **Prebuilt toolchains, compiler sysroots, and cross-compilation SDKs** (massive directory trees that rarely change)
+Software projects often produce large directory outputs that need to be shared across CI pipelines, developers, and test rigs:
+- **Prebuilt toolchains, compiler sysroots, and cross-compilation SDKs** (large directory trees where most files remain unchanged across builds)
 - **Java / JVM distribution bundles** containing hundreds of `.jar` files where only a few change between builds
 - **Embedded firmware & OS root filesystems**
 - **Game assets, audio banks, and pre-rendered textures**
 
-Tracking massive directory snapshots directly in Git causes immediate **repository bloat**, resulting in sluggish local operations and multi-gigabyte clones. While Git LFS and cloud object stores (S3, GCS) exist, they treat files in isolation and re-upload whole blobs without native directory-level delta synchronization.
+Tracking multi-gigabyte directories directly in Git causes immediate **repository bloat**, leading to sluggish local operations and slow clones. While Git LFS and cloud object stores (S3, GCS) exist, they track individual blobs in isolation and re-upload whole files without directory-level delta synchronization.
 
-**`git-drev` solves this by decoupling metadata from directory data and combining two battle-tested features:**
-1. **POSIX filesystem hardlinks (`cp -al`): native off-the-shelf deduplication**
-   - On standard Linux/UNIX filesystems (ext4, XFS, Btrfs, ZFS), files are represented by **inodes** pointing to physical data blocks in the storage pool. A hardlink is simply another directory entry pointing to an existing inode
-   - When a new revision is created on the remote server, `git-drev` executes `cp -al <parent_uuid> <new_uuid>`. Duplicating a 10GB or 50GB directory snapshot completes in **milliseconds** and consumes **0 additional disk blocks**
-   - You get enterprise-grade storage deduplication out of the box—without specialized storage appliances, background daemons, or complex snapshot engines. Only files that are modified or replaced break their hardlinks, ensuring that physical storage grows strictly by the delta between builds
-2. **rsync rolling-checksum engine: true block-level delta transfers**
-   - Traditional sync tools and cloud object stores re-upload or re-download entire files whenever a change occurs. `rsync` uses a rolling-checksum delta algorithm that inspects both ends, transmitting **only the modified byte ranges**
-   - Identical files are skipped entirely over the wire based on size and timestamp verification. A 5GB build with 50MB of modified libraries transfers in seconds rather than minutes
+**`git-drev` decouples revision metadata from directory payloads using two standard UNIX primitives:**
+1. **POSIX filesystem hardlinks (`cp -al`): zero-copy server baselines**
+   - On standard Linux/UNIX filesystems (`ext4`, `XFS`, `Btrfs`, `ZFS`), a hardlink is simply a new directory entry pointing to an existing inode.
+   - Before uploading a new revision, `git-drev` clones the parent snapshot on the storage host with `cp -al -- <parent_uuid> <new_uuid>`. Cloning a 50 GB directory tree finishes in milliseconds and consumes **zero additional data blocks**.
+   - Unchanged files share inodes across revisions, while modified files are atomically unlinked and replaced—so physical disk usage grows strictly by the delta between builds.
+2. **rsync rolling-checksum engine: block-level network transfers**
+   - Instead of re-uploading or re-downloading entire archives when a few files change, `rsync` compares file sizes and timestamps and transmits **only modified files and byte ranges**.
+   - A 5 GB build with 50 MB of updated libraries transfers in seconds over standard SSH.
 
-`git-drev` uses a Git repository to store lightweight revision metadata, so the Git repository remains tiny (<10 MB) and clones in seconds. Because it is a standard Git repository, you can also store lightweight build logs, environment configs, or SBOM manifests alongside revisions—preserving a permanent audit trail even if remote storage snapshots are eventually pruned. Simple commands (`git drev create`, `put`, `get`, etc.) automatically resolve baselines, execute server-side actions, manage rsync sessions, and commit transactional revisions. Sharing across team members is zero-friction: you just share a Git repository.
+`git-drev` stores each revision as a tiny JSON commit (`{"uuid":"...","seq":"..."}`) in a dedicated Git metadata repository (often mounted as a submodule in your source tree). Because the Git repository only tracks metadata, it stays under a few megabytes and clones instantaneously—and you can optionally commit lightweight build logs, manifests, or SBOMs alongside each revision for a permanent audit trail.
 
 ---
 
 ## The Producer & Consumer model
 
-`git-drev` organizes directory synchronization around two core roles:
+`git-drev` organizes directory synchronization around two roles:
 
 ```mermaid
 flowchart LR
@@ -76,8 +76,8 @@ flowchart LR
     StorageHost -->|"rsync deltas"| C2
 ```
 
-1. **The Producer (CI pipeline):** Initializes a revision branch (`create`), builds artifacts into the local working directory, and publishes the snapshot (`put`). `git-drev` clones the parent snapshot on the storage host via hardlinks, uploads changed files via rsync, and pushes a Git metadata commit with safe leasing.
-2. **The Consumer (developer / QA tester):** Checks out the branch or exact snapshot UUID (`select`) and synchronizes the working directory (`get`, or `get --latest` to pull new upstream commits and download in one step). Only the byte differences between the local files and the target revision are downloaded over the network.
+1. **The Producer (CI pipeline):** Initializes a revision branch (`create`), builds artifacts into the working directory, and publishes the snapshot (`put`). `git-drev` hardlink-clones the parent revision on the storage host, uploads changed files via `rsync`, and pushes a Git metadata commit with optimistic concurrency control.
+2. **The Consumer (developer / QA tester):** Selects a branch, tag, or exact revision UUID (`select`) and synchronizes the working directory (`get`, or `get --latest` to update the branch and download in one step). Only the byte differences between the local directory and the target revision are downloaded.
 
 ---
 
@@ -117,16 +117,19 @@ git drev info
 
 | Feature | `git-drev` | Git LFS | Cloud S3 / GCS |
 | :--- | :--- | :--- | :--- |
-| **Storage unit** | Entire cohesive directory trees | Individual file blobs | Individual object keys |
+| **Storage unit** | Cohesive directory trees | Individual file blobs | Individual object keys |
 | **Transfer efficiency** | Rsync block-level deltas | Full file re-uploads | Full object re-uploads |
-| **Server overhead** | Zero background daemons (SSH + rsync) | Requires LFS HTTP API server | Requires cloud IAM & bucket orchestration |
-| **Storage deduplication** | Server-side hardlinks (`cp -al`) | Dedupes identical files only | Duplicate full storage unless custom scripted |
-| **Git clone speed** | Instant (only metadata commits in Git) | Can still bloat pointer histories | N/A (separate tooling required) |
-| **History navigation** | Full Git branch, tag, and checkout semantics | Git branches track pointers | Custom bucket versioning required |
+| **Server overhead** | Zero daemons (standard SSH + rsync) | Requires LFS HTTP server | Requires cloud IAM & custom scripts |
+| **Storage deduplication** | Server-side hardlinks (`cp -al`) | Dedupes identical files only | Duplicates objects across prefixes |
+| **Git clone speed** | Instant (only metadata commits in Git) | Pointer history grows with file count | N/A (external to Git) |
+| **History navigation** | Native Git branches, tags, and UUIDs | Git branches track file pointers | Custom bucket versioning required |
 
 ---
 
 ## Installation
+
+> [!NOTE]
+> `git-drev` requires `git`, `ssh` (OpenSSH), and `rsync` in your `$PATH`. On Windows, run inside Git Bash and install `rsync` via Scoop (`scoop install rsync`).
 
 ### Via Scoop (Windows)
 ```powershell
@@ -183,9 +186,9 @@ git drev config
 
 ## Documentation wiki
 
-For in-depth tutorials, CI pipeline examples, and command references, explore the complete User Guide:
+For tutorials, repository layout patterns, CI pipeline templates, and command references, see the User Guide:
 
-- [Chapter 1: The git-drev Philosophy](docs/user-guide/01-philosophy.md)
+- [Chapter 1: The git-drev philosophy](docs/user-guide/01-philosophy.md)
 - [Chapter 2: Getting started](docs/user-guide/02-getting-started.md)
 - [Chapter 3: The revision lifecycle](docs/user-guide/03-revision-lifecycle.md)
 - [Chapter 4: Project hooks & CI/CD automation](docs/user-guide/04-hooks-and-ci.md)

@@ -32,15 +32,15 @@ When executing a hook, `git-drev` sanitizes the environment (`LC_ALL=C`, `LANG=C
 
 ## 3. Hook execution rules & timeout
 
-1. **Executable scripts & legacy compatibility:** Hooks can be standalone executable scripts (`chmod +x .git-drev-put-hook` with a `#!` shebang) or shell scripts defining `put_hook` / `info_hook` functions
+1. **Executable scripts & legacy compatibility:** Hooks can be standalone executable scripts (`chmod +x .git-drev-put-hook` with a `#!` shebang) or shell scripts defining `put_hook` / `info_hook` functions.
 2. **Timeout control:** By default, hook execution is capped at **5 minutes**. You can adjust this timeout by setting `GIT_DREV_HOOK_TIMEOUT`:
    ```bash
    export GIT_DREV_HOOK_TIMEOUT=10m
    ```
 3. **Failure handling:** If `.git-drev-put-hook` exits with a non-zero status code:
-   - `git drev put` immediately halts execution
-   - The pending Git commit is aborted
-   - The remote staging directory is safely cleaned up to prevent leaving half-published snapshots on the storage host
+   - `git drev put` immediately halts execution.
+   - The pending Git commit is aborted.
+   - The remote staging directory is removed so half-published snapshots are not left on the storage host.
 
 ---
 
@@ -81,7 +81,7 @@ fi
 ```
 
 ### Example 3: Permanent build logs & SBOMs in Git (`.git-drev-put-hook`)
-Because `git drev put` automatically stages the repository root (`git add --all`) before committing, any lightweight files placed outside `workdir/` are committed directly into Git. This permanently preserves build provenance even if older remote snapshots are eventually purged:
+Because `git drev put` stages the repository root (`git add --all`) before committing, any lightweight files placed outside `workdir/` are committed directly into Git. This preserves build provenance even after older remote snapshots are purged:
 
 ```bash
 #!/usr/bin/env bash
@@ -92,7 +92,7 @@ mkdir -p build-logs
 cp /tmp/jenkins-build-${BUILD_NUMBER:-0}.log "build-logs/rev-${GIT_DREV_SEQ}-${GIT_DREV_UUID:0:8}.log"
 ```
 
-### Example 4: Custom Info Display (`.git-drev-info-hook`)
+### Example 4: Custom info display (`.git-drev-info-hook`)
 When developers run `git drev info`, display the revision metadata and linked CI build URL:
 
 ```bash
@@ -114,8 +114,8 @@ fi
 
 ## 5. CI/CD integration patterns
 
-### Jenkins Pipeline (`Jenkinsfile`)
-Here is a complete declarative Jenkins pipeline using `git-drev` as a Producer:
+### Jenkins pipeline (`Jenkinsfile`)
+Here is a declarative Jenkins pipeline using `git-drev` as a Producer:
 
 ```groovy
 pipeline {
@@ -158,7 +158,7 @@ pipeline {
 }
 ```
 
-### GitHub actions workflow (`.github/workflows/build.yml`)
+### GitHub Actions workflow (`.github/workflows/build.yml`)
 ```yaml
 name: Nightly Build Publisher
 
