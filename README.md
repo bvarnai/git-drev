@@ -76,14 +76,14 @@ flowchart LR
     StorageHost -->|"rsync deltas"| C2
 ```
 
-1. **The Producer (CI Pipeline):** Initializes a revision branch (`create`), builds artifacts into the local working directory, and publishes the snapshot (`put`). `git-drev` clones the parent snapshot on the storage host via hardlinks, uploads changed files via rsync, and pushes a Git metadata commit with safe leasing.
-2. **The Consumer (Developer / QA Tester):** Checks out the branch or exact snapshot UUID (`select`) and synchronizes the working directory (`update` or `get`). Only the byte differences between the local files and the target revision are downloaded over the network.
+1. **The Producer (CI pipeline):** Initializes a revision branch (`create`), builds artifacts into the local working directory, and publishes the snapshot (`put`). `git-drev` clones the parent snapshot on the storage host via hardlinks, uploads changed files via rsync, and pushes a Git metadata commit with safe leasing.
+2. **The Consumer (developer / QA tester):** Checks out the branch or exact snapshot UUID (`select`) and synchronizes the working directory (`update` or `get`). Only the byte differences between the local files and the target revision are downloaded over the network.
 
 ---
 
-## Quick Start
+## Quick start
 
-### Producer Workflow (e.g. CI Build)
+### Producer workflow (e.g. CI build)
 ```bash
 # 1. Initialize or switch to a revision branch
 git drev create release/1.0
@@ -96,7 +96,7 @@ make build-artifacts OUTPUT_DIR=data/
 git drev put -m "feat: release 1.0 candidate payload"
 ```
 
-### Consumer Workflow (e.g. Tester / Developer)
+### Consumer workflow (e.g. tester / developer)
 ```bash
 # 1. Select the target branch (or historical UUID)
 git drev select release/1.0
@@ -132,14 +132,14 @@ scoop bucket add bvarnai https://github.com/bvarnai/scoop-bucket
 scoop install git-drev
 ```
 
-### Precompiled Binary (Linux / macOS)
+### Precompiled binary (Linux / macOS)
 Download the latest release archive from [GitHub Releases](https://github.com/bvarnai/git-drev/releases):
 ```bash
 curl -sSL https://github.com/bvarnai/git-drev/releases/latest/download/git-drev_linux_amd64.tar.gz | tar -xz
 sudo mv git-drev /usr/local/bin/
 ```
 
-### Via Go Install (Go 1.22+)
+### Via Go install (Go 1.22+)
 ```bash
 go install github.com/bvarnai/git-drev/cmd/git-drev@latest
 ```
@@ -182,18 +182,18 @@ git drev config
 For in-depth tutorials, CI pipeline examples, and command references, explore the complete User Guide:
 
 - [Chapter 1: The git-drev Philosophy](docs/user-guide/01-philosophy.md)
-- [Chapter 2: Getting Started](docs/user-guide/02-getting-started.md)
-- [Chapter 3: The Revision Lifecycle](docs/user-guide/03-revision-lifecycle.md)
-- [Chapter 4: Project Hooks & CI/CD Automation](docs/user-guide/04-hooks-and-ci.md)
-- [Chapter 5: Storage Architecture & Retention](docs/user-guide/05-storage-and-retention.md)
-- [Chapter 6: Complete Command Reference](docs/user-guide/06-command-reference.md)
+- [Chapter 2: Getting started](docs/user-guide/02-getting-started.md)
+- [Chapter 3: The revision lifecycle](docs/user-guide/03-revision-lifecycle.md)
+- [Chapter 4: Project hooks & CI/CD automation](docs/user-guide/04-hooks-and-ci.md)
+- [Chapter 5: Storage architecture & retention](docs/user-guide/05-storage-and-retention.md)
+- [Chapter 6: Complete command reference](docs/user-guide/06-command-reference.md)
 - [Chapter 7: Troubleshooting & FAQ](docs/user-guide/07-troubleshooting-faq.md)
 
 ---
 
 ## Contributing
 
-We welcome contributions! Please review our [Contributing Guidelines](CONTRIBUTING.md) and [Technical Specifications](docs/spec/global.md) before submitting pull requests.
+We welcome contributions! Please review our [Contributing guidelines](CONTRIBUTING.md) and [Technical specifications](docs/spec/global.md) before submitting pull requests.
 
 ---
 
