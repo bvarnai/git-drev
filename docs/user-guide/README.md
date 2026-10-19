@@ -30,7 +30,7 @@ If you are automating build pipelines and artifact distribution:
 ### For developers & testers (consumers)
 If you need to download and test exact build snapshots without compiling:
 1. Start with the [Quick Start in the README](../../README.md#quick-start)
-2. Read [The Revision Lifecycle](03-revision-lifecycle.md) to learn how to switch snapshots (`select`) and update workdirs (`update`)
+2. Read [The Revision Lifecycle](03-revision-lifecycle.md) to learn how to switch snapshots (`select`) and download revisions (`get` / `get --latest`)
 3. Check [Complete Command Reference](06-command-reference.md) for flag options and porcelain queries
 
 ---

@@ -10,8 +10,8 @@
 
 | Hook script | Trigger point | Execution context | Common use cases |
 | :--- | :--- | :--- | :--- |
-| `.git-drev-put-hook` | Immediately after `rsync` upload succeeds during `git drev put`, before the Git commit is finalized | Invoked in repository root. Subprocess environment receives revision metadata | Injecting CI build URLs, commit hashes, or generating checksum manifest files inside the revision directory |
-| `.git-drev-info-hook` | Triggered when `git drev info` is executed | Invoked in repository root. Output is appended to the standard `info` output | Displaying linked CI build numbers, test results, or download metrics |
+| `.git-drev-put-hook` | Immediately after `rsync` upload succeeds during `git drev put`, before `git add --all` and `git commit` | Invoked in repository root. Subprocess environment receives revision metadata | Injecting CI build URLs, commit hashes, build logs, or generating checksum manifest files |
+| `.git-drev-info-hook` | Triggered when `git drev info` is executed | Invoked in repository root. Output is streamed directly to `stdout` | Displaying linked CI build numbers, test results, or download metrics |
 
 ---
 
@@ -23,14 +23,16 @@ When executing a hook, `git-drev` sanitizes the environment (`LC_ALL=C`, `LANG=C
 | :--- | :--- | :--- |
 | `GIT_DREV_VERSION` | Semantic version of the running `git-drev` binary | `1.0.0` |
 | `GIT_DREV_UUID` | Active revision UUID | `4a123f89-8d7b-4b10-8f6a-49321ef19b12` |
-| `GIT_DREV_SEQ` | Monotonic revision sequence number on the active branch | `14` |
-| `GIT_DREV_BRANCH` | Current branch name (or `HEAD` if detached) | `main` |
+| `GIT_DREV_SEQ` | Monotonic revision sequence number on the active branch | `1729348200` |
+| `GIT_DREV_BRANCH` | Current branch name (or empty if detached in `info`) | `main` |
+| `GIT_DREV_WORK_DIR` | Absolute path to the configured working directory | `/workspace/repo/data` |
+| `GIT_DREV_ROOT` | Absolute path to the Git repository root | `/workspace/repo` |
 
 ---
 
 ## 3. Hook execution rules & timeout
 
-1. **Executable permissions:** On POSIX systems (Linux, macOS, Git Bash), hooks must have the executable bit set (`chmod +x .git-drev-put-hook`)
+1. **Executable scripts & legacy compatibility:** Hooks can be standalone executable scripts (`chmod +x .git-drev-put-hook` with a `#!` shebang) or shell scripts defining `put_hook` / `info_hook` functions
 2. **Timeout control:** By default, hook execution is capped at **5 minutes**. You can adjust this timeout by setting `GIT_DREV_HOOK_TIMEOUT`:
    ```bash
    export GIT_DREV_HOOK_TIMEOUT=10m
@@ -52,27 +54,27 @@ Generate a `SHA256SUMS` manifest inside `workdir/` before recording the revision
 set -euo pipefail
 
 echo "[hook] Generating sha256 checksums for revision ${GIT_DREV_UUID}..."
-cd data
+cd "${GIT_DREV_WORK_DIR}"
 sha256sum $(find . -type f ! -name "SHA256SUMS") > SHA256SUMS
 echo "[hook] Checksums generated successfully."
 ```
 
 ### Example 2: Correlating Jenkins CI build info (`.git-drev-put-hook`)
-If running inside Jenkins, record the build URL and executor details in a metadata file:
+If running inside Jenkins, record the build URL and executor details in a tracked metadata file:
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
 if [[ -n "${BUILD_URL:-}" ]]; then
-  cat <<EOF > data/.ci-metadata.json
+  cat <<EOF > .ci-metadata.json
 {
   "ci_system": "Jenkins",
   "build_number": "${BUILD_NUMBER}",
   "build_url": "${BUILD_URL}",
   "git_commit": "${GIT_COMMIT}",
   "drev_uuid": "${GIT_DREV_UUID}",
-  "drev_sequence": ${GIT_DREV_SEQ}
+  "drev_sequence": "${GIT_DREV_SEQ}"
 }
 EOF
 fi
@@ -91,13 +93,17 @@ cp /tmp/jenkins-build-${BUILD_NUMBER:-0}.log "build-logs/rev-${GIT_DREV_SEQ}-${G
 ```
 
 ### Example 4: Custom Info Display (`.git-drev-info-hook`)
-When developers run `git drev info`, display the linked CI build URL from the snapshot:
+When developers run `git drev info`, display the revision metadata and linked CI build URL:
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
-METADATA_FILE="data/.ci-metadata.json"
+echo "Branch:    ${GIT_DREV_BRANCH:-<detached>}"
+echo "UUID:      ${GIT_DREV_UUID}"
+echo "Sequence:  ${GIT_DREV_SEQ}"
+
+METADATA_FILE=".ci-metadata.json"
 if [[ -f "${METADATA_FILE}" ]]; then
   BUILD_URL=$(grep '"build_url"' "${METADATA_FILE}" | cut -d'"' -f4)
   echo "CI Build:  ${BUILD_URL}"
@@ -143,7 +149,7 @@ pipeline {
             steps {
                 sshagent(['storage-server-key']) {
                     sh '''
-                        git drev put -m "build(#${BUILD_NUMBER}): compiled release 3.0 artifacts"
+                        git drev put -s "${BUILD_NUMBER}" --stats
                     '''
                 }
             }
@@ -187,5 +193,5 @@ jobs:
 
       - name: Publish Revision
         run: |
-          git drev put -m "nightly: build run ${{ github.run_id }}"
+          git drev put -s "${{ github.run_number }}" --stats
 ```

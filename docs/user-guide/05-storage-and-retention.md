@@ -46,30 +46,38 @@ flowchart TD
 ```
 
 When publishing a revision whose branch has a parent commit:
-1. `git drev put` invokes `cp -al <parent_uuid> <new_uuid>` on the remote storage host via SSH
-2. The operating system creates hard links for all files in the parent directory. This operation completes in milliseconds and consumes **zero additional disk blocks** (only standard filesystem directory inodes)
-3. `rsync` uploads the builder's changes into `<new_uuid>`. When `rsync` replaces a changed file, it breaks the hardlink for that specific file and writes the new blocks. Unchanged files continue sharing storage inodes with the parent snapshot
+1. `git drev put` invokes `cp -al -- <parent_uuid> <new_uuid>` on the remote storage host via SSH
+2. The operating system creates hard links for all files in the parent directory. This operation completes in milliseconds and consumes **zero additional disk blocks** (only standard filesystem directory entries)
+3. `rsync` uploads the builder's changes into `<new_uuid>`. By default, when `rsync` transfers a modified file, it writes the updated payload to a temporary file (`.filename.XXXXXX`) in a new inode and atomically `rename()`s it over the destination path—cleanly breaking the hardlink for that specific file without mutating the parent revision. Unchanged files continue sharing storage inodes with the parent snapshot
+
+> [!WARNING]
+> **Why `--inplace`, `--append`, and `--append-verify` are prohibited on `put`:**
+> If `rsync` were invoked with `--inplace`, `--append`, or `--append-verify`, it would write directly into the existing destination inode and silently mutate historical revisions that share that hardlink. To protect revision immutability, `git-drev` automatically validates `remote.rsync.put` and rejects those flags with a configuration error (`ExitCode 3`).
 
 ---
 
 ## 3. Rsync configuration & tuning
 
-The `remote.rsync` parameter in `.git-drev.yaml` controls flags passed to `rsync` during upload (`put`) and download (`get`, `update`):
+The `remote.rsync` section in `.git-drev.yaml` configures custom flags appended to `rsync` during download (`get`) and upload (`put`):
 
 ```yaml
 remote:
   host: storage-server
   path: /srv/drev/my-project
-  rsync: -aHAX --info=progress2 --delete-during
+  rsync:
+    get: -az --delete-during --stats
+    put: -az --delete-during --whole-file --stats
 ```
 
-### Recommended Flags Explained
+### Implicit & recommended flags explained
+`git-drev` always passes `-a --delete-during -e "ssh -T"` before appending your custom `get` or `put` options:
 - `-a` (`--archive`): Recursively preserves file permissions, timestamps, symlinks, and directory hierarchies
+- `-z` (`--compress`): Compresses file data during network transfer
 - `-H` (`--hard-links`): Preserves internal hardlinks within the snapshot
 - `-A` (`--acls`): Preserves POSIX Access Control Lists
 - `-X` (`--xattrs`): Preserves extended file attributes (vital for SELinux contexts or macOS metadata)
 - `--delete-during`: Deletes files from the target that no longer exist in the source while minimizing memory overhead on large file trees
-- `--info=progress2`: Displays real-time transfer progress for the overall transfer rather than per-file spam
+- `--whole-file`: Speeds up local-LAN or high-bandwidth server uploads after `cp -al` when modified build artifacts are completely regenerated
 
 ---
 
@@ -80,12 +88,15 @@ To check storage consumption, run:
 ```bash
 git drev usage
 ```
-This queries the remote host via `ssh` and prints the total disk space utilized by `<remote.path>`.
+This queries the remote host via `ssh` and prints the total disk space utilized by `<remote.path>`:
+```
+Total size on remote is 8.1G (/srv/drev/my-project)
+```
 
 ### Correlating active vs. orphaned revisions (`-v`)
 When developers delete old Git branches, force-push rebases, or delete tags, some remote UUID directories may no longer be referenced by any Git commit in repository history. These are **orphaned revisions**.
 
-Running `git drev usage -v` scans your Git commit history and compares every known UUID against directories on the remote host:
+Running `git drev usage -v` scans your Git commit history (`git log --all`) and correlates every known UUID against directories on the remote host:
 
 ```bash
 git drev usage -v
@@ -93,14 +104,12 @@ git drev usage -v
 
 Example Output:
 ```
-UUID                                  Size      State       Branch / Tag
-------------------------------------  --------  ----------  -------------------
-4a123f89-8d7b-4b10-8f6a-49321ef19b12  4.2 GB    active      release/1.0
-9f8e7d6c-5b4a-3a21-10fe-dcba98765432  120 MB    active      main, v1.0.1
-01234567-89ab-cdef-0123-456789abcdef  3.8 GB    [orphaned]  (no git ref)
-------------------------------------  --------  ----------  -------------------
-Total Storage Consumed: 8.12 GB (3 revisions)
-Orphaned Storage:       3.8 GB (1 revision)
+Total size on remote is 8.1G (/srv/drev/my-project)
+
+UUID                                  Size  Created     Commit      Branch/Tag    Message
+4a123f89-8d7b-4b10-8f6a-49321ef19b12  4.2G  2026-10-19  a7b8c9d     release/1.0   {"uuid":"4a123f89-8d7b-4b10-8f6a-49321ef19b12","seq":"200"}
+9f8e7d6c-5b4a-3a21-10fe-dcba98765432  120M  2026-10-18  1f2e3d4     main, v1.0.1  {"uuid":"9f8e7d6c-5b4a-3a21-10fe-dcba98765432","seq":"100"}
+01234567-89ab-cdef-0123-456789abcdef  3.8G  2026-10-15  [orphaned]  -             -
 ```
 
 ---

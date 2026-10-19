@@ -68,13 +68,13 @@ func (r *ExecRemoteRunner) CheckDirExists(ctx context.Context, host, remotePath 
 	return false, errcode.NewError(errcode.ErrTransport, "SSH check failed on host %q: %s", host, errMsg)
 }
 
-// CloneBaseline creates a remote copy of srcPath at dstPath using `cp -R -a`.
+// CloneBaseline creates a remote hardlinked copy of srcPath at dstPath using `cp -al --`.
 func (r *ExecRemoteRunner) CloneBaseline(ctx context.Context, host, srcPath, dstPath string) error {
 	if err := ctx.Err(); err != nil {
 		return errcode.WrapError(errcode.ErrInterrupted, err, "operation interrupted")
 	}
 
-	cmdStr := fmt.Sprintf("cp -R -a %s %s", POSIXEscape(srcPath), POSIXEscape(dstPath))
+	cmdStr := fmt.Sprintf("cp -al -- %s %s", POSIXEscape(srcPath), POSIXEscape(dstPath))
 	cmd := exec.CommandContext(ctx, "ssh", "-T", host, cmdStr)
 	cmd.Env = sanitizedSubprocessEnv()
 	cmd.WaitDelay = 3 * time.Second

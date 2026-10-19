@@ -99,13 +99,14 @@ Another Git process crashed, was forcefully killed, or an IDE extension is curre
 Multiple builders pushed a revision to the same branch at almost the exact same second.
 
 **Resolution:**
-`git-drev` features automatic retry handling. When `git push --force-with-lease` is rejected due to a concurrent push:
+`git-drev` features automatic sequence-aware optimistic concurrency control (up to 5 attempts). When `git push --force-with-lease` is rejected due to a concurrent push:
 1. `git-drev` logs:
    ```
-   [git-drev] Remote branch has diverged; retrying with linear rebase (attempt 1/3)...
+   [git-drev] Stale info detected, trying to resolve
    ```
-2. Fetches upstream changes and rebases your local commit linearly on top of upstream.
-3. Re-pushes with lease verification. If rebase fails due to conflicting tracked files, it safely aborts via `git rebase --abort`.
+2. Fetches upstream changes (`git fetch --all --prune`) and compares sequence numbers (`seq`) unless `--no-sequence-check` is set:
+   - **If `remoteSeq > localSeq`:** A newer build has already landed on `origin/<branch>`. `git-drev` logs `Newer revision found, dropping older (hard reset)`, resets the local branch to `origin/<branch>`, and exits `0`.
+   - **If `localSeq >= remoteSeq`:** `git-drev` rebases your local commit onto `origin/<branch>` using `git rebase --strategy-option=theirs` and retries the leased push with exponential backoff. If a rebase error occurs, it safely restores the worktree via `git rebase --abort`.
 
 ---
 

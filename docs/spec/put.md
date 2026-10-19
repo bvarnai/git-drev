@@ -216,7 +216,7 @@ func RunPut(ctx context.Context, env PutEnv, opts PutOptions) (*PutResult, error
 
 ### Filesystem & Metadata Mutations
 - **Remote host (`<remote.host>`):**
-  - Creates directory `<remote.path>/<uuid>/` (mode `0755`, or cloned from `<remote.path>/<last_uuid>/` via `cp -R -a --`).
+  - Creates directory `<remote.path>/<uuid>/` (mode `0755`, or hardlink-cloned from `<remote.path>/<last_uuid>/` via `cp -al --`).
   - Synchronizes `<source_directory>/` contents into `<remote.path>/<uuid>/` via `rsync -a --delete-during`.
 - **Local repository (`<RepoRoot>`):**
   - `.git-drev-put-hook` MAY create or modify tracked/untracked metadata files in `<RepoRoot>` (e.g., `env.json`, build manifests).

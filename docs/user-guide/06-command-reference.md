@@ -21,11 +21,13 @@ The following flags are accepted by the root `git-drev` command and all subcomma
 ## Subcommands
 
 ### `git drev config`
-Inspects and prints the effective resolved configuration across the 3-tier YAML cascade, including provenance origin for each key.
+Inspects and prints the effective resolved configuration across the 3-tier YAML cascade (`User Global -> $GIT_DREV_CONFIG -> Repository Local`).
 
-- **Usage:** `git drev config`
+- **Usage:** `git drev config [--sources]`
+- **Flags:**
+  - `--sources`: Annotate each configuration key with its provenance origin (e.g., `# source: /path/to/.git-drev.yaml` or `# source: default`)
 - **Output:** Clean YAML output to `stdout`
-- **Preconditions:** Must be run inside a valid Git repository containing `.git-drev.yaml`
+- **Preconditions:** Must be run inside a valid Git repository containing a valid configuration
 
 ---
 
@@ -36,84 +38,92 @@ Creates a new revision branch with an initial marker commit carrying the parent 
 - **Arguments:** Exactly 1 argument specifying the target branch name
 - **Behavior:**
   - If `<branch>` exists locally, checks it out idempotently
-  - If `<branch>` exists on `origin`, creates a tracking branch and switches to it
-  - If new, records an initial marker commit (`seq: 0`) and pushes to `origin`
+  - If `<branch>` exists on `origin`, creates a local tracking branch and switches to it
+  - If new, records an initial marker commit (`{"uuid":"<parent-uuid>","marker":"true"}`) and pushes to `origin`
 - **Dynamic completion:** Autocompletes existing branch names
 
 ---
 
-### `git drev get`
-Downloads the revision directory snapshot corresponding to the current Git `HEAD` commit from the remote storage server into `workdir`.
+### `git drev get [flags] [<target_directory>]`
+Downloads the revision directory snapshot corresponding to the current Git `HEAD` commit from the remote storage server into `workdir` (or an explicit `<target_directory>`).
 
-- **Usage:** `git drev get`
-- **Arguments:** None
-- **Preconditions:** `HEAD` commit must carry valid `git-drev` revision metadata
+- **Usage:** `git drev get [-l|--latest] [--stats] [<target_directory>]`
+- **Arguments:** Optional `0..1` positional argument `<target_directory>` (resolved relative to the caller's working directory; defaults to `<repo-root>/<workdir>`)
+- **Flags:**
+  - `-l`, `--latest`: Fetch and hard-reset the active local branch to `origin/<branch>` before downloading the revision payload
+  - `--stats`: Append `--stats` to `rsync` to print transfer statistics
+- **Preconditions:** `HEAD` commit must carry valid `git-drev` revision metadata (not `ZeroUUID` or a branch creation marker)
 
 ---
 
 ### `git drev info`
-Displays formatted revision metadata for the current Git `HEAD` commit.
+Executes the project's `.git-drev-info-hook` script to display custom revision metadata for the current Git `HEAD` commit.
 
-- **Usage:** `git drev info [flags]`
-- **Flags:**
-  - `-s`, `--short`: Print only the revision sequence number to `stdout`
-  - `--uuid`: Print only the raw 36-character UUID string to `stdout`
-- **Hooks:** Executes `.git-drev-info-hook` if present, appending its output
+- **Usage:** `git drev info`
+- **Arguments:** None
+- **Flags:** None (inherits global flags)
+- **Behavior:**
+  - Parses `HEAD` commit metadata and injects `GIT_DREV_VERSION`, `GIT_DREV_UUID`, `GIT_DREV_SEQ`, `GIT_DREV_BRANCH`, `GIT_DREV_WORK_DIR`, and `GIT_DREV_ROOT`
+  - Executes `<repo-root>/.git-drev-info-hook` if present, streaming its output to `stdout`
+  - If no `.git-drev-info-hook` exists, logs `[git-drev] No info hook found` to `stderr` and exits `0`
 
 ---
 
 ### `git drev name`
-Outputs the name of the current local Git branch to `stdout`, or reports detached `HEAD` status.
+Outputs the short name of the current local Git branch to `stdout`, or fails if `HEAD` is detached.
 
 - **Usage:** `git drev name`
 - **Arguments:** None
-- **Output:** Exact branch name string (e.g. `main\n`)
+- **Output:** Exact branch name string (e.g. `main\n`) to `stdout`; exits with code `4` (`ErrDetachedHead`) if `HEAD` is detached
 
 ---
 
-### `git drev put`
-Uploads the local `workdir` to the remote storage server using hardlink baseline cloning and rsync, and creates a metadata commit on the current branch.
+### `git drev put [flags] [<source_directory>]`
+Uploads the local `workdir` (or `<source_directory>`) to the remote storage server using hardlink baseline cloning (`cp -al --`) and `rsync`, executes `.git-drev-put-hook` if present, and publishes a metadata commit to `origin`.
 
-- **Usage:** `git drev put [-m <message>]`
+- **Usage:** `git drev put [-s|--sequence <uint64>] [--no-sequence-check] [--stats] [<source_directory>]`
+- **Arguments:** Optional `0..1` positional argument `<source_directory>` (resolved relative to the caller's working directory; defaults to `<repo-root>/<workdir>`)
 - **Flags:**
-  - `-m`, `--message <text>`: Revision description message stored in the commit metadata.
+  - `-s`, `--sequence <uint64>`: Explicit monotonically increasing sequence number (`uint64` decimal string) stored in commit JSON (`{"uuid":"...","seq":"..."}`). Defaults to current Unix epoch seconds if omitted
+  - `--no-sequence-check`: Bypass sequence comparison when resolving concurrent stale pushes, forcing a rebase onto `origin/<branch>`
+  - `--stats`: Append `--stats` to `rsync` to print transfer statistics
 - **Behavior:**
   - Validates attached branch and index lock cleanliness
-  - Clones parent baseline via `cp -al` on remote host
-  - Uploads modified files via `rsync`
+  - Clones parent baseline via `cp -al --` on the remote host
+  - Uploads modified files via `rsync` (rejecting `--inplace`, `--append`, and `--append-verify` to protect hardlinked baselines)
   - Executes `.git-drev-put-hook` if present
-  - Pushes metadata commit to `origin` with `--force-with-lease`
-  - Retries with linear rebase if concurrent pushes occurred on upstream
+  - Stages repository root metadata (`git add --all`), commits JSON subject, and pushes to `origin` with `--force-with-lease`
+  - On concurrent push conflict (up to 5 attempts): drops older build via hard reset if `remoteSeq > localSeq`, or rebases with `--strategy-option=theirs`
 
 ---
 
 ### `git drev select [<branch>|<tag>|<uuid>]`
-Checks out an existing target branch, tag, or specific historical revision commit resolved by UUID.
+Fetches from `origin` and checks out an existing target branch, tag, or specific historical revision commit resolved by UUID.
 
 - **Usage:** `git drev select [<branch>|<tag>|<uuid>]`
 - **Arguments:** Optional `0..1` argument. If omitted, falls back to the configured `branch.default` (`main`)
 - **Features:**
-  - **UUID resolution:** If argument matches UUID format, scans repository history and checks out the commit hash matching that UUID
-  - **Fuzzy typo suggestions:** If a branch name is mistyped, suggests the closest existing branch/tag (e.g., `Did you mean 'main'?`)
+  - **UUID resolution:** If argument matches RFC 4122 UUID format, scans repository history and checks out the commit hash matching that UUID (detaching `HEAD`)
+  - **Fuzzy typo suggestions:** If a branch or tag name is mistyped, suggests the closest existing candidate within Levenshtein distance 3 (e.g., `Did you mean 'main'?`)
   - **Dynamic completion:** Autocompletes branch and tag names
 
 ---
 
 ### `git drev update`
-Fetches the latest commits from `origin` for the active branch, fast-forwards the local branch, and downloads the updated directory snapshot into `workdir`.
+Fetches the latest refs from `origin` and hard-resets the active local branch to `origin/<branch>` (metadata only, without downloading the directory payload).
 
 - **Usage:** `git drev update`
 - **Arguments:** None
-- **Equivalent to:** `git pull` followed by `git drev get`
+- **Preconditions:** `HEAD` must be attached to a local branch with a corresponding `origin/<branch>` remote tracking branch
 
 ---
 
 ### `git drev usage`
-Queries the remote storage host via SSH to inspect storage consumption.
+Queries the remote storage host via SSH to inspect storage consumption and optionally correlate remote revision directories against local Git history.
 
 - **Usage:** `git drev usage [-v]`
 - **Flags:**
-  - `-v`, `--verbose`: Scans local Git history to correlate remote UUID directories against active branches/tags, displaying active versus `[orphaned]` status for each directory
+  - `-v`, `--verbose`: Scans local Git history (`git log --all`) to correlate remote UUID directories against commits, branches, and tags, printing a 6-column table (`UUID`, `Size`, `Created`, `Commit`, `Branch/Tag`, `Message`) where unreferenced directories show `[orphaned]` in the `Commit` column
 
 ---
 

@@ -137,16 +137,20 @@ branch:
 # Remote storage server configuration
 remote:
   host: storage-server
-  path: /srv/drev/my-build-storage
-  rsync: -aHAX --info=progress2 --delete-during
+  path: /srv/drev/{repo}
+  rsync:
+    get: -az --delete-during --stats
+    put: -az --delete-during --whole-file --stats
 ```
+
+> [!TIP]
+> `remote.path` supports `{repo}` and `{project}` placeholders, which automatically expand to the repository name (derived from the `origin` URL slug or directory name). If `remote.path` is defined in a user-global config (`~/.config/git-drev/config.yaml`) without a placeholder, `git-drev` automatically appends `/{repo}` to isolate repositories on the server.
 
 ### Step 3: Configure `.gitignore`
 The working directory contains the actual large files, which **must never be committed to Git**:
 
 ```bash
 echo "/data" >> .gitignore
-echo ".git-drev.local.yaml" >> .gitignore
 ```
 
 ### Step 4: Commit Initial Metadata Configuration
@@ -155,11 +159,10 @@ git add .git-drev.yaml .gitignore
 git commit -m "chore: initialize git-drev configuration"
 ```
 
-Verify your configuration with `git drev config`:
+Verify your effective configuration and see which tier provided each setting with `git drev config`:
 ```bash
-git drev config
+git drev config --sources
 ```
-This prints the cascading configuration and provenance source for each parameter.
 
 ---
 
@@ -177,7 +180,7 @@ echo "Build v1.0 payload" > data/build.txt
 dd if=/dev/urandom of=data/artifact.bin bs=1M count=100
 
 # 3. Publish the revision to remote storage and record the metadata commit
-git drev put -m "feat: initial v1.0 build payload"
+git drev put
 ```
 
 Congratulations! Your first revision is securely stored on the remote host and tracked via a lightweight Git commit.

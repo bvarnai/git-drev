@@ -114,7 +114,7 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
   - `main()` initializes a root `context.Context` via `signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)`.
   - All external commands (`exec.CommandContext`) bind to this context. On cancellation:
     - Child `ssh`, `rsync`, or `git` processes receive `SIGTERM` (followed by `SIGKILL` after a 3-second grace period via `cmd.WaitDelay` / `cmd.Cancel`).
-    - If `put` is interrupted during remote baseline copy (`cp -R -a`) or `rsync` upload before the metadata commit is pushed, a deferred cleanup handler attempts a best-effort remote removal of the incomplete `<path>/<uuid>` staging directory.
+    - If `put` is interrupted during remote baseline copy (`cp -al --`) or `rsync` upload before the metadata commit is pushed, a deferred cleanup handler attempts a best-effort remote removal of the incomplete `<path>/<uuid>` staging directory.
     - If `put` fails or is interrupted during a `git rebase` in the stale-push retry loop, `git rebase --abort` is executed via `defer` to restore the repository to a clean state.
 
 ## 5. Persistent Storage, Config Schema & Shared Domain Models
@@ -141,7 +141,7 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
       - `remote.path` (required, non-empty string): Absolute POSIX path on remote host; trailing slashes are stripped automatically; must not be `/` or contain shell metacharacters (`` ` ``, `$`, `;`, `&`, `|`, `\n`, `\x00`). Supports `{repo}` and `{project}` template placeholders (e.g. `/var/drev/{repo}`) which expand to the repository name (derived from `origin` remote URL slug or working tree basename). To guarantee repository storage isolation, if `remote.path` is sourced from global configuration (Tier 1 or Tier 2) and not explicitly overridden in repository configuration (Tier 3), `git-drev` automatically appends `/{repo}` if no placeholder is present.
       - `workdir` (optional, default `"data"`): Relative path within `<repo-root>`; must not escape `<repo-root>` (`..` traversal rejected).
       - `branch.default` (optional, default `"main"`): Default branch name for `select` when no argument is provided.
-      - `remote.rsync.get` / `remote.rsync.put` (optional, default `""`): Space-separated custom `rsync` flags appended after implicit flags (`-a --delete-during` and verbosity/progress flags) so user flags take precedence.
+      - `remote.rsync.get` / `remote.rsync.put` (optional, default `""`): Space-separated custom `rsync` flags appended after implicit flags (`-a --delete-during` and verbosity/progress flags) so user flags take precedence. In `remote.rsync.put`, flags that mutate destination inodes in-place (`--inplace`, `--append`, `--append-verify`) are rejected with `errcode.ErrConfig` to prevent corrupting hardlinked (`cp -al`) baseline revisions.
   - **Commit Message Metadata Schema:**
     - Every `git-drev` revision commit stores a compact single-line JSON object as the commit subject (`%s`):
       - Standard revision commit (`put`): `{"uuid":"<uuid-v4>","seq":"<uint64-string>"}`

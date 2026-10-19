@@ -150,6 +150,15 @@ func BuildRsyncArgs(req SyncRequest, isPut bool) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
+		if isPut {
+			for _, opt := range userOpts {
+				switch opt {
+				case "--inplace", "--append", "--append-verify":
+					return nil, errcode.NewError(errcode.ErrConfig, "rsync option %q is not allowed in remote.rsync.put because it mutates hardlinked baseline revisions in-place", opt).
+						WithHint("Remove %q from remote.rsync.put so rsync replaces modified files atomically.", opt)
+				}
+			}
+		}
 		args = append(args, userOpts...)
 	}
 

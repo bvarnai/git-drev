@@ -21,7 +21,7 @@ Attempting to track these directory snapshots in standard Git repositories quick
 
 ---
 
-## The Core Concept: metadata in Git, sata on remote storage
+## The Core Concept: metadata in Git, data on remote storage
 
 `git-drev` solves this by decoupling **metadata** from **data**:
 
@@ -44,16 +44,16 @@ flowchart TD
 
 1. **Git as a transactional metadata database:**
    - Every directory revision is assigned an RFC 4122 UUID (`018f24a0-7b32-7e9b-a012-3456789abcde`)
-   - Git commits carry pure JSON metadata in their commit subjects:
+   - Git commits carry compact JSON metadata in their commit subjects (while Git natively records commit author and timestamp in the commit header):
      ```json
-     {"uuid":"018f24a0-7b32-7e9b-a012-3456789abcde","timestamp":"2026-10-19 10:00:00","author":"ci-builder","message":"Nightly build #42"}
+     {"uuid":"018f24a0-7b32-7e9b-a012-3456789abcde","seq":"1729332000"}
      ```
    - The Git repository stays feather-light (under 10 megabytes), cloning in seconds
    - **Permanent build provenance:** Because `workdir/` is the only ignored path in `.gitignore`, any lightweight text or metadata files placed in the repository (such as `build.log`, `manifest.json`, compiler options, or SBOMs) are staged and committed directly into Git. Even if a remote 50GB binary snapshot is eventually purged by retention cleanup scripts months later, the Git repository permanently retains the complete build recipe, logs, and audit trail needed to reproduce the build
 
 2. **POSIX filesystem hardlinks (`cp -al`): native off-the-shelf deduplication:**
    - On standard Linux/UNIX filesystems (ext4, XFS, Btrfs, ZFS), files are represented by **inodes** pointing to physical data blocks in the storage pool. A hardlink is simply another directory entry pointing to an existing inode
-   - When a new revision is created on the remote server, `git-drev` executes `cp -al <parent_uuid> <new_uuid>`. Duplicating a 10GB or 50GB directory snapshot completes in **milliseconds** and consumes **0 additional disk blocks**
+   - When a new revision is created on the remote server, `git-drev` executes `cp -al -- <parent_uuid> <new_uuid>`. Duplicating a 10GB or 50GB directory snapshot completes in **milliseconds** and consumes **0 additional disk blocks**
    - You get enterprise-grade storage deduplication out of the box—without specialized storage appliances, background daemons, or complex snapshot engines. Only files that are modified or replaced break their hardlinks, ensuring that physical storage grows strictly by the delta between builds
 
 3. **rsync rolling-checksum engine: true block-level delta transfers:**
@@ -78,13 +78,13 @@ sequenceDiagram
     Producer->>Git: git drev create release/1.0
     Producer->>Producer: Execute build pipeline into workdir/
     Note over Producer: Step 2: Upload revision
-    Producer->>Storage: cp -al parent_uuid new_uuid (server-side)
+    Producer->>Storage: cp -al -- parent_uuid new_uuid (server-side)
     Producer->>Storage: rsync workdir/ -> new_uuid/ (deltas)
     Producer->>Git: git commit (metadata) & git push
 
     Note over Consumer: Step 3: Consume revision
     Consumer->>Git: git drev select release/1.0
-    Consumer->>Storage: rsync new_uuid/ -> workdir/ (deltas)
+    Consumer->>Storage: git drev get (rsync new_uuid/ -> workdir/)
     Note over Consumer: Local workdir is now byte-for-byte identical
 ```
 
@@ -92,13 +92,13 @@ sequenceDiagram
 - Runs in headless CI pipelines (Jenkins, GitHub Actions, GitLab CI)
 - Automatically creates branches via `git drev create <branch>`
 - Executes compilation or packaging to populate the local `workdir`
-- Publishes snapshots via `git drev put -m "Build details"`
+- Publishes snapshots via `git drev put` (optionally passing `-s <sequence>` to attach an explicit monotonic CI build number)
 - Interacts with project hooks (`.git-drev-put-hook`) to inject CI build metadata into commit records
 
 ### The Consumer (tester / developer)
 - Developers or QA engineers who need to test exact builds without recompiling
 - Switches between builds instantly via `git drev select <branch>|<uuid>`
-- Synchronizes the local working directory via `git drev update` or `git drev get`
+- Synchronizes the local working directory via `git drev get` (or `git drev get --latest` to update the active branch from `origin` and download in a single step)
 - Only changed files are fetched over the network; if 95% of dependencies are identical to the previous build, only 5% of data is downloaded
 
 ---

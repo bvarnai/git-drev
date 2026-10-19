@@ -57,7 +57,7 @@ Tracking massive directory snapshots directly in Git causes immediate **reposito
 flowchart LR
     subgraph Producer["1. Producer (CI / build system)"]
         P1["git drev create release/2.0"] --> P2["Execute build into workdir/"]
-        P2 --> P3["git drev put -m 'Nightly build'"]
+        P2 --> P3["git drev put"]
     end
 
     subgraph Infrastructure["2. Storage & Metadata"]
@@ -66,7 +66,7 @@ flowchart LR
     end
 
     subgraph Consumer["3. Consumer (tester / developer)"]
-        C1["git drev select release/2.0"] --> C2["git drev update"]
+        C1["git drev select release/2.0"] --> C2["git drev get --latest"]
         C2 --> C3["workdir/ is synced with zero compile time"]
     end
 
@@ -77,7 +77,7 @@ flowchart LR
 ```
 
 1. **The Producer (CI pipeline):** Initializes a revision branch (`create`), builds artifacts into the local working directory, and publishes the snapshot (`put`). `git-drev` clones the parent snapshot on the storage host via hardlinks, uploads changed files via rsync, and pushes a Git metadata commit with safe leasing.
-2. **The Consumer (developer / QA tester):** Checks out the branch or exact snapshot UUID (`select`) and synchronizes the working directory (`update` or `get`). Only the byte differences between the local files and the target revision are downloaded over the network.
+2. **The Consumer (developer / QA tester):** Checks out the branch or exact snapshot UUID (`select`) and synchronizes the working directory (`get`, or `get --latest` to pull new upstream commits and download in one step). Only the byte differences between the local files and the target revision are downloaded over the network.
 
 ---
 
@@ -93,7 +93,7 @@ mkdir -p data
 make build-artifacts OUTPUT_DIR=data/
 
 # 3. Publish the revision to remote storage & commit metadata
-git drev put -m "feat: release 1.0 candidate payload"
+git drev put
 ```
 
 ### Consumer workflow (e.g. tester / developer)
@@ -101,11 +101,13 @@ git drev put -m "feat: release 1.0 candidate payload"
 # 1. Select the target branch (or historical UUID)
 git drev select release/1.0
 
-# 2. Pull latest upstream commits and sync your local workdir
-git drev update
+# 2. Download the revision snapshot into your local workdir
+git drev get
 
-# Your local workdir/ now has the exact byte-for-byte snapshot!
-# Check revision details anytime:
+# 3. Later, pull the latest upstream commits and sync workdir in one step:
+git drev get --latest
+
+# Check custom build info anytime (if .git-drev-info-hook is configured):
 git drev info
 ```
 
@@ -167,7 +169,9 @@ branch:
 remote:
   host: storage-server
   path: /srv/drev/my-project
-  rsync: -aHAX --info=progress2 --delete-during
+  rsync:
+    get: -az --delete-during --stats
+    put: -az --delete-during --whole-file --stats
 ```
 
 Check your effective cascading configuration anytime with:
