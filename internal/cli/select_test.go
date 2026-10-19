@@ -121,8 +121,8 @@ remote:
 			mockResponses: map[string]mockGitResponse{
 				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
 				"config --local --get-all remote.origin.fetch":                  {out: git.WildcardFetchRefspec},
-				"fetch --all --prune":                                           {out: ""},
-				"-c advice.detachedHead=false checkout feautre-login":           {err: errors.New("error: pathspec 'feautre-login' did not match any file(s) known to git")},
+				"fetch --all --prune": {out: ""},
+				"-c advice.detachedHead=false checkout feautre-login":                   {err: errors.New("error: pathspec 'feautre-login' did not match any file(s) known to git")},
 				"for-each-ref --format=%(refname:short) refs/heads refs/remotes/origin": {out: "feature-login\nmain\n"},
 				"tag -l": {out: ""},
 			},
