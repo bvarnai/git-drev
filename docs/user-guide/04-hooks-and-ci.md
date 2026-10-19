@@ -78,7 +78,19 @@ EOF
 fi
 ```
 
-### Example 3: Custom Info Display (`.git-drev-info-hook`)
+### Example 3: Permanent Build Logs & SBOMs in Git (`.git-drev-put-hook`)
+Because `git drev put` automatically stages the repository root (`git add --all`) before committing, any lightweight files placed outside `workdir/` are committed directly into Git. This permanently preserves build provenance even if older remote snapshots are eventually purged:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Archive the build log and compiler options directly in the Git repository
+mkdir -p build-logs
+cp /tmp/jenkins-build-${BUILD_NUMBER:-0}.log "build-logs/rev-${GIT_DREV_SEQ}-${GIT_DREV_UUID:0:8}.log"
+```
+
+### Example 4: Custom Info Display (`.git-drev-info-hook`)
 When developers run `git drev info`, display the linked CI build URL from the snapshot:
 
 ```bash

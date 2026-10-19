@@ -49,6 +49,7 @@ flowchart TD
      {"uuid":"018f24a0-7b32-7e9b-a012-3456789abcde","timestamp":"2026-10-19 10:00:00","author":"ci-builder","message":"Nightly build #42"}
      ```
    - The Git repository stays feather-light (under 10 megabytes), cloning in seconds.
+   - **Permanent Build Provenance:** Because `workdir/` is the only ignored path in `.gitignore`, any lightweight text or metadata files placed in the repository (such as `build.log`, `manifest.json`, compiler options, or SBOMs) are staged and committed directly into Git. Even if a remote 50GB binary snapshot is eventually purged by retention cleanup scripts months later, the Git repository permanently retains the complete build recipe, logs, and audit trail needed to reproduce the build.
 
 2. **POSIX Filesystem Hardlinks (`cp -al`): Native Off-the-Shelf Deduplication:**
    - On standard Linux/UNIX filesystems (ext4, XFS, Btrfs, ZFS), files are represented by **inodes** pointing to physical data blocks in the storage pool. A hardlink is simply another directory entry pointing to an existing inode.

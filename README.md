@@ -45,7 +45,7 @@ Tracking massive directory snapshots directly in Git causes immediate **reposito
    - Traditional sync tools and cloud object stores re-upload or re-download entire files whenever a change occurs. `rsync` uses a rolling-checksum delta algorithm that inspects both ends, transmitting **only the modified byte ranges**
    - Identical files are skipped entirely over the wire based on size and timestamp verification. A 5GB build with 50MB of modified libraries transfers in seconds rather than minutes
 
-`git-drev` uses a Git repository to store lightweight revision metadata, so the Git repository remains tiny (<10 MB) and clones in seconds. Simple commands (`git drev create`, `put`, `get`, etc.) automatically resolve baselines, execute server-side actions, manage rsync sessions, and commit transactional revisions. Sharing across team members is zero-friction: you just share a Git repository.
+`git-drev` uses a Git repository to store lightweight revision metadata, so the Git repository remains tiny (<10 MB) and clones in seconds. Because it is a standard Git repository, you can also store lightweight build logs, environment configs, or SBOM manifests alongside revisions—preserving a permanent audit trail even if remote storage snapshots are eventually pruned. Simple commands (`git drev create`, `put`, `get`, etc.) automatically resolve baselines, execute server-side actions, manage rsync sessions, and commit transactional revisions. Sharing across team members is zero-friction: you just share a Git repository.
 
 ---
 
