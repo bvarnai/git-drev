@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"git-drev/internal/checks"
 	"git-drev/internal/config"
 	"git-drev/internal/domain"
 	"git-drev/internal/errcode"
@@ -51,7 +52,7 @@ func RunGet(
 
 	timer := term.StartTimer()
 
-	repoRoot, prefix, err := insp.RepoRoot(ctx, opts.CallerDir)
+	repoRoot, prefix, err := checks.InsideWorkTree(ctx, insp, opts.CallerDir)
 	if err != nil {
 		return nil, err
 	}
@@ -64,11 +65,8 @@ func RunGet(
 		cfg = loadedCfg
 	}
 
-	if cfg.Remote.Host == "" {
-		return nil, errcode.NewError(errcode.ErrConfig, "remote host is not configured")
-	}
-	if cfg.Remote.Path == "" {
-		return nil, errcode.NewError(errcode.ErrConfig, "remote path is not configured")
+	if err := checks.RemoteConfigured(cfg); err != nil {
+		return nil, err
 	}
 
 	// 1. Resolve local target directory

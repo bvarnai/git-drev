@@ -336,3 +336,53 @@ func ParseScanAllCommitsOutput(raw string) []CommitRecord {
 	}
 	return records
 }
+
+// ListAllBranchNames returns all deduplicated local and remote branch names.
+func (i *Inspector) ListAllBranchNames(ctx context.Context, dir string) ([]string, error) {
+	lines, err := i.runner.RunLines(ctx, dir, "for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes/origin")
+	if err != nil {
+		if errors.Is(err, errcode.ErrInterrupted) || errors.Is(err, errcode.ErrTransport) {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	seen := make(map[string]bool)
+	var names []string
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasSuffix(trimmed, "/HEAD") {
+			continue
+		}
+		name := trimmed
+		if strings.HasPrefix(trimmed, "origin/") {
+			name = strings.TrimPrefix(trimmed, "origin/")
+		}
+
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	return names, nil
+}
+
+// ListAllTags returns all tag names.
+func (i *Inspector) ListAllTags(ctx context.Context, dir string) ([]string, error) {
+	lines, err := i.runner.RunLines(ctx, dir, "tag", "-l")
+	if err != nil {
+		if errors.Is(err, errcode.ErrInterrupted) || errors.Is(err, errcode.ErrTransport) {
+			return nil, err
+		}
+		return nil, nil
+	}
+	var tags []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" {
+			tags = append(tags, trimmed)
+		}
+	}
+	return tags, nil
+}

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"git-drev/internal/checks"
 	"git-drev/internal/config"
 	"git-drev/internal/domain"
 	"git-drev/internal/errcode"
@@ -62,7 +63,7 @@ func RunPut(
 
 	timer := term.StartTimer()
 
-	repoRoot, prefix, err := insp.RepoRoot(ctx, opts.CallerDir)
+	repoRoot, prefix, err := checks.InsideWorkTree(ctx, insp, opts.CallerDir)
 	if err != nil {
 		return nil, err
 	}
@@ -75,27 +76,19 @@ func RunPut(
 		cfg = loadedCfg
 	}
 
-	if cfg.Remote.Host == "" {
-		return nil, errcode.NewError(errcode.ErrConfig, "remote host is not configured")
-	}
-	if cfg.Remote.Path == "" {
-		return nil, errcode.NewError(errcode.ErrConfig, "remote path is not configured")
+	if err := checks.RemoteConfigured(cfg); err != nil {
+		return nil, err
 	}
 
 	// 1. Verify attached HEAD
-	branch, detached, branchErr := insp.CurrentBranch(ctx, repoRoot)
-	if branchErr != nil {
-		return nil, branchErr
-	}
-	if detached {
-		return nil, errcode.NewError(errcode.ErrDetachedHead, "Detached HEAD state detected, aborting").
-			WithHint(`Use "git-drev select <branch>" to select a branch first.`)
+	branch, err := checks.AttachedBranch(ctx, insp, repoRoot)
+	if err != nil {
+		return nil, err
 	}
 
 	// 2. Check for index.lock
-	lockPath := filepath.Join(repoRoot, ".git", "index.lock")
-	if _, err := os.Stat(lockPath); err == nil {
-		return nil, errcode.NewError(errcode.ErrGitState, "Git index is locked ('.git/index.lock' exists)")
+	if err := checks.NoIndexLock(repoRoot); err != nil {
+		return nil, err
 	}
 
 	// 3. Resolve and validate source directory

@@ -2,12 +2,15 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"strings"
 
+	"git-drev/internal/checks"
 	"git-drev/internal/config"
 	"git-drev/internal/domain"
 	"git-drev/internal/errcode"
 	"git-drev/internal/git"
+	"git-drev/internal/suggest"
 	"git-drev/internal/term"
 	"github.com/spf13/cobra"
 )
@@ -49,7 +52,7 @@ func RunSelect(
 		return SelectResult{}, errcode.WrapError(errcode.ErrInterrupted, err, "Operation interrupted")
 	}
 
-	repoRoot, _, err := insp.RepoRoot(ctx, opts.CallerDir)
+	repoRoot, _, err := checks.InsideWorkTree(ctx, insp, opts.CallerDir)
 	if err != nil {
 		return SelectResult{}, err
 	}
@@ -105,6 +108,20 @@ func RunSelect(
 	}
 
 	if err := ops.Checkout(ctx, repoRoot, resolvedRef, false); err != nil {
+		if kind == SelectTargetRef {
+			candidates, _ := insp.ListAllBranchNames(ctx, repoRoot)
+			tags, _ := insp.ListAllTags(ctx, repoRoot)
+			candidates = append(candidates, tags...)
+			if closest := suggest.Closest(requested, candidates, 3); closest != "" {
+				var appErr *errcode.AppError
+				if errors.As(err, &appErr) {
+					appErr.WithHint("Did you mean '%s'?", closest)
+				} else {
+					return SelectResult{}, errcode.WrapError(errcode.ErrGitExec, err, "could not checkout '%s'", requested).
+						WithHint("Did you mean '%s'?", closest)
+				}
+			}
+		}
 		return SelectResult{}, err
 	}
 
@@ -121,6 +138,7 @@ func (a *App) newSelectCmd() *cobra.Command {
 		Short: "Select and check out a branch, tag, or specific revision commit",
 		Long: `Selects and checks out an existing target branch, tag, or specific revision commit
 resolved by UUID. If no target is supplied, it falls back to the configured default branch.`,
+		ValidArgsFunction: a.completeBranchNames,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 1 {
 				return errcode.NewError(errcode.ErrUsage, "Too many arguments: expected at most 1 target (<branch>|<tag>|<uuid>), got %d", len(args))

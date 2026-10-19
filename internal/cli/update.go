@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 
+	"git-drev/internal/checks"
 	"git-drev/internal/config"
 	"git-drev/internal/domain"
 	"git-drev/internal/errcode"
@@ -39,7 +40,7 @@ func RunUpdate(
 
 	timer := term.StartTimer()
 
-	repoRoot, _, err := insp.RepoRoot(ctx, opts.CallerDir)
+	repoRoot, _, err := checks.InsideWorkTree(ctx, insp, opts.CallerDir)
 	if err != nil {
 		return nil, err
 	}
@@ -52,13 +53,9 @@ func RunUpdate(
 		cfg = loadedCfg
 	}
 
-	branch, detached, err := insp.CurrentBranch(ctx, repoRoot)
+	branch, err := checks.AttachedBranch(ctx, insp, repoRoot)
 	if err != nil {
 		return nil, err
-	}
-	if detached {
-		return nil, errcode.NewError(errcode.ErrDetachedHead, "Detached HEAD state detected, aborting").
-			WithHint(`Use "git-drev select <branch>" to select a branch first.`)
 	}
 
 	if err := ops.EnsureRemoteFetchConfig(ctx, repoRoot); err != nil {

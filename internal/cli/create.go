@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"git-drev/internal/checks"
 	"git-drev/internal/config"
 	"git-drev/internal/domain"
 	"git-drev/internal/errcode"
@@ -53,7 +54,7 @@ func RunCreate(
 
 	timer := term.StartTimer()
 
-	repoRoot, _, err := insp.RepoRoot(ctx, opts.CallerDir)
+	repoRoot, _, err := checks.InsideWorkTree(ctx, insp, opts.CallerDir)
 	if err != nil {
 		return nil, err
 	}
@@ -203,6 +204,7 @@ func (a *App) newCreateCmd() *cobra.Command {
 		Long: `Creates a new revision metadata branch at HEAD with an initial marker commit
 carrying the parent revision's UUID (or ZeroUUID) and pushes it to origin,
 or fetches and switches to <branch> if it already exists locally or remotely.`,
+		ValidArgsFunction: a.completeBranchNames,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return errcode.NewError(errcode.ErrUsage, "No branch name specified")
