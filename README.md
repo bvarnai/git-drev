@@ -4,7 +4,7 @@
 
 # git-drev
 
-**Minimalistic directory revision manager for Git**
+**Lightweight directory revision manager for Git**
 
 [![CI](https://github.com/bvarnai/git-drev/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bvarnai/git-drev/actions/workflows/ci.yml)
 [![GitHub Release](https://img.shields.io/github/v/release/bvarnai/git-drev?color=blue)](https://github.com/bvarnai/git-drev/releases)
