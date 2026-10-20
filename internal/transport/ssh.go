@@ -7,8 +7,6 @@ import (
 	"io"
 	"os/exec"
 	"strings"
-	"syscall"
-	"time"
 
 	"github.com/bvarnai/git-drev/internal/errcode"
 )
@@ -27,15 +25,7 @@ func (r *ExecSSHRunner) Run(ctx context.Context, host, cmd string) (string, erro
 		return "", errcode.WrapError(errcode.ErrInterrupted, err, "operation interrupted")
 	}
 
-	execCmd := exec.CommandContext(ctx, "ssh", "-T", host, cmd)
-	execCmd.Env = SanitizedSubprocessEnv()
-	execCmd.WaitDelay = 3 * time.Second
-	execCmd.Cancel = func() error {
-		if execCmd.Process == nil {
-			return nil
-		}
-		return execCmd.Process.Signal(syscall.SIGTERM)
-	}
+	execCmd := NewCommand(ctx, "ssh", "-T", host, cmd)
 
 	var outBuf, errBuf bytes.Buffer
 	execCmd.Stdout = &outBuf
@@ -51,14 +41,7 @@ func (r *ExecSSHRunner) Run(ctx context.Context, host, cmd string) (string, erro
 		}
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			return outStr, &CommandError{
-				Command:  "ssh",
-				Args:     []string{"-T", host, cmd},
-				ExitCode: exitErr.ExitCode(),
-				Stdout:   outStr,
-				Stderr:   errStr,
-				Cause:    err,
-			}
+			return outStr, NewCommandError(execCmd, exitErr, outStr, errStr)
 		}
 		return outStr, errcode.WrapError(errcode.ErrTransport, err, "SSH execution failed on host %q", host)
 	}
@@ -72,16 +55,8 @@ func (r *ExecSSHRunner) RunStream(ctx context.Context, host, cmd string, stdin i
 		return errcode.WrapError(errcode.ErrInterrupted, err, "operation interrupted")
 	}
 
-	execCmd := exec.CommandContext(ctx, "ssh", "-T", host, cmd)
-	execCmd.Env = SanitizedSubprocessEnv()
+	execCmd := NewCommand(ctx, "ssh", "-T", host, cmd)
 	execCmd.Stdin = stdin
-	execCmd.WaitDelay = 3 * time.Second
-	execCmd.Cancel = func() error {
-		if execCmd.Process == nil {
-			return nil
-		}
-		return execCmd.Process.Signal(syscall.SIGTERM)
-	}
 
 	var errBuf bytes.Buffer
 	execCmd.Stderr = &errBuf
@@ -109,13 +84,7 @@ func (r *ExecSSHRunner) RunStream(ctx context.Context, host, cmd string, stdin i
 		}
 		var exitErr *exec.ExitError
 		if errors.As(waitErr, &exitErr) {
-			return &CommandError{
-				Command:  "ssh",
-				Args:     []string{"-T", host, cmd},
-				ExitCode: exitErr.ExitCode(),
-				Stderr:   errStr,
-				Cause:    waitErr,
-			}
+			return NewCommandError(execCmd, exitErr, "", errStr)
 		}
 		return errcode.WrapError(errcode.ErrTransport, waitErr, "SSH execution failed on host %q", host)
 	}

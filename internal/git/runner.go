@@ -161,8 +161,12 @@ func (r *ExecRunner) RunStream(ctx context.Context, dir string, stdout, stderr i
 		}
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) {
+			var cmdArgs []string
+			if len(cmd.Args) > 1 {
+				cmdArgs = append([]string(nil), cmd.Args[1:]...)
+			}
 			return &CommandError{
-				Args:     append([]string(nil), args...),
+				Args:     cmdArgs,
 				ExitCode: exitErr.ExitCode(),
 				Cause:    runErr,
 			}

@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/bvarnai/git-drev/internal/errcode"
@@ -182,6 +183,12 @@ func (r *ExecRunner) Run(ctx context.Context, req RunRequest) error {
 
 	// Graceful child process termination
 	cmd.WaitDelay = 3 * time.Second
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		return cmd.Process.Signal(syscall.SIGTERM)
+	}
 
 	// Environment sanitization
 	cmd.Env = buildHookEnv(req.Env, req.Kind)

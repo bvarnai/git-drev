@@ -9,8 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
-	"time"
 
 	"github.com/bvarnai/git-drev/internal/errcode"
 )
@@ -78,15 +76,7 @@ func (r *ExecRsyncRunner) Sync(ctx context.Context, opts RsyncOptions) error {
 		return err
 	}
 
-	cmd := exec.CommandContext(ctx, "rsync", args...)
-	cmd.Env = SanitizedSubprocessEnv()
-	cmd.WaitDelay = 3 * time.Second
-	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-		return cmd.Process.Signal(syscall.SIGTERM)
-	}
+	cmd := NewCommand(ctx, "rsync", args...)
 
 	var errBuf bytes.Buffer
 	if opts.Verbose || opts.Stats {
@@ -119,13 +109,7 @@ func (r *ExecRsyncRunner) Sync(ctx context.Context, opts RsyncOptions) error {
 
 	var exitErr *exec.ExitError
 	if errors.As(runErr, &exitErr) {
-		return &CommandError{
-			Command:  "rsync",
-			Args:     args,
-			ExitCode: exitErr.ExitCode(),
-			Stderr:   errMsg,
-			Cause:    runErr,
-		}
+		return NewCommandError(cmd, exitErr, "", errMsg)
 	}
 
 	return errcode.WrapError(errcode.ErrTransport, runErr, "rsync failed: %s", errMsg)

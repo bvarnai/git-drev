@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
+	"syscall"
+	"time"
 	"unicode"
 
 	"github.com/bvarnai/git-drev/internal/errcode"
@@ -35,6 +38,44 @@ type RsyncOptions struct {
 // RsyncRunner executes rsync synchronization.
 type RsyncRunner interface {
 	Sync(ctx context.Context, opts RsyncOptions) error
+}
+
+// NewCommand creates a context-bound *exec.Cmd pre-configured with sanitized
+// locale environment variables, a 3-second wait delay, and graceful SIGTERM cancellation.
+func NewCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = SanitizedSubprocessEnv()
+	cmd.WaitDelay = 3 * time.Second
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		return cmd.Process.Signal(syscall.SIGTERM)
+	}
+	return cmd
+}
+
+// NewCommandError extracts the command name, arguments, and exit code directly
+// from the executed *exec.Cmd and *exec.ExitError (single source of truth).
+func NewCommandError(cmd *exec.Cmd, exitErr *exec.ExitError, stdout, stderr string) *CommandError {
+	var name string
+	var args []string
+	if cmd != nil && len(cmd.Args) > 0 {
+		name = cmd.Args[0]
+		args = cmd.Args[1:]
+	}
+	exitCode := -1
+	if exitErr != nil {
+		exitCode = exitErr.ExitCode()
+	}
+	return &CommandError{
+		Command:  name,
+		Args:     args,
+		ExitCode: exitCode,
+		Stdout:   stdout,
+		Stderr:   stderr,
+		Cause:    exitErr,
+	}
 }
 
 // CommandError captures the exit code, command, and output streams of a failed subprocess execution.
