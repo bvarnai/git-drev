@@ -11,7 +11,7 @@
   - `internal/config/`: 3-tier YAML configuration loader (`loader.go`), cascading merger (`merge.go`), provenance reporter (`report.go`), and schema validator.
   - `internal/git/`: Thin `Runner` interface (`Run`, `RunLines`, `RunWithEnv`, `RunStream`), `Inspector` (read-only plumbing inspection), and `Operations` (mutating Git operations).
   - `internal/transport/`: Generic SSH (`SSHRunner`) and rsync (`RsyncRunner`) execution engine.
-  - `internal/storage/`: Remote revision storage manager (`Manager`, `Client`), directory management, baseline hardlinking, and usage discovery.
+  - `internal/storage/`: Remote revision storage capabilities (`Manager`, `UsageScanner`, `Downloader`, `Uploader`, `Client`), directory management, baseline hardlinking, and usage discovery.
   - `internal/hook/`: Project hook runner (`.git-drev-put-hook`, `.git-drev-info-hook`) with timeout (`GIT_DREV_HOOK_TIMEOUT`, default `5m`) and `GIT_DREV_*` environment injection.
   - `internal/term/`: Structured `stderr` logger, TTY/`NO_COLOR`/`GIT_DREV_COLOR` detection, and decoupled `Timer`.
   - `test/integration/`: End-to-end integration tests using isolated Git repositories in `t.TempDir()`.

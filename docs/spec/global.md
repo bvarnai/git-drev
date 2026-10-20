@@ -322,14 +322,29 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
       "github.com/bvarnai/git-drev/internal/domain"
   )
 
-  // Manager abstracts high-level remote storage operations.
-  type Manager interface {
+  // UsageScanner provides read-only remote storage usage discovery.
+  type UsageScanner interface {
+      QueryUsage(ctx context.Context, host, basePath string, opts ...QueryUsageOptions) (totalSize string, revisions []domain.RemoteRevision, err error)
+  }
+
+  // Downloader provides remote revision existence checks and payload downloads.
+  type Downloader interface {
       HasRevision(ctx context.Context, host, basePath, uuid string) (bool, error)
+      Download(ctx context.Context, req TransferRequest) error
+  }
+
+  // Uploader provides remote baseline cloning, staging cleanup, and payload uploads.
+  type Uploader interface {
       CloneBaseline(ctx context.Context, host, basePath, srcUUID, dstUUID string) error
       RemoveRevision(ctx context.Context, host, basePath, uuid string) error
-      QueryUsage(ctx context.Context, host, basePath string, opts ...QueryUsageOptions) (totalSize string, revisions []domain.RemoteRevision, err error)
-      Download(ctx context.Context, req TransferRequest) error
       Upload(ctx context.Context, req TransferRequest) error
+  }
+
+  // Manager defines the composite interface for all remote storage operations.
+  type Manager interface {
+      UsageScanner
+      Downloader
+      Uploader
   }
   ```
 

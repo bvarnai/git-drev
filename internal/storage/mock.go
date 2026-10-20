@@ -19,6 +19,13 @@ type MockManager struct {
 	Calls []string
 }
 
+var (
+	_ Manager      = (*MockManager)(nil)
+	_ UsageScanner = (*MockManager)(nil)
+	_ Downloader   = (*MockManager)(nil)
+	_ Uploader     = (*MockManager)(nil)
+)
+
 // HasRevision records the call and delegates to HasRevisionFn or returns true.
 func (m *MockManager) HasRevision(ctx context.Context, host, basePath, uuid string) (bool, error) {
 	m.Calls = append(m.Calls, fmt.Sprintf("HasRevision %s %s %s", host, basePath, uuid))

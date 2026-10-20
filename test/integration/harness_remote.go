@@ -23,6 +23,13 @@ type LocalRemoteRunner struct {
 	BaseDir string
 }
 
+var (
+	_ storage.Manager      = (*LocalRemoteRunner)(nil)
+	_ storage.UsageScanner = (*LocalRemoteRunner)(nil)
+	_ storage.Downloader   = (*LocalRemoteRunner)(nil)
+	_ storage.Uploader     = (*LocalRemoteRunner)(nil)
+)
+
 // NewLocalRemoteRunner creates a new LocalRemoteRunner rooted in baseDir.
 func NewLocalRemoteRunner(baseDir string) *LocalRemoteRunner {
 	return &LocalRemoteRunner{BaseDir: baseDir}

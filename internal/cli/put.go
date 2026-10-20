@@ -49,7 +49,7 @@ func RunPut(
 	ctx context.Context,
 	insp *git.Inspector,
 	ops *git.Operations,
-	stor storage.Manager,
+	stor storage.Uploader,
 	hooks hook.Runner,
 	cfg *domain.ProjectConfig,
 	logger *term.Logger,

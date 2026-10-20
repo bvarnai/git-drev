@@ -40,7 +40,7 @@ func RunGet(
 	ctx context.Context,
 	insp *git.Inspector,
 	ops *git.Operations,
-	stor storage.Manager,
+	stor storage.Downloader,
 	cfg *domain.ProjectConfig,
 	logger *term.Logger,
 	opts GetOptions,

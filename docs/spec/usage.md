@@ -71,7 +71,7 @@ type UsageResult struct {
 type UsageService struct {
 	Insp   *git.Inspector
 	Ops    *git.Operations
-	Storage storage.Manager
+	Storage storage.UsageScanner
 	Logger *term.Logger
 	Stdout io.Writer
 }

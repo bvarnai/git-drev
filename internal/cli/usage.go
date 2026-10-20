@@ -49,7 +49,7 @@ func RunUsage(
 	ctx context.Context,
 	insp *git.Inspector,
 	ops *git.Operations,
-	stor storage.Manager,
+	stor storage.UsageScanner,
 	cfg *domain.ProjectConfig,
 	logger *term.Logger,
 	stdout io.Writer,

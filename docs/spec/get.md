@@ -94,7 +94,7 @@ type FS interface {
 type GetDeps struct {
 	Insp   *git.Inspector
 	Ops    *git.Operations
-	Storage storage.Manager
+	Storage storage.Downloader
 	FS     FS
 	Logger *term.Logger
 	Config domain.ProjectConfig
