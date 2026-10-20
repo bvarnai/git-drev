@@ -1,8 +1,12 @@
 package storage_test
 
 import (
+	"bytes"
 	"context"
 	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -231,6 +235,59 @@ func TestQueryUsage(t *testing.T) {
 		_, _, err := client.QueryUsage(ctx, "host1", "/storage")
 		require.Error(t, err)
 		assert.Equal(t, errcode.ExitRemoteNotFound, errcode.ExitCode(err))
+	})
+
+	t.Run("executes queryUsageScript via sh matching 8-4-4-4-12 UUIDs", func(t *testing.T) {
+		shBin, lookErr := exec.LookPath("sh")
+		if lookErr != nil {
+			t.Skip("sh not available in PATH")
+		}
+
+		tmpDir := t.TempDir()
+		slashTmpDir := filepath.ToSlash(tmpDir)
+		validLower := "110523c6-5569-4e14-a9fc-2e7e7a2b56e7"
+		validUpper := "D1E6DA01-3B54-47DE-9125-3BDCE0B0303B"
+		truncatedUUID := "110523c6-5569-4e14-a9fc-2e7e7a2b" // 8-4-4-4-8 (invalid)
+		nonUUID := "not-a-uuid"
+
+		for _, dirName := range []string{validLower, validUpper, truncatedUUID, nonUUID} {
+			dirPath := filepath.Join(tmpDir, dirName)
+			require.NoError(t, os.MkdirAll(dirPath, 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(dirPath, "data.txt"), []byte("hello"), 0o644))
+		}
+
+		shSSH := &transport.MockSSHRunner{
+			RunStreamFn: func(ctx context.Context, host, cmdStr string, stdin io.Reader, stdoutPipe func(io.Reader) error) error {
+				localCmd := strings.Replace(cmdStr, "/bin/sh ", "sh ", 1)
+				cmd := exec.CommandContext(ctx, shBin, "-c", localCmd)
+				cmd.Stdin = stdin
+				var outBuf bytes.Buffer
+				cmd.Stdout = &outBuf
+				if err := cmd.Run(); err != nil {
+					return err
+				}
+				return stdoutPipe(&outBuf)
+			},
+		}
+		client := storage.NewClient(shSSH, &transport.MockRsyncRunner{})
+
+		// Fast summary mode
+		totalFast, revsFast, err := client.QueryUsage(ctx, "host1", slashTmpDir, storage.QueryUsageOptions{Verbose: false})
+		require.NoError(t, err)
+		assert.NotEmpty(t, totalFast)
+		require.Len(t, revsFast, 2)
+		assert.Equal(t, validLower, revsFast[0].UUID)
+		assert.Equal(t, strings.ToLower(validUpper), revsFast[1].UUID)
+
+		// Verbose mode
+		totalVerbose, revsVerbose, err := client.QueryUsage(ctx, "host1", slashTmpDir, storage.QueryUsageOptions{Verbose: true})
+		require.NoError(t, err)
+		assert.NotEmpty(t, totalVerbose)
+		require.Len(t, revsVerbose, 2)
+		assert.Equal(t, validLower, revsVerbose[0].UUID)
+		assert.NotEqual(t, "-", revsVerbose[0].SizeHuman)
+		assert.Equal(t, strings.ToLower(validUpper), revsVerbose[1].UUID)
+		assert.NotEqual(t, "-", revsVerbose[1].SizeHuman)
 	})
 }
 
