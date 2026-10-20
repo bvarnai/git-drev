@@ -2,15 +2,16 @@ package storage
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/bvarnai/git-drev/internal/domain"
 )
 
 // MockManager provides a configurable in-memory mock implementing Manager.
 type MockManager struct {
-	CheckDirExistsFn func(ctx context.Context, host, remotePath string) (bool, error)
-	CloneBaselineFn  func(ctx context.Context, host, srcPath, dstPath string) error
-	RemoveDirFn      func(ctx context.Context, host, remotePath string) error
+	HasRevisionFn    func(ctx context.Context, host, basePath, uuid string) (bool, error)
+	CloneBaselineFn  func(ctx context.Context, host, basePath, srcUUID, dstUUID string) error
+	RemoveRevisionFn func(ctx context.Context, host, basePath, uuid string) error
 	QueryUsageFn     func(ctx context.Context, host, basePath string, opts ...QueryUsageOptions) (string, []domain.RemoteRevision, error)
 	DownloadFn       func(ctx context.Context, req TransferRequest) error
 	UploadFn         func(ctx context.Context, req TransferRequest) error
@@ -18,29 +19,29 @@ type MockManager struct {
 	Calls []string
 }
 
-// CheckDirExists records the call and delegates to CheckDirExistsFn or returns true.
-func (m *MockManager) CheckDirExists(ctx context.Context, host, remotePath string) (bool, error) {
-	m.Calls = append(m.Calls, "CheckDirExists "+host+" "+remotePath)
-	if m.CheckDirExistsFn != nil {
-		return m.CheckDirExistsFn(ctx, host, remotePath)
+// HasRevision records the call and delegates to HasRevisionFn or returns true.
+func (m *MockManager) HasRevision(ctx context.Context, host, basePath, uuid string) (bool, error) {
+	m.Calls = append(m.Calls, fmt.Sprintf("HasRevision %s %s %s", host, basePath, uuid))
+	if m.HasRevisionFn != nil {
+		return m.HasRevisionFn(ctx, host, basePath, uuid)
 	}
 	return true, nil
 }
 
 // CloneBaseline records the call and delegates to CloneBaselineFn or returns nil.
-func (m *MockManager) CloneBaseline(ctx context.Context, host, srcPath, dstPath string) error {
-	m.Calls = append(m.Calls, "CloneBaseline "+host+" "+srcPath+" "+dstPath)
+func (m *MockManager) CloneBaseline(ctx context.Context, host, basePath, srcUUID, dstUUID string) error {
+	m.Calls = append(m.Calls, fmt.Sprintf("CloneBaseline %s %s %s %s", host, basePath, srcUUID, dstUUID))
 	if m.CloneBaselineFn != nil {
-		return m.CloneBaselineFn(ctx, host, srcPath, dstPath)
+		return m.CloneBaselineFn(ctx, host, basePath, srcUUID, dstUUID)
 	}
 	return nil
 }
 
-// RemoveDir records the call and delegates to RemoveDirFn or returns nil.
-func (m *MockManager) RemoveDir(ctx context.Context, host, remotePath string) error {
-	m.Calls = append(m.Calls, "RemoveDir "+host+" "+remotePath)
-	if m.RemoveDirFn != nil {
-		return m.RemoveDirFn(ctx, host, remotePath)
+// RemoveRevision records the call and delegates to RemoveRevisionFn or returns nil.
+func (m *MockManager) RemoveRevision(ctx context.Context, host, basePath, uuid string) error {
+	m.Calls = append(m.Calls, fmt.Sprintf("RemoveRevision %s %s %s", host, basePath, uuid))
+	if m.RemoveRevisionFn != nil {
+		return m.RemoveRevisionFn(ctx, host, basePath, uuid)
 	}
 	return nil
 }
@@ -56,7 +57,7 @@ func (m *MockManager) QueryUsage(ctx context.Context, host, basePath string, opt
 
 // Download records the call and delegates to DownloadFn or returns nil.
 func (m *MockManager) Download(ctx context.Context, req TransferRequest) error {
-	m.Calls = append(m.Calls, "Download "+req.Host+" "+req.RemotePath)
+	m.Calls = append(m.Calls, fmt.Sprintf("Download %s %s %s", req.Host, req.BasePath, req.UUID))
 	if m.DownloadFn != nil {
 		return m.DownloadFn(ctx, req)
 	}
@@ -65,19 +66,9 @@ func (m *MockManager) Download(ctx context.Context, req TransferRequest) error {
 
 // Upload records the call and delegates to UploadFn or returns nil.
 func (m *MockManager) Upload(ctx context.Context, req TransferRequest) error {
-	m.Calls = append(m.Calls, "Upload "+req.Host+" "+req.RemotePath)
+	m.Calls = append(m.Calls, fmt.Sprintf("Upload %s %s %s", req.Host, req.BasePath, req.UUID))
 	if m.UploadFn != nil {
 		return m.UploadFn(ctx, req)
 	}
 	return nil
-}
-
-// RsyncGet is an alias for Download for backwards compatibility.
-func (m *MockManager) RsyncGet(ctx context.Context, req TransferRequest) error {
-	return m.Download(ctx, req)
-}
-
-// RsyncPut is an alias for Upload for backwards compatibility.
-func (m *MockManager) RsyncPut(ctx context.Context, req TransferRequest) error {
-	return m.Upload(ctx, req)
 }

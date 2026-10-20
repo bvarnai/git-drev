@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
-	"strings"
 
 	"github.com/bvarnai/git-drev/internal/checks"
 	"github.com/bvarnai/git-drev/internal/config"
@@ -129,12 +127,11 @@ func RunGet(
 	uuid := meta.UUID
 
 	// 4. Verify remote directory exists
-	remoteRevPath := path.Join(strings.TrimRight(cfg.Remote.Path, "/"), uuid)
 	var checkSpinner *term.Spinner
 	if logger != nil && logger.IsTTY() {
 		checkSpinner = logger.StartSpinner(fmt.Sprintf("Connecting to host '%s'...", cfg.Remote.Host))
 	}
-	exists, checkErr := stor.CheckDirExists(ctx, cfg.Remote.Host, remoteRevPath)
+	exists, checkErr := stor.HasRevision(ctx, cfg.Remote.Host, cfg.Remote.Path, uuid)
 	if checkSpinner != nil {
 		checkSpinner.Stop()
 	}
@@ -175,8 +172,9 @@ func RunGet(
 
 	syncReq := storage.TransferRequest{
 		Host:        cfg.Remote.Host,
-		RemotePath:  remoteRevPath + "/",
-		LocalPath:   filepath.ToSlash(targetDir) + "/",
+		BasePath:    cfg.Remote.Path,
+		UUID:        uuid,
+		LocalDir:    targetDir,
 		Verbose:     opts.Verbose,
 		Quiet:       opts.Quiet,
 		Stats:       opts.Stats,

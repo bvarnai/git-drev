@@ -64,8 +64,6 @@ func NewApp(stdout, stderr io.Writer, runner git.Runner) *App {
 	app.Storage = storage.NewClient(
 		transport.NewSSHRunner(),
 		transport.NewRsyncRunner(),
-		stdout,
-		stderr,
 	)
 	app.Hooks = hook.NewExecRunner()
 

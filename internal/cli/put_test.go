@@ -116,14 +116,15 @@ remote:
 				"push --force-with-lease origin refs/heads/main":                {out: "Everything up-to-date"},
 			},
 			mockStorage: &storage.MockManager{
-				CloneBaselineFn: func(ctx context.Context, host, srcPath, dstPath string) error {
+				CloneBaselineFn: func(ctx context.Context, host, basePath, srcUUID, dstUUID string) error {
 					assert.Equal(t, "backup.example.com", host)
-					assert.Contains(t, srcPath, "11111111-1111-4111-8111-111111111111")
+					assert.Equal(t, "/storage/myrepo", basePath)
+					assert.Equal(t, "11111111-1111-4111-8111-111111111111", srcUUID)
 					return nil
 				},
 				UploadFn: func(ctx context.Context, req storage.TransferRequest) error {
 					assert.Equal(t, "backup.example.com", req.Host)
-					assert.Contains(t, req.RemotePath, "/storage/myrepo/")
+					assert.Equal(t, "/storage/myrepo", req.BasePath)
 					return nil
 				},
 			},
@@ -136,7 +137,7 @@ remote:
 					if len(c) >= 13 && c[:13] == "CloneBaseline" {
 						foundClone = true
 					}
-					if len(c) >= 6 && (c[:6] == "Upload" || c[:8] == "RsyncPut") {
+					if len(c) >= 6 && c[:6] == "Upload" {
 						foundUpload = true
 					}
 				}

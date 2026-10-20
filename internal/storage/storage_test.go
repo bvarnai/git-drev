@@ -14,7 +14,46 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCheckDirExists(t *testing.T) {
+func TestRevisionPathAndDir(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		base     string
+		uuid     string
+		wantPath string
+		wantDir  string
+	}{
+		{"/storage/repo", "c1ca82b1-7f34-4f4c-9a76-05e3297b2a23", "/storage/repo/c1ca82b1-7f34-4f4c-9a76-05e3297b2a23", "/storage/repo/c1ca82b1-7f34-4f4c-9a76-05e3297b2a23/"},
+		{"/storage/repo/", "c1ca82b1-7f34-4f4c-9a76-05e3297b2a23", "/storage/repo/c1ca82b1-7f34-4f4c-9a76-05e3297b2a23", "/storage/repo/c1ca82b1-7f34-4f4c-9a76-05e3297b2a23/"},
+		{"/storage/repo///", "/c1ca82b1-7f34-4f4c-9a76-05e3297b2a23/", "/storage/repo/c1ca82b1-7f34-4f4c-9a76-05e3297b2a23", "/storage/repo/c1ca82b1-7f34-4f4c-9a76-05e3297b2a23/"},
+	}
+
+	for _, tt := range tests {
+		gotPath := storage.RevisionPath(tt.base, tt.uuid)
+		assert.Equal(t, tt.wantPath, gotPath, "RevisionPath(%q, %q)", tt.base, tt.uuid)
+		gotDir := storage.RevisionDir(tt.base, tt.uuid)
+		assert.Equal(t, tt.wantDir, gotDir, "RevisionDir(%q, %q)", tt.base, tt.uuid)
+	}
+}
+
+func TestNormalizeDir(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"/local/dir", "/local/dir/"},
+		{"/local/dir/", "/local/dir/"},
+		{"dir", "dir/"},
+	}
+
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, storage.NormalizeDir(tt.input))
+	}
+}
+
+func TestHasRevision(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -25,13 +64,13 @@ func TestCheckDirExists(t *testing.T) {
 				return "", nil
 			},
 		}
-		client := storage.NewClient(ssh, &transport.MockRsyncRunner{}, nil, nil)
+		client := storage.NewClient(ssh, &transport.MockRsyncRunner{})
 
-		exists, err := client.CheckDirExists(ctx, "host1", "/path/to/dir")
+		exists, err := client.HasRevision(ctx, "host1", "/path/to", "uuid1")
 		require.NoError(t, err)
 		assert.True(t, exists)
 		require.Len(t, ssh.Calls, 1)
-		assert.Equal(t, "Run host1 test -d '/path/to/dir'", ssh.Calls[0])
+		assert.Equal(t, "Run host1 test -d '/path/to/uuid1'", ssh.Calls[0])
 	})
 
 	t.Run("directory does not exist (exit code 1)", func(t *testing.T) {
@@ -45,9 +84,9 @@ func TestCheckDirExists(t *testing.T) {
 				}
 			},
 		}
-		client := storage.NewClient(ssh, &transport.MockRsyncRunner{}, nil, nil)
+		client := storage.NewClient(ssh, &transport.MockRsyncRunner{})
 
-		exists, err := client.CheckDirExists(ctx, "host1", "/path/to/dir")
+		exists, err := client.HasRevision(ctx, "host1", "/path/to", "uuid1")
 		require.NoError(t, err)
 		assert.False(t, exists)
 	})
@@ -63,9 +102,9 @@ func TestCheckDirExists(t *testing.T) {
 				}
 			},
 		}
-		client := storage.NewClient(ssh, &transport.MockRsyncRunner{}, nil, nil)
+		client := storage.NewClient(ssh, &transport.MockRsyncRunner{})
 
-		exists, err := client.CheckDirExists(ctx, "host1", "/path/to/dir")
+		exists, err := client.HasRevision(ctx, "host1", "/path/to", "uuid1")
 		require.Error(t, err)
 		assert.False(t, exists)
 		assert.Equal(t, errcode.ExitTransport, errcode.ExitCode(err))
@@ -83,12 +122,12 @@ func TestCloneBaseline(t *testing.T) {
 				return "", nil
 			},
 		}
-		client := storage.NewClient(ssh, &transport.MockRsyncRunner{}, nil, nil)
+		client := storage.NewClient(ssh, &transport.MockRsyncRunner{})
 
-		err := client.CloneBaseline(ctx, "host1", "/src", "/dst")
+		err := client.CloneBaseline(ctx, "host1", "/base", "src", "dst")
 		require.NoError(t, err)
 		require.Len(t, ssh.Calls, 1)
-		assert.Equal(t, "Run host1 cp -al -- '/src' '/dst'", ssh.Calls[0])
+		assert.Equal(t, "Run host1 cp -al -- '/base/src' '/base/dst'", ssh.Calls[0])
 	})
 
 	t.Run("clone failure", func(t *testing.T) {
@@ -102,15 +141,15 @@ func TestCloneBaseline(t *testing.T) {
 				}
 			},
 		}
-		client := storage.NewClient(ssh, &transport.MockRsyncRunner{}, nil, nil)
+		client := storage.NewClient(ssh, &transport.MockRsyncRunner{})
 
-		err := client.CloneBaseline(ctx, "host1", "/src", "/dst")
+		err := client.CloneBaseline(ctx, "host1", "/base", "src", "dst")
 		require.Error(t, err)
 		assert.Equal(t, errcode.ExitTransport, errcode.ExitCode(err))
 	})
 }
 
-func TestRemoveDir(t *testing.T) {
+func TestRemoveRevision(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -121,12 +160,12 @@ func TestRemoveDir(t *testing.T) {
 				return "", nil
 			},
 		}
-		client := storage.NewClient(ssh, &transport.MockRsyncRunner{}, nil, nil)
+		client := storage.NewClient(ssh, &transport.MockRsyncRunner{})
 
-		err := client.RemoveDir(ctx, "host1", "/path")
+		err := client.RemoveRevision(ctx, "host1", "/base", "uuid1")
 		require.NoError(t, err)
 		require.Len(t, ssh.Calls, 1)
-		assert.Equal(t, "Run host1 rm -rf -- '/path'", ssh.Calls[0])
+		assert.Equal(t, "Run host1 rm -rf -- '/base/uuid1'", ssh.Calls[0])
 	})
 
 	t.Run("remove failure", func(t *testing.T) {
@@ -140,9 +179,9 @@ func TestRemoveDir(t *testing.T) {
 				}
 			},
 		}
-		client := storage.NewClient(ssh, &transport.MockRsyncRunner{}, nil, nil)
+		client := storage.NewClient(ssh, &transport.MockRsyncRunner{})
 
-		err := client.RemoveDir(ctx, "host1", "/path")
+		err := client.RemoveRevision(ctx, "host1", "/base", "uuid1")
 		require.Error(t, err)
 		assert.Equal(t, errcode.ExitTransport, errcode.ExitCode(err))
 	})
@@ -160,7 +199,7 @@ func TestQueryUsage(t *testing.T) {
 				return stdoutPipe(strings.NewReader(output))
 			},
 		}
-		client := storage.NewClient(ssh, &transport.MockRsyncRunner{}, nil, nil)
+		client := storage.NewClient(ssh, &transport.MockRsyncRunner{})
 
 		var progressCalled bool
 		total, revs, err := client.QueryUsage(ctx, "host1", "/storage", storage.QueryUsageOptions{
@@ -187,7 +226,7 @@ func TestQueryUsage(t *testing.T) {
 				}
 			},
 		}
-		client := storage.NewClient(ssh, &transport.MockRsyncRunner{}, nil, nil)
+		client := storage.NewClient(ssh, &transport.MockRsyncRunner{})
 
 		_, _, err := client.QueryUsage(ctx, "host1", "/storage")
 		require.Error(t, err)
@@ -208,19 +247,20 @@ func TestDownloadAndUpload(t *testing.T) {
 				return nil
 			},
 		}
-		client := storage.NewClient(&transport.MockSSHRunner{}, rsync, nil, nil)
+		client := storage.NewClient(&transport.MockSSHRunner{}, rsync)
 
 		err := client.Download(ctx, storage.TransferRequest{
 			Host:        "host1",
-			RemotePath:  "/remote",
-			LocalPath:   "/local",
+			BasePath:    "/remote",
+			UUID:        "uuid1",
+			LocalDir:    "/local",
 			UserOptions: "--bwlimit=5000",
 		})
 		require.NoError(t, err)
 		assert.False(t, capturedOpts.IsUpload)
 		assert.Equal(t, "host1", capturedOpts.Host)
-		assert.Equal(t, "/remote", capturedOpts.RemotePath)
-		assert.Equal(t, "/local", capturedOpts.LocalPath)
+		assert.Equal(t, "/remote/uuid1/", capturedOpts.RemotePath)
+		assert.Equal(t, "/local/", capturedOpts.LocalPath)
 		assert.Equal(t, []string{"--bwlimit=5000"}, capturedOpts.ExtraArgs)
 	})
 
@@ -232,29 +272,31 @@ func TestDownloadAndUpload(t *testing.T) {
 				return nil
 			},
 		}
-		client := storage.NewClient(&transport.MockSSHRunner{}, rsync, nil, nil)
+		client := storage.NewClient(&transport.MockSSHRunner{}, rsync)
 
 		err := client.Upload(ctx, storage.TransferRequest{
 			Host:        "host1",
-			RemotePath:  "/remote",
-			LocalPath:   "/local",
+			BasePath:    "/remote",
+			UUID:        "uuid1",
+			LocalDir:    "/local",
 			UserOptions: "--bwlimit=5000",
 		})
 		require.NoError(t, err)
 		assert.True(t, capturedOpts.IsUpload)
 		assert.Equal(t, "host1", capturedOpts.Host)
-		assert.Equal(t, "/remote", capturedOpts.RemotePath)
-		assert.Equal(t, "/local", capturedOpts.LocalPath)
+		assert.Equal(t, "/remote/uuid1/", capturedOpts.RemotePath)
+		assert.Equal(t, "/local/", capturedOpts.LocalPath)
 		assert.Equal(t, []string{"--bwlimit=5000"}, capturedOpts.ExtraArgs)
 	})
 
 	t.Run("Upload rejects baseline mutating options", func(t *testing.T) {
 		for _, badOpt := range []string{"--inplace", "--append", "--append-verify"} {
-			client := storage.NewClient(&transport.MockSSHRunner{}, &transport.MockRsyncRunner{}, nil, nil)
+			client := storage.NewClient(&transport.MockSSHRunner{}, &transport.MockRsyncRunner{})
 			err := client.Upload(ctx, storage.TransferRequest{
 				Host:        "host1",
-				RemotePath:  "/remote",
-				LocalPath:   "/local",
+				BasePath:    "/remote",
+				UUID:        "uuid1",
+				LocalDir:    "/local",
 				UserOptions: badOpt,
 			})
 			require.Error(t, err)

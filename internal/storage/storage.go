@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/bvarnai/git-drev/internal/domain"
@@ -15,9 +16,9 @@ import (
 
 // Manager defines the interface for remote storage operations.
 type Manager interface {
-	CheckDirExists(ctx context.Context, host, remotePath string) (bool, error)
-	CloneBaseline(ctx context.Context, host, srcPath, dstPath string) error
-	RemoveDir(ctx context.Context, host, remotePath string) error
+	HasRevision(ctx context.Context, host, basePath, uuid string) (bool, error)
+	CloneBaseline(ctx context.Context, host, basePath, srcUUID, dstUUID string) error
+	RemoveRevision(ctx context.Context, host, basePath, uuid string) error
 	QueryUsage(ctx context.Context, host, basePath string, opts ...QueryUsageOptions) (totalSize string, revisions []domain.RemoteRevision, err error)
 	Download(ctx context.Context, req TransferRequest) error
 	Upload(ctx context.Context, req TransferRequest) error
@@ -25,28 +26,45 @@ type Manager interface {
 
 // Client implements Manager using transport.SSHRunner and transport.RsyncRunner.
 type Client struct {
-	ssh    transport.SSHRunner
-	rsync  transport.RsyncRunner
-	stdout io.Writer
-	stderr io.Writer
+	ssh   transport.SSHRunner
+	rsync transport.RsyncRunner
 }
 
 // NewClient creates a new storage Client.
-func NewClient(ssh transport.SSHRunner, rsync transport.RsyncRunner, stdout, stderr io.Writer) *Client {
+func NewClient(ssh transport.SSHRunner, rsync transport.RsyncRunner) *Client {
 	return &Client{
-		ssh:    ssh,
-		rsync:  rsync,
-		stdout: stdout,
-		stderr: stderr,
+		ssh:   ssh,
+		rsync: rsync,
 	}
 }
 
-// CheckDirExists tests whether remotePath is an existing directory on host.
-func (c *Client) CheckDirExists(ctx context.Context, host, remotePath string) (bool, error) {
+// RevisionPath returns the clean absolute remote path for a revision: <basePath>/<uuid>.
+func RevisionPath(basePath, uuid string) string {
+	cleanBase := strings.TrimRight(strings.ReplaceAll(basePath, "\\", "/"), "/")
+	return cleanBase + "/" + strings.Trim(uuid, "/")
+}
+
+// RevisionDir returns the remote path for a revision with a single trailing slash for directory syncing.
+func RevisionDir(basePath, uuid string) string {
+	return RevisionPath(basePath, uuid) + "/"
+}
+
+// NormalizeDir ensures a local directory path uses forward slashes and has a single trailing slash.
+func NormalizeDir(dir string) string {
+	clean := filepath.ToSlash(filepath.Clean(dir))
+	if !strings.HasSuffix(clean, "/") {
+		clean += "/"
+	}
+	return clean
+}
+
+// HasRevision tests whether a revision directory exists on host.
+func (c *Client) HasRevision(ctx context.Context, host, basePath, uuid string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, errcode.WrapError(errcode.ErrInterrupted, err, "operation interrupted")
 	}
 
+	remotePath := RevisionPath(basePath, uuid)
 	cmdStr := fmt.Sprintf("test -d %s", transport.POSIXEscape(remotePath))
 	_, err := c.ssh.Run(ctx, host, cmdStr)
 	if err == nil {
@@ -70,12 +88,14 @@ func (c *Client) CheckDirExists(ctx context.Context, host, remotePath string) (b
 	return false, errcode.NewError(errcode.ErrTransport, "SSH check failed on host %q: %s", host, errMsg)
 }
 
-// CloneBaseline creates a remote hardlinked copy of srcPath at dstPath using `cp -al --`.
-func (c *Client) CloneBaseline(ctx context.Context, host, srcPath, dstPath string) error {
+// CloneBaseline creates a remote hardlinked copy of srcUUID at dstUUID using `cp -al --`.
+func (c *Client) CloneBaseline(ctx context.Context, host, basePath, srcUUID, dstUUID string) error {
 	if err := ctx.Err(); err != nil {
 		return errcode.WrapError(errcode.ErrInterrupted, err, "operation interrupted")
 	}
 
+	srcPath := RevisionPath(basePath, srcUUID)
+	dstPath := RevisionPath(basePath, dstUUID)
 	cmdStr := fmt.Sprintf("cp -al -- %s %s", transport.POSIXEscape(srcPath), transport.POSIXEscape(dstPath))
 	_, err := c.ssh.Run(ctx, host, cmdStr)
 	if err == nil {
@@ -94,12 +114,13 @@ func (c *Client) CloneBaseline(ctx context.Context, host, srcPath, dstPath strin
 	return errcode.NewError(errcode.ErrTransport, "SSH clone failed on host %q: %s", host, errMsg)
 }
 
-// RemoveDir removes remotePath on host using `rm -rf -- <remotePath>`.
-func (c *Client) RemoveDir(ctx context.Context, host, remotePath string) error {
+// RemoveRevision removes a remote revision directory on host using `rm -rf -- <remotePath>`.
+func (c *Client) RemoveRevision(ctx context.Context, host, basePath, uuid string) error {
 	if err := ctx.Err(); err != nil {
 		return errcode.WrapError(errcode.ErrInterrupted, err, "operation interrupted")
 	}
 
+	remotePath := RevisionPath(basePath, uuid)
 	cmdStr := fmt.Sprintf("rm -rf -- %s", transport.POSIXEscape(remotePath))
 	_, err := c.ssh.Run(ctx, host, cmdStr)
 	if err == nil {
@@ -121,8 +142,9 @@ func (c *Client) RemoveDir(ctx context.Context, host, remotePath string) error {
 // TransferRequest configures file synchronization between local and remote storage.
 type TransferRequest struct {
 	Host        string
-	RemotePath  string
-	LocalPath   string
+	BasePath    string
+	UUID        string
+	LocalDir    string
 	Verbose     bool
 	Quiet       bool
 	Stats       bool
@@ -145,15 +167,6 @@ func ValidateUploadOptions(tokens []string) error {
 
 // Download synchronizes files from remote storage to local filesystem.
 func (c *Client) Download(ctx context.Context, req TransferRequest) error {
-	stdout := req.Stdout
-	if stdout == nil {
-		stdout = c.stdout
-	}
-	stderr := req.Stderr
-	if stderr == nil {
-		stderr = c.stderr
-	}
-
 	extraArgs, err := transport.TokenizeOptions(req.UserOptions)
 	if err != nil {
 		return err
@@ -161,29 +174,20 @@ func (c *Client) Download(ctx context.Context, req TransferRequest) error {
 
 	return c.rsync.Sync(ctx, transport.RsyncOptions{
 		Host:       req.Host,
-		RemotePath: req.RemotePath,
-		LocalPath:  req.LocalPath,
+		RemotePath: RevisionDir(req.BasePath, req.UUID),
+		LocalPath:  NormalizeDir(req.LocalDir),
 		IsUpload:   false,
 		Verbose:    req.Verbose,
 		Quiet:      req.Quiet,
 		Stats:      req.Stats,
 		ExtraArgs:  extraArgs,
-		Stdout:     stdout,
-		Stderr:     stderr,
+		Stdout:     req.Stdout,
+		Stderr:     req.Stderr,
 	})
 }
 
 // Upload synchronizes files from local filesystem to remote storage.
 func (c *Client) Upload(ctx context.Context, req TransferRequest) error {
-	stdout := req.Stdout
-	if stdout == nil {
-		stdout = c.stdout
-	}
-	stderr := req.Stderr
-	if stderr == nil {
-		stderr = c.stderr
-	}
-
 	extraArgs, err := transport.TokenizeOptions(req.UserOptions)
 	if err != nil {
 		return err
@@ -194,14 +198,14 @@ func (c *Client) Upload(ctx context.Context, req TransferRequest) error {
 
 	return c.rsync.Sync(ctx, transport.RsyncOptions{
 		Host:       req.Host,
-		RemotePath: req.RemotePath,
-		LocalPath:  req.LocalPath,
+		RemotePath: RevisionDir(req.BasePath, req.UUID),
+		LocalPath:  NormalizeDir(req.LocalDir),
 		IsUpload:   true,
 		Verbose:    req.Verbose,
 		Quiet:      req.Quiet,
 		Stats:      req.Stats,
 		ExtraArgs:  extraArgs,
-		Stdout:     stdout,
-		Stderr:     stderr,
+		Stdout:     req.Stdout,
+		Stderr:     req.Stderr,
 	})
 }

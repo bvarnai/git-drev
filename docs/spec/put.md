@@ -143,15 +143,16 @@ func RunPut(ctx context.Context, env PutEnv, opts PutOptions) (*PutResult, error
    - Otherwise (unparseable `HEAD`, empty repository, or `meta.UUID == domain.ZeroUUID`), skip SSH `cp` and log `[git-drev] Unable to use previous revision, doing a full copy`.
 3. **Upload directory payload via `rsync`:**
    - Log `[git-drev] Putting directory revision to remote host (this might take a while)` to `stderr`.
-   - Construct `transport.SyncRequest`:
+   - Construct `storage.TransferRequest`:
      - `Host`: `cfg.Remote.Host`
-     - `RemotePath`: `path.Join(cfg.Remote.Path, uuid) + "/"`
-     - `LocalPath`: `strings.TrimRight(opts.SourceDir, string(filepath.Separator)) + "/"` (trailing slash mandatory so `rsync` transfers the *contents* of `SourceDir` into `<remote.path>/<uuid>/`)
+     - `BasePath`: `cfg.Remote.Path`
+     - `UUID`: `uuid`
+     - `LocalDir`: `opts.SourceDir`
      - `Verbose`: `opts.Verbose`
      - `Quiet`: `opts.Quiet`
      - `Stats`: `opts.Stats`
      - `UserOptions`: `cfg.Remote.Rsync.Put`
-   - Invoke `env.Remote.RsyncPut(ctx, syncReq)`. If `RsyncPut` fails, return `errcode.ErrTransport` (exit code `7`).
+   - Invoke `env.Remote.Upload(ctx, syncReq)`. If `Upload` fails, return `errcode.ErrTransport` (exit code `7`).
 4. **Execute `.git-drev-put-hook` (if present):**
    - Check if `<RepoRoot>/.git-drev-put-hook` exists and is a regular file (`os.Stat`).
    - If present, execute via `env.Hook.Run(ctx, hookReq)` with `GIT_DREV_UUID=<uuid>`, `GIT_DREV_SEQ=<seq>`, `GIT_DREV_BRANCH=<branch>`, `GIT_DREV_WORK_DIR=<abs-workdir>`, `GIT_DREV_ROOT=<RepoRoot>`, and positional arguments `opts.RawArgs`, enforcing `GIT_DREV_HOOK_TIMEOUT` (default `5m`).
@@ -190,8 +191,8 @@ func RunPut(ctx context.Context, env PutEnv, opts PutOptions) (*PutResult, error
 
 ### 3. Interruption, Cleanup & Rollback
 - **Signal handling (`SIGINT` / `SIGTERM`) or mid-upload failure:**
-   - When `ctx.Done()` fires during step 2 (`CloneBaseline`) or step 3 (`RsyncPut`), the active `ssh` or `rsync` subprocess is terminated (`SIGTERM` followed by `SIGKILL` after 3s).
-   - A deferred cleanup handler runs with a detached `context.WithTimeout(context.Background(), 10*time.Second)` to execute `env.Remote.RemoveDir(cleanupCtx, cfg.Remote.Host, path.Join(cfg.Remote.Path, uuid))` (`ssh -T <host> rm -rf -- '<path>/<uuid>'`) if any remote files were staged before the commit was created, preventing orphaned half-uploaded directories on the server.
+   - When `ctx.Done()` fires during step 2 (`CloneBaseline`) or step 3 (`Upload`), the active `ssh` or `rsync` subprocess is terminated (`SIGTERM` followed by `SIGKILL` after 3s).
+   - A deferred cleanup handler runs with a detached `context.WithTimeout(context.Background(), 10*time.Second)` to execute `env.Remote.RemoveRevision(cleanupCtx, cfg.Remote.Host, cfg.Remote.Path, uuid)` (`ssh -T <host> rm -rf -- '<path>/<uuid>'`) if any remote files were staged before the commit was created, preventing orphaned half-uploaded directories on the server.
 - **No premature index pollution:**
    - Unlike legacy `put.sh` (which ran `git add --all` before `rsync`), `git-drev put` does not touch the Git index until after `rsync` and `.git-drev-put-hook` succeed. If `rsync` or the hook fails, the local Git index and commit history remain untouched.
 - **Rebase abort guarantee:**

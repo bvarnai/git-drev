@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/bvarnai/git-drev/internal/checks"
@@ -121,14 +119,10 @@ func RunPut(
 		return nil, errcode.WrapError(errcode.ErrRuntime, err, "failed to generate UUID")
 	}
 
-	baseRemotePath := strings.TrimRight(cfg.Remote.Path, "/")
-	newRevPath := path.Join(baseRemotePath, newUUID)
-
 	// 6. Attempt server-side baseline clone
 	if lastMeta, headErr := insp.HeadCommitMeta(ctx, repoRoot); headErr == nil &&
 		lastMeta.UUID != "" && lastMeta.UUID != domain.ZeroUUID && !lastMeta.IsMarker() {
 
-		prevRevPath := path.Join(baseRemotePath, lastMeta.UUID)
 		shortPrev := lastMeta.UUID
 		if len(shortPrev) > 8 {
 			shortPrev = shortPrev[:8]
@@ -137,7 +131,7 @@ func RunPut(
 		if logger != nil && logger.IsTTY() {
 			cloneSpinner = logger.StartSpinner(fmt.Sprintf("Cloning baseline revision '%s' on host '%s'...", shortPrev, cfg.Remote.Host))
 		}
-		cloneErr := stor.CloneBaseline(ctx, cfg.Remote.Host, prevRevPath, newRevPath)
+		cloneErr := stor.CloneBaseline(ctx, cfg.Remote.Host, cfg.Remote.Path, lastMeta.UUID, newUUID)
 		if cloneSpinner != nil {
 			cloneSpinner.Stop()
 		}
@@ -158,7 +152,7 @@ func RunPut(
 		if stagedRemote {
 			cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			_ = stor.RemoveDir(cleanupCtx, cfg.Remote.Host, newRevPath)
+			_ = stor.RemoveRevision(cleanupCtx, cfg.Remote.Host, cfg.Remote.Path, newUUID)
 		}
 	}()
 
@@ -177,8 +171,9 @@ func RunPut(
 
 	syncReq := storage.TransferRequest{
 		Host:        cfg.Remote.Host,
-		RemotePath:  newRevPath + "/",
-		LocalPath:   strings.TrimRight(sourceDir, string(filepath.Separator)) + "/",
+		BasePath:    cfg.Remote.Path,
+		UUID:        newUUID,
+		LocalDir:    sourceDir,
 		Verbose:     opts.Verbose,
 		Quiet:       opts.Quiet,
 		Stats:       opts.Stats,
