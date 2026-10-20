@@ -139,8 +139,7 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
      - Log to `stderr`: `[git-drev] Directory revision uuid is '<uuid>'`.
    - **Step 2.4: Verify remote revision existence via SSH BEFORE mutating local directories:**
      - Log to `stderr`: `[git-drev] Checking revision on remote host`.
-     - Construct `remoteRevPath := path.Join(deps.Config.Remote.Path, uuid)`.
-     - Call `deps.Remote.CheckDirExists(ctx, deps.Config.Remote.Host, remoteRevPath)`.
+     - Call `deps.Remote.HasRevision(ctx, deps.Config.Remote.Host, deps.Config.Remote.Path, uuid)`.
      - If an SSH transport error occurs (exit status `255` or connection failure), return `ErrTransport` (exit code `7`).
      - If the remote directory does not exist (`exists == false`), return `ErrRemoteNotFound` (exit code `6`) with error message `Unable to find revision '<uuid>' on remote host` and remediation hint `Revision might be gone already (that's normal depending on your retention policy)`.
      - *(Ordering improvement over legacy `get.sh`: verifying remote revision existence before calling `MkdirAll` prevents leaving behind an empty newly created `<target_directory>` when the remote revision has expired or been purged.)*
@@ -151,15 +150,16 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
        - Create it via `deps.FS.MkdirAll(opts.TargetDir, 0o755)`. If creation fails, return `ErrRuntime` (exit code `1`) with message `Failed to create target directory '<path>'`.
    - **Step 2.6: Synchronize payload via `rsync`:**
      - Log to `stderr`: `[git-drev] Getting directory revision from remote host (this might take a while)`.
-     - Invoke `deps.Remote.RsyncGet(ctx, transport.SyncRequest{...})` with:
+     - Invoke `deps.Remote.Download(ctx, storage.TransferRequest{...})` with:
        - `Host`: `deps.Config.Remote.Host`
-       - `RemotePath`: `remoteRevPath + "/"` (trailing slash mandatory so `rsync` copies directory contents into `LocalPath`)
-       - `LocalPath`: `filepath.ToSlash(opts.TargetDir) + "/"` (converted to MSYS/cygpath format on Windows if required by the `rsync` binary)
+       - `BasePath`: `deps.Config.Remote.Path`
+       - `UUID`: `uuid`
+       - `LocalDir`: `opts.TargetDir`
        - `Verbose`: `opts.Verbose`
        - `Quiet`: `opts.Quiet`
        - `Stats`: `opts.Stats`
        - `UserOptions`: `deps.Config.Remote.Rsync.Get`
-     - If `RsyncGet` fails, return `ErrTransport` (exit code `7`) with message `Unable to get directory revision`.
+     - If `Download` fails, return `ErrTransport` (exit code `7`) with message `Unable to get directory revision`.
    - **Step 2.7: Completion logging:**
      - Emit elapsed duration to `stderr` via `deps.Logger.Info(timer.String())` (`[git-drev] Took X min Y sec`, suppressed under `--quiet`).
      - Return `GetResult{UUID: uuid, TargetDir: opts.TargetDir, UpdatedBranch: updatedBranch}, nil`.

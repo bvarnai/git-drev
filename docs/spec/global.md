@@ -324,9 +324,9 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
 
   // Manager abstracts high-level remote storage operations.
   type Manager interface {
-      CheckDirExists(ctx context.Context, host, remotePath string) (bool, error)
-      CloneBaseline(ctx context.Context, host, srcPath, dstPath string) error
-      RemoveDir(ctx context.Context, host, remotePath string) error
+      HasRevision(ctx context.Context, host, basePath, uuid string) (bool, error)
+      CloneBaseline(ctx context.Context, host, basePath, srcUUID, dstUUID string) error
+      RemoveRevision(ctx context.Context, host, basePath, uuid string) error
       QueryUsage(ctx context.Context, host, basePath string, opts ...QueryUsageOptions) (totalSize string, revisions []domain.RemoteRevision, err error)
       Download(ctx context.Context, req TransferRequest) error
       Upload(ctx context.Context, req TransferRequest) error

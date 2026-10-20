@@ -74,7 +74,7 @@ remote:
 				"log -n 1 --format=%s HEAD --":                                  {out: `{"uuid":"` + validUUID + `","seq":"10"}`},
 			},
 			mockStorage: &storage.MockManager{
-				CheckDirExistsFn: func(ctx context.Context, host, remotePath string) (bool, error) {
+				HasRevisionFn: func(ctx context.Context, host, basePath, uuid string) (bool, error) {
 					return false, nil
 				},
 			},
@@ -89,20 +89,21 @@ remote:
 				"log -n 1 --format=%s HEAD --":                                  {out: `{"uuid":"` + validUUID + `","seq":"10"}`},
 			},
 			mockStorage: &storage.MockManager{
-				CheckDirExistsFn: func(ctx context.Context, host, remotePath string) (bool, error) {
+				HasRevisionFn: func(ctx context.Context, host, basePath, uuid string) (bool, error) {
 					return true, nil
 				},
 				DownloadFn: func(ctx context.Context, req storage.TransferRequest) error {
 					assert.Equal(t, "backup.example.com", req.Host)
-					assert.Equal(t, "/storage/myrepo/"+validUUID+"/", req.RemotePath)
-					assert.True(t, filepath.IsAbs(req.LocalPath))
+					assert.Equal(t, "/storage/myrepo", req.BasePath)
+					assert.Equal(t, validUUID, req.UUID)
+					assert.True(t, filepath.IsAbs(req.LocalDir))
 					return nil
 				},
 			},
 			expectedCode: errcode.ExitSuccess,
 			checkExecuted: func(t *testing.T, executed []string, storageCalls []string) {
-				assert.Contains(t, storageCalls, "CheckDirExists backup.example.com /storage/myrepo/"+validUUID)
-				assert.Contains(t, storageCalls, "Download backup.example.com /storage/myrepo/"+validUUID+"/")
+				assert.Contains(t, storageCalls, "HasRevision backup.example.com /storage/myrepo "+validUUID)
+				assert.Contains(t, storageCalls, "Download backup.example.com /storage/myrepo "+validUUID)
 			},
 		},
 		{
@@ -118,7 +119,7 @@ remote:
 				"log -n 1 --format=%s HEAD --":                                  {out: `{"uuid":"` + validUUID + `","seq":"10"}`},
 			},
 			mockStorage: &storage.MockManager{
-				CheckDirExistsFn: func(ctx context.Context, host, remotePath string) (bool, error) {
+				HasRevisionFn: func(ctx context.Context, host, basePath, uuid string) (bool, error) {
 					return true, nil
 				},
 			},

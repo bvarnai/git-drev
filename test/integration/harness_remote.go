@@ -28,9 +28,10 @@ func NewLocalRemoteRunner(baseDir string) *LocalRemoteRunner {
 	return &LocalRemoteRunner{BaseDir: baseDir}
 }
 
-// CheckDirExists tests whether remotePath is an existing directory on disk.
-func (r *LocalRemoteRunner) CheckDirExists(ctx context.Context, host, remotePath string) (bool, error) {
-	fi, err := os.Stat(remotePath)
+// HasRevision tests whether a revision directory exists on disk.
+func (r *LocalRemoteRunner) HasRevision(ctx context.Context, host, basePath, uuid string) (bool, error) {
+	p := filepath.FromSlash(storage.RevisionPath(basePath, uuid))
+	fi, err := os.Stat(p)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return false, nil
@@ -40,8 +41,10 @@ func (r *LocalRemoteRunner) CheckDirExists(ctx context.Context, host, remotePath
 	return fi.IsDir(), nil
 }
 
-// CloneBaseline copies srcPath to dstPath preserving timestamps and permissions via `cp -R -a`.
-func (r *LocalRemoteRunner) CloneBaseline(ctx context.Context, host, srcPath, dstPath string) error {
+// CloneBaseline copies srcUUID to dstUUID preserving timestamps and permissions via `cp -R -a`.
+func (r *LocalRemoteRunner) CloneBaseline(ctx context.Context, host, basePath, srcUUID, dstUUID string) error {
+	srcPath := filepath.FromSlash(storage.RevisionPath(basePath, srcUUID))
+	dstPath := filepath.FromSlash(storage.RevisionPath(basePath, dstUUID))
 	if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
 		return err
 	}
@@ -49,9 +52,10 @@ func (r *LocalRemoteRunner) CloneBaseline(ctx context.Context, host, srcPath, ds
 	return cmd.Run()
 }
 
-// RemoveDir removes remotePath and all its contents.
-func (r *LocalRemoteRunner) RemoveDir(ctx context.Context, host, remotePath string) error {
-	return os.RemoveAll(remotePath)
+// RemoveRevision removes the revision directory and all its contents.
+func (r *LocalRemoteRunner) RemoveRevision(ctx context.Context, host, basePath, uuid string) error {
+	p := filepath.FromSlash(storage.RevisionPath(basePath, uuid))
+	return os.RemoveAll(p)
 }
 
 // QueryUsage calculates storage usage of basePath and discovers valid UUID subdirectories.
@@ -123,6 +127,9 @@ func (r *LocalRemoteRunner) QueryUsage(ctx context.Context, host, basePath strin
 
 // Download executes a local rsync transfer from remotePath to localPath.
 func (r *LocalRemoteRunner) Download(ctx context.Context, req storage.TransferRequest) error {
+	remotePath := filepath.FromSlash(storage.RevisionDir(req.BasePath, req.UUID))
+	localPath := filepath.FromSlash(storage.NormalizeDir(req.LocalDir))
+
 	args := []string{"-a", "--delete-during"}
 	if req.UserOptions != "" {
 		opts, err := transport.TokenizeOptions(req.UserOptions)
@@ -131,7 +138,7 @@ func (r *LocalRemoteRunner) Download(ctx context.Context, req storage.TransferRe
 		}
 		args = append(args, opts...)
 	}
-	args = append(args, req.RemotePath, req.LocalPath)
+	args = append(args, remotePath, localPath)
 
 	cmd := exec.CommandContext(ctx, "rsync", args...)
 	var errBuf bytes.Buffer
@@ -144,7 +151,10 @@ func (r *LocalRemoteRunner) Download(ctx context.Context, req storage.TransferRe
 
 // Upload executes a local rsync transfer from localPath to remotePath.
 func (r *LocalRemoteRunner) Upload(ctx context.Context, req storage.TransferRequest) error {
-	if err := os.MkdirAll(filepath.Dir(strings.TrimRight(req.RemotePath, "/")), 0o755); err != nil {
+	remotePath := filepath.FromSlash(storage.RevisionDir(req.BasePath, req.UUID))
+	localPath := filepath.FromSlash(storage.NormalizeDir(req.LocalDir))
+
+	if err := os.MkdirAll(filepath.Dir(strings.TrimRight(remotePath, "/\\")), 0o755); err != nil {
 		return errcode.WrapError(errcode.ErrTransport, err, "failed to create destination directory")
 	}
 
@@ -156,7 +166,7 @@ func (r *LocalRemoteRunner) Upload(ctx context.Context, req storage.TransferRequ
 		}
 		args = append(args, opts...)
 	}
-	args = append(args, req.LocalPath, req.RemotePath)
+	args = append(args, localPath, remotePath)
 
 	cmd := exec.CommandContext(ctx, "rsync", args...)
 	var errBuf bytes.Buffer
@@ -165,14 +175,4 @@ func (r *LocalRemoteRunner) Upload(ctx context.Context, req storage.TransferRequ
 		return errcode.NewError(errcode.ErrTransport, "rsync put failed: %s: %v", errBuf.String(), err)
 	}
 	return nil
-}
-
-// RsyncGet is an alias for Download for backwards compatibility.
-func (r *LocalRemoteRunner) RsyncGet(ctx context.Context, req storage.TransferRequest) error {
-	return r.Download(ctx, req)
-}
-
-// RsyncPut is an alias for Upload for backwards compatibility.
-func (r *LocalRemoteRunner) RsyncPut(ctx context.Context, req storage.TransferRequest) error {
-	return r.Upload(ctx, req)
 }
