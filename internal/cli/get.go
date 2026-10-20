@@ -15,8 +15,8 @@ import (
 	"github.com/bvarnai/git-drev/internal/domain"
 	"github.com/bvarnai/git-drev/internal/errcode"
 	"github.com/bvarnai/git-drev/internal/git"
+	"github.com/bvarnai/git-drev/internal/storage"
 	"github.com/bvarnai/git-drev/internal/term"
-	"github.com/bvarnai/git-drev/internal/transport"
 	"github.com/spf13/cobra"
 )
 
@@ -42,7 +42,7 @@ func RunGet(
 	ctx context.Context,
 	insp *git.Inspector,
 	ops *git.Operations,
-	remote transport.RemoteRunner,
+	stor storage.Manager,
 	cfg *domain.ProjectConfig,
 	logger *term.Logger,
 	opts GetOptions,
@@ -134,7 +134,7 @@ func RunGet(
 	if logger != nil && logger.IsTTY() {
 		checkSpinner = logger.StartSpinner(fmt.Sprintf("Connecting to host '%s'...", cfg.Remote.Host))
 	}
-	exists, checkErr := remote.CheckDirExists(ctx, cfg.Remote.Host, remoteRevPath)
+	exists, checkErr := stor.CheckDirExists(ctx, cfg.Remote.Host, remoteRevPath)
 	if checkSpinner != nil {
 		checkSpinner.Stop()
 	}
@@ -173,7 +173,7 @@ func RunGet(
 		logger.Infof("Downloading directory revision '%s' from host '%s'...", shortUUID, cfg.Remote.Host)
 	}
 
-	syncReq := transport.SyncRequest{
+	syncReq := storage.TransferRequest{
 		Host:        cfg.Remote.Host,
 		RemotePath:  remoteRevPath + "/",
 		LocalPath:   filepath.ToSlash(targetDir) + "/",
@@ -183,7 +183,7 @@ func RunGet(
 		UserOptions: cfg.Remote.Rsync.Get,
 	}
 
-	if err := remote.RsyncGet(ctx, syncReq); err != nil {
+	if err := stor.Download(ctx, syncReq); err != nil {
 		return nil, err
 	}
 	if getSpinner != nil {
@@ -236,7 +236,7 @@ into the configured workdir (or specified target directory).`,
 				cmd.Context(),
 				a.Inspector,
 				a.Operations,
-				a.Remote,
+				a.Storage,
 				nil,
 				a.Logger,
 				opts,

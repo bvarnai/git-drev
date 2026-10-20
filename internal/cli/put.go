@@ -17,8 +17,8 @@ import (
 	"github.com/bvarnai/git-drev/internal/errcode"
 	"github.com/bvarnai/git-drev/internal/git"
 	"github.com/bvarnai/git-drev/internal/hook"
+	"github.com/bvarnai/git-drev/internal/storage"
 	"github.com/bvarnai/git-drev/internal/term"
-	"github.com/bvarnai/git-drev/internal/transport"
 	"github.com/bvarnai/git-drev/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -51,7 +51,7 @@ func RunPut(
 	ctx context.Context,
 	insp *git.Inspector,
 	ops *git.Operations,
-	remote transport.RemoteRunner,
+	stor storage.Manager,
 	hooks hook.Runner,
 	cfg *domain.ProjectConfig,
 	logger *term.Logger,
@@ -137,7 +137,7 @@ func RunPut(
 		if logger != nil && logger.IsTTY() {
 			cloneSpinner = logger.StartSpinner(fmt.Sprintf("Cloning baseline revision '%s' on host '%s'...", shortPrev, cfg.Remote.Host))
 		}
-		cloneErr := remote.CloneBaseline(ctx, cfg.Remote.Host, prevRevPath, newRevPath)
+		cloneErr := stor.CloneBaseline(ctx, cfg.Remote.Host, prevRevPath, newRevPath)
 		if cloneSpinner != nil {
 			cloneSpinner.Stop()
 		}
@@ -158,7 +158,7 @@ func RunPut(
 		if stagedRemote {
 			cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			_ = remote.RemoveDir(cleanupCtx, cfg.Remote.Host, newRevPath)
+			_ = stor.RemoveDir(cleanupCtx, cfg.Remote.Host, newRevPath)
 		}
 	}()
 
@@ -175,7 +175,7 @@ func RunPut(
 		logger.Infof("Uploading directory revision '%s' to host '%s'...", shortNew, cfg.Remote.Host)
 	}
 
-	syncReq := transport.SyncRequest{
+	syncReq := storage.TransferRequest{
 		Host:        cfg.Remote.Host,
 		RemotePath:  newRevPath + "/",
 		LocalPath:   strings.TrimRight(sourceDir, string(filepath.Separator)) + "/",
@@ -185,7 +185,7 @@ func RunPut(
 		UserOptions: cfg.Remote.Rsync.Put,
 	}
 
-	if err := remote.RsyncPut(ctx, syncReq); err != nil {
+	if err := stor.Upload(ctx, syncReq); err != nil {
 		return nil, err
 	}
 	if putSpinner != nil {
@@ -364,7 +364,7 @@ and publishes the commit to origin with optimistic concurrency control.`,
 				cmd.Context(),
 				a.Inspector,
 				a.Operations,
-				a.Remote,
+				a.Storage,
 				a.Hooks,
 				nil,
 				a.Logger,

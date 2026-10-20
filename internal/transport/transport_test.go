@@ -2,7 +2,6 @@ package transport_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/bvarnai/git-drev/internal/errcode"
 	"github.com/bvarnai/git-drev/internal/transport"
@@ -98,21 +97,21 @@ func TestBuildRsyncArgs(t *testing.T) {
 	t.Parallel()
 
 	t.Run("validation of required fields", func(t *testing.T) {
-		_, err := transport.BuildRsyncArgs(transport.SyncRequest{Host: "", RemotePath: "/path", LocalPath: "/local"}, true)
+		_, err := transport.BuildRsyncArgs(transport.RsyncOptions{Host: "", RemotePath: "/path", LocalPath: "/local"}, true)
 		require.Error(t, err)
 		assert.Equal(t, errcode.ExitConfig, errcode.ExitCode(err))
 
-		_, err = transport.BuildRsyncArgs(transport.SyncRequest{Host: "host", RemotePath: "", LocalPath: "/local"}, true)
+		_, err = transport.BuildRsyncArgs(transport.RsyncOptions{Host: "host", RemotePath: "", LocalPath: "/local"}, true)
 		require.Error(t, err)
 		assert.Equal(t, errcode.ExitConfig, errcode.ExitCode(err))
 
-		_, err = transport.BuildRsyncArgs(transport.SyncRequest{Host: "host", RemotePath: "/path", LocalPath: ""}, true)
+		_, err = transport.BuildRsyncArgs(transport.RsyncOptions{Host: "host", RemotePath: "/path", LocalPath: ""}, true)
 		require.Error(t, err)
 		assert.Equal(t, errcode.ExitUsage, errcode.ExitCode(err))
 	})
 
-	t.Run("RsyncPut argument construction", func(t *testing.T) {
-		req := transport.SyncRequest{
+	t.Run("Rsync upload argument construction", func(t *testing.T) {
+		opts := transport.RsyncOptions{
 			Host:        "backup.example.com",
 			RemotePath:  "/storage/repo/uuid/",
 			LocalPath:   "/work/data/",
@@ -120,7 +119,7 @@ func TestBuildRsyncArgs(t *testing.T) {
 			Stats:       true,
 			UserOptions: `--exclude="*.tmp" --bwlimit=5000`,
 		}
-		args, err := transport.BuildRsyncArgs(req, true)
+		args, err := transport.BuildRsyncArgs(opts, true)
 		require.NoError(t, err)
 
 		expected := []string{
@@ -138,14 +137,14 @@ func TestBuildRsyncArgs(t *testing.T) {
 		assert.Equal(t, expected, args)
 	})
 
-	t.Run("RsyncGet argument construction with quiet", func(t *testing.T) {
-		req := transport.SyncRequest{
+	t.Run("Rsync download argument construction with quiet", func(t *testing.T) {
+		opts := transport.RsyncOptions{
 			Host:       "backup.example.com",
 			RemotePath: "/storage/repo/uuid/",
 			LocalPath:  "/work/data/",
 			Quiet:      true,
 		}
-		args, err := transport.BuildRsyncArgs(req, false)
+		args, err := transport.BuildRsyncArgs(opts, false)
 		require.NoError(t, err)
 
 		expected := []string{
@@ -160,70 +159,21 @@ func TestBuildRsyncArgs(t *testing.T) {
 		assert.Equal(t, expected, args)
 	})
 
-	t.Run("RsyncPut rejects in-place mutation options that corrupt hardlinked baselines", func(t *testing.T) {
+	t.Run("Rsync upload rejects in-place mutation options that corrupt hardlinked baselines", func(t *testing.T) {
 		for _, badOpt := range []string{"--inplace", "--append", "--append-verify"} {
-			req := transport.SyncRequest{
+			opts := transport.RsyncOptions{
 				Host:        "backup.example.com",
 				RemotePath:  "/storage/repo/uuid/",
 				LocalPath:   "/work/data/",
 				UserOptions: "-z " + badOpt,
 			}
-			_, err := transport.BuildRsyncArgs(req, true)
+			_, err := transport.BuildRsyncArgs(opts, true)
 			require.Error(t, err, "expected %s to be rejected on put", badOpt)
 			assert.Equal(t, errcode.ExitConfig, errcode.ExitCode(err))
 
-			// Allowed on RsyncGet (local workdir is not hardlinked across revisions)
-			_, getErr := transport.BuildRsyncArgs(req, false)
+			// Allowed on download (local workdir is not hardlinked across revisions)
+			_, getErr := transport.BuildRsyncArgs(opts, false)
 			require.NoError(t, getErr, "expected %s to be allowed on get", badOpt)
 		}
 	})
-}
-
-func TestParseQueryUsageOutput(t *testing.T) {
-	t.Parallel()
-
-	output := `
-TOTAL_SIZE:2.4G
-REV:550E8400-E29B-41D4-A716-446655440000:1.2G:1700000000
-REV:c1ca82b1-7f34-4f4c-9a76-05e3297b2a23:800M:1700001000
-`
-
-	totalSize, revs := transport.ParseQueryUsageOutput(output)
-	assert.Equal(t, "2.4G", totalSize)
-	require.Len(t, revs, 2)
-
-	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440000", revs[0].UUID)
-	assert.Equal(t, "1.2G", revs[0].SizeHuman)
-	assert.Equal(t, time.Unix(1700000000, 0), revs[0].ModTime)
-
-	assert.Equal(t, "c1ca82b1-7f34-4f4c-9a76-05e3297b2a23", revs[1].UUID)
-	assert.Equal(t, "800M", revs[1].SizeHuman)
-	assert.Equal(t, time.Unix(1700001000, 0), revs[1].ModTime)
-
-	// Test streaming indexed format
-	streamingOutput := `
-TOTAL_SIZE:5.0G
-COUNT:2
-REV:550e8400-e29b-41d4-a716-446655440000:2.5G:1700000000:1:2
-REV:c1ca82b1-7f34-4f4c-9a76-05e3297b2a23:2.5G:1700001000:2:2
-`
-	totalSizeStream, revsStream := transport.ParseQueryUsageOutput(streamingOutput)
-	assert.Equal(t, "5.0G", totalSizeStream)
-	require.Len(t, revsStream, 2)
-	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440000", revsStream[0].UUID)
-	assert.Equal(t, "2.5G", revsStream[0].SizeHuman)
-	assert.Equal(t, time.Unix(1700000000, 0), revsStream[0].ModTime)
-
-	// Test fast summary mode output
-	summaryOutput := `
-TOTAL_SIZE:1.8G
-COUNT:1
-REV:550e8400-e29b-41d4-a716-446655440000:-:0
-`
-	totalSizeSummary, revsSummary := transport.ParseQueryUsageOutput(summaryOutput)
-	assert.Equal(t, "1.8G", totalSizeSummary)
-	require.Len(t, revsSummary, 1)
-	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440000", revsSummary[0].UUID)
-	assert.Equal(t, "-", revsSummary[0].SizeHuman)
-	assert.True(t, revsSummary[0].ModTime.IsZero())
 }

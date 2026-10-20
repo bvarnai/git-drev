@@ -11,8 +11,8 @@ import (
 	"github.com/bvarnai/git-drev/internal/domain"
 	"github.com/bvarnai/git-drev/internal/errcode"
 	"github.com/bvarnai/git-drev/internal/git"
+	"github.com/bvarnai/git-drev/internal/storage"
 	"github.com/bvarnai/git-drev/internal/term"
-	"github.com/bvarnai/git-drev/internal/transport"
 	"github.com/spf13/cobra"
 )
 
@@ -49,7 +49,7 @@ func RunUsage(
 	ctx context.Context,
 	insp *git.Inspector,
 	ops *git.Operations,
-	remote transport.RemoteRunner,
+	stor storage.Manager,
 	cfg *domain.ProjectConfig,
 	logger *term.Logger,
 	stdout io.Writer,
@@ -91,7 +91,7 @@ func RunUsage(
 
 	basePath := strings.TrimRight(cfg.Remote.Path, "/")
 	showDetails := opts.All || opts.Verbose
-	totalSize, revisions, queryErr := remote.QueryUsage(ctx, cfg.Remote.Host, basePath, transport.QueryUsageOptions{
+	totalSize, revisions, queryErr := stor.QueryUsage(ctx, cfg.Remote.Host, basePath, storage.QueryUsageOptions{
 		Verbose: showDetails,
 		OnProgress: func(current, total int, uuid string) {
 			if spinner == nil {
@@ -271,7 +271,7 @@ and, when invoked with -a/--all, correlates remote revision directories with Git
 				cmd.Context(),
 				a.Inspector,
 				a.Operations,
-				a.Remote,
+				a.Storage,
 				nil,
 				a.Logger,
 				cmd.OutOrStdout(),

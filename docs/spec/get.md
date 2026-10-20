@@ -94,7 +94,7 @@ type FS interface {
 type GetDeps struct {
 	Insp   *git.Inspector
 	Ops    *git.Operations
-	Remote transport.RemoteRunner
+	Storage storage.Manager
 	FS     FS
 	Logger *term.Logger
 	Config domain.ProjectConfig

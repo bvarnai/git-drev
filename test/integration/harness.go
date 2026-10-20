@@ -166,7 +166,7 @@ func (f *RepoFixture) NewApp(stdout, stderr io.Writer) *cli.App {
 	runner.BaseEnv = f.Env
 	app := cli.NewApp(stdout, stderr, runner)
 	app.WorkingDir = f.WorkDir
-	app.Remote = NewLocalRemoteRunner(f.BaseDir)
+	app.Storage = NewLocalRemoteRunner(f.BaseDir)
 	return app
 }
 

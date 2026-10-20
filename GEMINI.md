@@ -10,18 +10,19 @@
   - `internal/errcode/`: Sentinel error categories (`ErrRuntime`=1, `ErrUsage`=2, `ErrConfig`/`ErrNotRepository`=3, `ErrGitState`/`ErrDetachedHead`=4, `ErrGitExec`=5, `ErrRemoteNotFound`=6, `ErrTransport`=7, `ErrInterrupted`=130). Depends only on Go stdlib.
   - `internal/config/`: 3-tier YAML configuration loader (`loader.go`), cascading merger (`merge.go`), provenance reporter (`report.go`), and schema validator.
   - `internal/git/`: Thin `Runner` interface (`Run`, `RunLines`, `RunWithEnv`, `RunStream`), `Inspector` (read-only plumbing inspection), and `Operations` (mutating Git operations).
-  - `internal/transport/`: `RemoteRunner` interface and SSH/rsync execution engine.
+  - `internal/transport/`: Generic SSH (`SSHRunner`) and rsync (`RsyncRunner`) execution engine.
+  - `internal/storage/`: Remote revision storage manager (`Manager`, `Client`), directory management, baseline hardlinking, and usage discovery.
   - `internal/hook/`: Project hook runner (`.git-drev-put-hook`, `.git-drev-info-hook`) with timeout (`GIT_DREV_HOOK_TIMEOUT`, default `5m`) and `GIT_DREV_*` environment injection.
   - `internal/term/`: Structured `stderr` logger, TTY/`NO_COLOR`/`GIT_DREV_COLOR` detection, and decoupled `Timer`.
   - `test/integration/`: End-to-end integration tests using isolated Git repositories in `t.TempDir()`.
-- **Dependency Boundaries:** `internal/config`, `internal/git`, `internal/transport`, and `internal/hook` may depend on `domain`, `errcode`, and `term`, but NEVER on `internal/cli`.
+- **Dependency Boundaries:** `internal/config`, `internal/git`, `internal/transport`, `internal/storage`, and `internal/hook` may depend on `domain`, `errcode`, and `term`, but NEVER on `internal/cli`.
 
 ## Coding Standards & Idioms
 In accordance with the [Google Go Style Guide](https://google.github.io/styleguide/go/guide) and `docs/spec/global.md`:
 
 - **External Execution Boundary (`git`, `ssh`, `rsync`, hooks):**
   - NEVER call `os/exec.Command` directly in `internal/cli` or `internal/domain`.
-  - ALWAYS invoke external binaries through `internal/git.Runner`, `internal/transport.RemoteRunner`, or `internal/hook`.
+  - ALWAYS invoke external binaries through `internal/git.Runner`, `internal/transport.SSHRunner`/`RsyncRunner`, or `internal/hook`.
   - Sanitize subprocess environments with `LC_ALL=C`, `LANG=C`, `GIT_TERMINAL_PROMPT=0`, and `GIT_ADVICE=0`.
   - Prefer deterministic Git plumbing (`rev-parse`, `symbolic-ref`, `show-ref`, `ls-remote`, `for-each-ref -z`, `log -z` with `\x00` delimiters) over porcelain.
   - Prevent injection: always pass `--` before positional refs/paths, strictly validate UUIDs (RFC 4122 hex) and `remote.path`, and tokenize `remote.rsync` options without shell `eval` or glob expansion.
@@ -40,7 +41,7 @@ In accordance with the [Google Go Style Guide](https://google.github.io/stylegui
 
 ## Testing Rules
 - Every subcommand and package must include:
-  1. Table-driven unit tests for pure logic, parsers, and CLI flows using mock `git.Runner` and `transport.RemoteRunner` interfaces.
+  1. Table-driven unit tests for pure logic, parsers, and CLI flows using mock `git.Runner` and `storage.Manager` interfaces.
   2. Integration tests creating disposable repositories in `t.TempDir()` via `test/integration/harness.go`.
 - Tests MUST NOT modify or rely on the host machine's `~/.gitconfig`, `~/.ssh/config`, or global Git state.
 
