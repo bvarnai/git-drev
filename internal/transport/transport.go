@@ -22,12 +22,18 @@ type SyncRequest struct {
 	UserOptions string
 }
 
+// QueryUsageOptions configures options and progress callbacks for QueryUsage.
+type QueryUsageOptions struct {
+	Verbose    bool
+	OnProgress func(current, total int, uuid string)
+}
+
 // RemoteRunner abstracts SSH and rsync operations against the remote storage host.
 type RemoteRunner interface {
 	CheckDirExists(ctx context.Context, host, remotePath string) (bool, error)
 	CloneBaseline(ctx context.Context, host, srcPath, dstPath string) error
 	RemoveDir(ctx context.Context, host, remotePath string) error
-	QueryUsage(ctx context.Context, host, basePath string) (totalSize string, revisions []domain.RemoteRevision, err error)
+	QueryUsage(ctx context.Context, host, basePath string, opts ...QueryUsageOptions) (totalSize string, revisions []domain.RemoteRevision, err error)
 	RsyncGet(ctx context.Context, req SyncRequest) error
 	RsyncPut(ctx context.Context, req SyncRequest) error
 }

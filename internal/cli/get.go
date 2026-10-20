@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path"
@@ -97,7 +98,7 @@ func RunGet(
 		}
 
 		if logger != nil {
-			logger.Infof("Updating branch '%s' to origin/%s before getting revision", branch, branch)
+			logger.Infof("Updating branch '%s' to 'origin/%s' before getting revision", branch, branch)
 		}
 
 		if err := ops.FetchAll(ctx, repoRoot, opts.Quiet && !opts.Verbose); err != nil {
@@ -129,12 +130,19 @@ func RunGet(
 
 	// 4. Verify remote directory exists
 	remoteRevPath := path.Join(strings.TrimRight(cfg.Remote.Path, "/"), uuid)
+	var checkSpinner *term.Spinner
+	if logger != nil && logger.IsTTY() {
+		checkSpinner = logger.StartSpinner(fmt.Sprintf("Connecting to host '%s'...", cfg.Remote.Host))
+	}
 	exists, checkErr := remote.CheckDirExists(ctx, cfg.Remote.Host, remoteRevPath)
+	if checkSpinner != nil {
+		checkSpinner.Stop()
+	}
 	if checkErr != nil {
 		return nil, checkErr
 	}
 	if !exists {
-		return nil, errcode.NewError(errcode.ErrRemoteNotFound, "Unable to find revision '%s' on remote host", uuid).
+		return nil, errcode.NewError(errcode.ErrRemoteNotFound, "Unable to find revision '%s' on host '%s'", uuid, cfg.Remote.Host).
 			WithHint("Revision might be gone already (that's normal depending on your retention policy).")
 	}
 
@@ -153,8 +161,16 @@ func RunGet(
 	}
 
 	// 6. Download payload via rsync
-	if logger != nil {
-		logger.Info("Getting directory revision from remote host (this might take a while)")
+	shortUUID := uuid
+	if len(shortUUID) > 8 {
+		shortUUID = shortUUID[:8]
+	}
+	var getSpinner *term.Spinner
+	if !opts.Verbose && !opts.Stats && logger != nil {
+		getSpinner = logger.StartSpinner(fmt.Sprintf("Downloading directory revision '%s' from host '%s'...", shortUUID, cfg.Remote.Host))
+		defer getSpinner.Stop()
+	} else if logger != nil {
+		logger.Infof("Downloading directory revision '%s' from host '%s'...", shortUUID, cfg.Remote.Host)
 	}
 
 	syncReq := transport.SyncRequest{
@@ -169,6 +185,12 @@ func RunGet(
 
 	if err := remote.RsyncGet(ctx, syncReq); err != nil {
 		return nil, err
+	}
+	if getSpinner != nil {
+		getSpinner.Stop()
+	}
+	if logger != nil {
+		logger.Infof("Retrieved directory revision '%s' from host '%s'", shortUUID, cfg.Remote.Host)
 	}
 
 	if logger != nil {

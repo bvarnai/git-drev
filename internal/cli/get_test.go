@@ -79,7 +79,7 @@ remote:
 				},
 			},
 			expectedCode: errcode.ExitRemoteNotFound,
-			errSubstr:    "Unable to find revision '" + validUUID + "' on remote host",
+			errSubstr:    "Unable to find revision '" + validUUID + "' on host 'backup.example.com'",
 		},
 		{
 			name: "successful get synchronizes target directory",

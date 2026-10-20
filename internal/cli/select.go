@@ -91,7 +91,7 @@ func RunSelect(
 		requested = opts.Target
 		kind = SelectTargetUUID
 		if logger != nil {
-			logger.Infof("Searching for commit with uuid '%s'", opts.Target)
+			logger.Infof("Searching for commit with UUID '%s'", opts.Target)
 		}
 		commitHash, findErr := insp.FindCommitByUUID(ctx, repoRoot, targetUUID)
 		if findErr != nil {

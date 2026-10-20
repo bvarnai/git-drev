@@ -46,7 +46,7 @@ func (m *MockRemoteRunner) RemoveDir(ctx context.Context, host, remotePath strin
 }
 
 // QueryUsage records the call and delegates to QueryUsageFn or returns ("0B", nil, nil).
-func (m *MockRemoteRunner) QueryUsage(ctx context.Context, host, basePath string) (string, []domain.RemoteRevision, error) {
+func (m *MockRemoteRunner) QueryUsage(ctx context.Context, host, basePath string, opts ...QueryUsageOptions) (string, []domain.RemoteRevision, error) {
 	m.Calls = append(m.Calls, "QueryUsage "+host+" "+basePath)
 	if m.QueryUsageFn != nil {
 		return m.QueryUsageFn(ctx, host, basePath)

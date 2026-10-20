@@ -199,4 +199,31 @@ REV:c1ca82b1-7f34-4f4c-9a76-05e3297b2a23:800M:1700001000
 	assert.Equal(t, "c1ca82b1-7f34-4f4c-9a76-05e3297b2a23", revs[1].UUID)
 	assert.Equal(t, "800M", revs[1].SizeHuman)
 	assert.Equal(t, time.Unix(1700001000, 0), revs[1].ModTime)
+
+	// Test streaming indexed format
+	streamingOutput := `
+TOTAL_SIZE:5.0G
+COUNT:2
+REV:550e8400-e29b-41d4-a716-446655440000:2.5G:1700000000:1:2
+REV:c1ca82b1-7f34-4f4c-9a76-05e3297b2a23:2.5G:1700001000:2:2
+`
+	totalSizeStream, revsStream := transport.ParseQueryUsageOutput(streamingOutput)
+	assert.Equal(t, "5.0G", totalSizeStream)
+	require.Len(t, revsStream, 2)
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440000", revsStream[0].UUID)
+	assert.Equal(t, "2.5G", revsStream[0].SizeHuman)
+	assert.Equal(t, time.Unix(1700000000, 0), revsStream[0].ModTime)
+
+	// Test fast summary mode output
+	summaryOutput := `
+TOTAL_SIZE:1.8G
+COUNT:1
+REV:550e8400-e29b-41d4-a716-446655440000:-:0
+`
+	totalSizeSummary, revsSummary := transport.ParseQueryUsageOutput(summaryOutput)
+	assert.Equal(t, "1.8G", totalSizeSummary)
+	require.Len(t, revsSummary, 1)
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440000", revsSummary[0].UUID)
+	assert.Equal(t, "-", revsSummary[0].SizeHuman)
+	assert.True(t, revsSummary[0].ModTime.IsZero())
 }

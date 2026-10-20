@@ -54,7 +54,7 @@ func (r *LocalRemoteRunner) RemoveDir(ctx context.Context, host, remotePath stri
 }
 
 // QueryUsage calculates storage usage of basePath and discovers valid UUID subdirectories.
-func (r *LocalRemoteRunner) QueryUsage(ctx context.Context, host, basePath string) (string, []domain.RemoteRevision, error) {
+func (r *LocalRemoteRunner) QueryUsage(ctx context.Context, host, basePath string, opts ...transport.QueryUsageOptions) (string, []domain.RemoteRevision, error) {
 	fi, err := os.Stat(basePath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {

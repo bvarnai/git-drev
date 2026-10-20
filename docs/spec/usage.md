@@ -41,6 +41,7 @@ import (
 // UsageOptions encapsulates the validated parameters for executing the usage command.
 type UsageOptions struct {
 	Config  domain.ProjectConfig
+	All     bool
 	Verbose bool
 	Quiet   bool
 }
@@ -115,12 +116,12 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
      - If `len(revisions) == 0`:
        - Emit to `stderr` (unless `--quiet`): `[git-drev] No revision directories found on remote storage.`
        - Return `UsageResult` with `nil` error (exit code `0`).
-     - If `!opts.Verbose`:
+     - If `!opts.All && !opts.Verbose`:
        - Emit to `stderr` (unless `--quiet`):
          `[git-drev] Found <N> revision directory(ies) on remote storage.`
-         `[git-drev] Hint: Use -v/--verbose to view the detailed breakdown of revisions.`
+         `[git-drev] Hint: Use -a/--all to view the detailed breakdown of revisions.`
        - Return `UsageResult` with `nil` error (exit code `0`).
-   - **Step 2.4: Correlate with local Git commit history (`--verbose` only):**
+   - **Step 2.4: Correlate with local Git commit history (`--all` or `--verbose`):**
      - Invoke `Insp.ScanAllCommits(ctx, repoRoot)` which executes `git log --all -z --format=%H%x00%h%x00%ad%x00%D%x00%s --date=unix`.
      - Build a lookup map `byUUID map[string]git.CommitRecord` keyed by lowercase UUID string:
        - For each `CommitRecord`:
