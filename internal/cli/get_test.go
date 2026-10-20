@@ -11,7 +11,7 @@ import (
 	"github.com/bvarnai/git-drev/internal/cli"
 	"github.com/bvarnai/git-drev/internal/errcode"
 	"github.com/bvarnai/git-drev/internal/git"
-	"github.com/bvarnai/git-drev/internal/transport"
+	"github.com/bvarnai/git-drev/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -35,10 +35,10 @@ remote:
 		name          string
 		args          []string
 		mockGit       map[string]mockGitResponse
-		mockRemote    *transport.MockRemoteRunner
+		mockStorage   *storage.MockManager
 		expectedCode  int
 		errSubstr     string
-		checkExecuted func(t *testing.T, executed []string, remoteCalls []string)
+		checkExecuted func(t *testing.T, executed []string, storageCalls []string)
 	}{
 		{
 			name:         "excess arguments returns usage error",
@@ -73,7 +73,7 @@ remote:
 				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
 				"log -n 1 --format=%s HEAD --":                                  {out: `{"uuid":"` + validUUID + `","seq":"10"}`},
 			},
-			mockRemote: &transport.MockRemoteRunner{
+			mockStorage: &storage.MockManager{
 				CheckDirExistsFn: func(ctx context.Context, host, remotePath string) (bool, error) {
 					return false, nil
 				},
@@ -88,11 +88,11 @@ remote:
 				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
 				"log -n 1 --format=%s HEAD --":                                  {out: `{"uuid":"` + validUUID + `","seq":"10"}`},
 			},
-			mockRemote: &transport.MockRemoteRunner{
+			mockStorage: &storage.MockManager{
 				CheckDirExistsFn: func(ctx context.Context, host, remotePath string) (bool, error) {
 					return true, nil
 				},
-				RsyncGetFn: func(ctx context.Context, req transport.SyncRequest) error {
+				DownloadFn: func(ctx context.Context, req storage.TransferRequest) error {
 					assert.Equal(t, "backup.example.com", req.Host)
 					assert.Equal(t, "/storage/myrepo/"+validUUID+"/", req.RemotePath)
 					assert.True(t, filepath.IsAbs(req.LocalPath))
@@ -100,9 +100,9 @@ remote:
 				},
 			},
 			expectedCode: errcode.ExitSuccess,
-			checkExecuted: func(t *testing.T, executed []string, remoteCalls []string) {
-				assert.Contains(t, remoteCalls, "CheckDirExists backup.example.com /storage/myrepo/"+validUUID)
-				assert.Contains(t, remoteCalls, "RsyncGet backup.example.com /storage/myrepo/"+validUUID+"/")
+			checkExecuted: func(t *testing.T, executed []string, storageCalls []string) {
+				assert.Contains(t, storageCalls, "CheckDirExists backup.example.com /storage/myrepo/"+validUUID)
+				assert.Contains(t, storageCalls, "Download backup.example.com /storage/myrepo/"+validUUID+"/")
 			},
 		},
 		{
@@ -117,13 +117,13 @@ remote:
 				"reset --hard refs/remotes/origin/main --":                      {out: "HEAD is now at 1234567"},
 				"log -n 1 --format=%s HEAD --":                                  {out: `{"uuid":"` + validUUID + `","seq":"10"}`},
 			},
-			mockRemote: &transport.MockRemoteRunner{
+			mockStorage: &storage.MockManager{
 				CheckDirExistsFn: func(ctx context.Context, host, remotePath string) (bool, error) {
 					return true, nil
 				},
 			},
 			expectedCode: errcode.ExitSuccess,
-			checkExecuted: func(t *testing.T, executed []string, remoteCalls []string) {
+			checkExecuted: func(t *testing.T, executed []string, storageCalls []string) {
 				assert.Contains(t, executed, "fetch --all --prune")
 				assert.Contains(t, executed, "reset --hard refs/remotes/origin/main --")
 			},
@@ -137,8 +137,8 @@ remote:
 			gitRunner := &mockGitRunner{responses: tt.mockGit}
 			app := cli.NewApp(&stdout, &stderr, gitRunner)
 			app.WorkingDir = tempDir
-			if tt.mockRemote != nil {
-				app.Remote = tt.mockRemote
+			if tt.mockStorage != nil {
+				app.Storage = tt.mockStorage
 			}
 			app.RootCmd.SetArgs(tt.args)
 
@@ -146,11 +146,11 @@ remote:
 			if tt.expectedCode == errcode.ExitSuccess {
 				require.NoError(t, err)
 				if tt.checkExecuted != nil {
-					var remoteCalls []string
-					if tt.mockRemote != nil {
-						remoteCalls = tt.mockRemote.Calls
+					var storageCalls []string
+					if tt.mockStorage != nil {
+						storageCalls = tt.mockStorage.Calls
 					}
-					tt.checkExecuted(t, gitRunner.executed, remoteCalls)
+					tt.checkExecuted(t, gitRunner.executed, storageCalls)
 				}
 			} else {
 				require.Error(t, err)

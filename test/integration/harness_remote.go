@@ -13,10 +13,11 @@ import (
 
 	"github.com/bvarnai/git-drev/internal/domain"
 	"github.com/bvarnai/git-drev/internal/errcode"
+	"github.com/bvarnai/git-drev/internal/storage"
 	"github.com/bvarnai/git-drev/internal/transport"
 )
 
-// LocalRemoteRunner implements transport.RemoteRunner using the local filesystem
+// LocalRemoteRunner implements storage.Manager using the local filesystem
 // and local rsync for fast, self-contained integration tests in CI (GitHub Actions).
 type LocalRemoteRunner struct {
 	BaseDir string
@@ -54,7 +55,7 @@ func (r *LocalRemoteRunner) RemoveDir(ctx context.Context, host, remotePath stri
 }
 
 // QueryUsage calculates storage usage of basePath and discovers valid UUID subdirectories.
-func (r *LocalRemoteRunner) QueryUsage(ctx context.Context, host, basePath string, opts ...transport.QueryUsageOptions) (string, []domain.RemoteRevision, error) {
+func (r *LocalRemoteRunner) QueryUsage(ctx context.Context, host, basePath string, opts ...storage.QueryUsageOptions) (string, []domain.RemoteRevision, error) {
 	fi, err := os.Stat(basePath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -120,8 +121,8 @@ func (r *LocalRemoteRunner) QueryUsage(ctx context.Context, host, basePath strin
 	return totalSize, revs, nil
 }
 
-// RsyncGet executes a local rsync transfer from remotePath to localPath.
-func (r *LocalRemoteRunner) RsyncGet(ctx context.Context, req transport.SyncRequest) error {
+// Download executes a local rsync transfer from remotePath to localPath.
+func (r *LocalRemoteRunner) Download(ctx context.Context, req storage.TransferRequest) error {
 	args := []string{"-a", "--delete-during"}
 	if req.UserOptions != "" {
 		opts, err := transport.TokenizeOptions(req.UserOptions)
@@ -141,8 +142,8 @@ func (r *LocalRemoteRunner) RsyncGet(ctx context.Context, req transport.SyncRequ
 	return nil
 }
 
-// RsyncPut executes a local rsync transfer from localPath to remotePath.
-func (r *LocalRemoteRunner) RsyncPut(ctx context.Context, req transport.SyncRequest) error {
+// Upload executes a local rsync transfer from localPath to remotePath.
+func (r *LocalRemoteRunner) Upload(ctx context.Context, req storage.TransferRequest) error {
 	if err := os.MkdirAll(filepath.Dir(strings.TrimRight(req.RemotePath, "/")), 0o755); err != nil {
 		return errcode.WrapError(errcode.ErrTransport, err, "failed to create destination directory")
 	}
@@ -164,4 +165,14 @@ func (r *LocalRemoteRunner) RsyncPut(ctx context.Context, req transport.SyncRequ
 		return errcode.NewError(errcode.ErrTransport, "rsync put failed: %s: %v", errBuf.String(), err)
 	}
 	return nil
+}
+
+// RsyncGet is an alias for Download for backwards compatibility.
+func (r *LocalRemoteRunner) RsyncGet(ctx context.Context, req storage.TransferRequest) error {
+	return r.Download(ctx, req)
+}
+
+// RsyncPut is an alias for Upload for backwards compatibility.
+func (r *LocalRemoteRunner) RsyncPut(ctx context.Context, req storage.TransferRequest) error {
+	return r.Upload(ctx, req)
 }

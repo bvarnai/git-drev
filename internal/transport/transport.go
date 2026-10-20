@@ -1,41 +1,38 @@
-// Package transport provides SSH and rsync remote execution engines for git-drev.
 package transport
 
 import (
 	"context"
-	"fmt"
+	"io"
+	"os"
 	"strings"
 	"unicode"
 
-	"github.com/bvarnai/git-drev/internal/domain"
 	"github.com/bvarnai/git-drev/internal/errcode"
 )
 
-// SyncRequest configures an rsync transfer operation.
-type SyncRequest struct {
+// SSHRunner executes remote commands over SSH.
+type SSHRunner interface {
+	Run(ctx context.Context, host, cmd string) (stdout string, stderr string, err error)
+	RunStream(ctx context.Context, host, cmd string, stdin io.Reader, stdoutPipe func(io.Reader) error) (stderr string, err error)
+}
+
+// RsyncOptions holds parameters for an rsync execution.
+type RsyncOptions struct {
 	Host        string
 	RemotePath  string
 	LocalPath   string
+	IsUpload    bool
 	Verbose     bool
 	Quiet       bool
 	Stats       bool
 	UserOptions string
+	Stdout      io.Writer
+	Stderr      io.Writer
 }
 
-// QueryUsageOptions configures options and progress callbacks for QueryUsage.
-type QueryUsageOptions struct {
-	Verbose    bool
-	OnProgress func(current, total int, uuid string)
-}
-
-// RemoteRunner abstracts SSH and rsync operations against the remote storage host.
-type RemoteRunner interface {
-	CheckDirExists(ctx context.Context, host, remotePath string) (bool, error)
-	CloneBaseline(ctx context.Context, host, srcPath, dstPath string) error
-	RemoveDir(ctx context.Context, host, remotePath string) error
-	QueryUsage(ctx context.Context, host, basePath string, opts ...QueryUsageOptions) (totalSize string, revisions []domain.RemoteRevision, err error)
-	RsyncGet(ctx context.Context, req SyncRequest) error
-	RsyncPut(ctx context.Context, req SyncRequest) error
+// RsyncRunner executes rsync synchronization.
+type RsyncRunner interface {
+	Sync(ctx context.Context, opts RsyncOptions) error
 }
 
 // POSIXEscape returns a single-quoted POSIX-safe representation of s.
@@ -122,59 +119,26 @@ func TokenizeOptions(input string) ([]string, error) {
 	return tokens, nil
 }
 
-// BuildRsyncArgs constructs deterministic command-line arguments for rsync.
-func BuildRsyncArgs(req SyncRequest, isPut bool) ([]string, error) {
-	if req.Host == "" {
-		return nil, errcode.NewError(errcode.ErrConfig, "remote host is not configured")
-	}
-	if req.RemotePath == "" {
-		return nil, errcode.NewError(errcode.ErrConfig, "remote path is not configured")
-	}
-	if req.LocalPath == "" {
-		return nil, errcode.NewError(errcode.ErrUsage, "local path is not specified")
-	}
-
-	args := []string{
-		"-a",
-		"--delete-during",
-		"-e",
-		"ssh -T",
-	}
-
-	if req.Verbose {
-		args = append(args, "-v")
-	}
-	if req.Quiet {
-		args = append(args, "-q")
-	}
-	if req.Stats {
-		args = append(args, "--stats")
-	}
-
-	if strings.TrimSpace(req.UserOptions) != "" {
-		userOpts, err := TokenizeOptions(req.UserOptions)
-		if err != nil {
-			return nil, err
+// SanitizedSubprocessEnv returns a sanitized environment slice for subprocess execution.
+func SanitizedSubprocessEnv() []string {
+	var env []string
+	for _, entry := range os.Environ() {
+		k, _, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
 		}
-		if isPut {
-			for _, opt := range userOpts {
-				switch opt {
-				case "--inplace", "--append", "--append-verify":
-					return nil, errcode.NewError(errcode.ErrConfig, "rsync option %q is not allowed in remote.rsync.put because it mutates hardlinked baseline revisions in-place", opt).
-						WithHint("Remove %q from remote.rsync.put so rsync replaces modified files atomically.", opt)
-				}
-			}
+		switch k {
+		case "LC_ALL", "LANG", "GIT_TERMINAL_PROMPT", "GIT_ADVICE":
+			continue
+		default:
+			env = append(env, entry)
 		}
-		args = append(args, userOpts...)
 	}
-
-	remoteTarget := fmt.Sprintf("%s:%s", req.Host, req.RemotePath)
-
-	if isPut {
-		args = append(args, req.LocalPath, remoteTarget)
-	} else {
-		args = append(args, remoteTarget, req.LocalPath)
-	}
-
-	return args, nil
+	env = append(env,
+		"LC_ALL=C",
+		"LANG=C",
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_ADVICE=0",
+	)
+	return env
 }

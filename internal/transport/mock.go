@@ -2,72 +2,45 @@ package transport
 
 import (
 	"context"
-
-	"github.com/bvarnai/git-drev/internal/domain"
+	"io"
 )
 
-// MockRemoteRunner provides a configurable in-memory mock implementing RemoteRunner.
-type MockRemoteRunner struct {
-	CheckDirExistsFn func(ctx context.Context, host, remotePath string) (bool, error)
-	CloneBaselineFn  func(ctx context.Context, host, srcPath, dstPath string) error
-	RemoveDirFn      func(ctx context.Context, host, remotePath string) error
-	QueryUsageFn     func(ctx context.Context, host, basePath string) (string, []domain.RemoteRevision, error)
-	RsyncGetFn       func(ctx context.Context, req SyncRequest) error
-	RsyncPutFn       func(ctx context.Context, req SyncRequest) error
-
-	Calls []string
+// MockSSHRunner is a configurable in-memory mock implementing SSHRunner.
+type MockSSHRunner struct {
+	RunFn       func(ctx context.Context, host, cmd string) (string, string, error)
+	RunStreamFn func(ctx context.Context, host, cmd string, stdin io.Reader, stdoutPipe func(io.Reader) error) (string, error)
+	Calls       []string
 }
 
-// CheckDirExists records the call and delegates to CheckDirExistsFn or returns true.
-func (m *MockRemoteRunner) CheckDirExists(ctx context.Context, host, remotePath string) (bool, error) {
-	m.Calls = append(m.Calls, "CheckDirExists "+host+" "+remotePath)
-	if m.CheckDirExistsFn != nil {
-		return m.CheckDirExistsFn(ctx, host, remotePath)
+// Run records the call and delegates to RunFn or returns empty strings.
+func (m *MockSSHRunner) Run(ctx context.Context, host, cmd string) (string, string, error) {
+	m.Calls = append(m.Calls, "Run "+host+" "+cmd)
+	if m.RunFn != nil {
+		return m.RunFn(ctx, host, cmd)
 	}
-	return true, nil
+	return "", "", nil
 }
 
-// CloneBaseline records the call and delegates to CloneBaselineFn or returns nil.
-func (m *MockRemoteRunner) CloneBaseline(ctx context.Context, host, srcPath, dstPath string) error {
-	m.Calls = append(m.Calls, "CloneBaseline "+host+" "+srcPath+" "+dstPath)
-	if m.CloneBaselineFn != nil {
-		return m.CloneBaselineFn(ctx, host, srcPath, dstPath)
+// RunStream records the call and delegates to RunStreamFn or returns empty string.
+func (m *MockSSHRunner) RunStream(ctx context.Context, host, cmd string, stdin io.Reader, stdoutPipe func(io.Reader) error) (string, error) {
+	m.Calls = append(m.Calls, "RunStream "+host+" "+cmd)
+	if m.RunStreamFn != nil {
+		return m.RunStreamFn(ctx, host, cmd, stdin, stdoutPipe)
 	}
-	return nil
+	return "", nil
 }
 
-// RemoveDir records the call and delegates to RemoveDirFn or returns nil.
-func (m *MockRemoteRunner) RemoveDir(ctx context.Context, host, remotePath string) error {
-	m.Calls = append(m.Calls, "RemoveDir "+host+" "+remotePath)
-	if m.RemoveDirFn != nil {
-		return m.RemoveDirFn(ctx, host, remotePath)
-	}
-	return nil
+// MockRsyncRunner is a configurable in-memory mock implementing RsyncRunner.
+type MockRsyncRunner struct {
+	SyncFn func(ctx context.Context, opts RsyncOptions) error
+	Calls  []string
 }
 
-// QueryUsage records the call and delegates to QueryUsageFn or returns ("0B", nil, nil).
-func (m *MockRemoteRunner) QueryUsage(ctx context.Context, host, basePath string, opts ...QueryUsageOptions) (string, []domain.RemoteRevision, error) {
-	m.Calls = append(m.Calls, "QueryUsage "+host+" "+basePath)
-	if m.QueryUsageFn != nil {
-		return m.QueryUsageFn(ctx, host, basePath)
-	}
-	return "0B", nil, nil
-}
-
-// RsyncGet records the call and delegates to RsyncGetFn or returns nil.
-func (m *MockRemoteRunner) RsyncGet(ctx context.Context, req SyncRequest) error {
-	m.Calls = append(m.Calls, "RsyncGet "+req.Host+" "+req.RemotePath)
-	if m.RsyncGetFn != nil {
-		return m.RsyncGetFn(ctx, req)
-	}
-	return nil
-}
-
-// RsyncPut records the call and delegates to RsyncPutFn or returns nil.
-func (m *MockRemoteRunner) RsyncPut(ctx context.Context, req SyncRequest) error {
-	m.Calls = append(m.Calls, "RsyncPut "+req.Host+" "+req.RemotePath)
-	if m.RsyncPutFn != nil {
-		return m.RsyncPutFn(ctx, req)
+// Sync records the call and delegates to SyncFn or returns nil.
+func (m *MockRsyncRunner) Sync(ctx context.Context, opts RsyncOptions) error {
+	m.Calls = append(m.Calls, "Sync "+opts.Host+" "+opts.RemotePath)
+	if m.SyncFn != nil {
+		return m.SyncFn(ctx, opts)
 	}
 	return nil
 }

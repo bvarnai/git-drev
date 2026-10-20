@@ -71,7 +71,7 @@ type UsageResult struct {
 type UsageService struct {
 	Insp   *git.Inspector
 	Ops    *git.Operations
-	Remote transport.RemoteRunner
+	Storage storage.Manager
 	Logger *term.Logger
 	Stdout io.Writer
 }
@@ -97,7 +97,7 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
    - **Step 2.2: Query remote storage via SSH:**
      - Emit operational progress log to `stderr` (unless `--quiet` is active):
        `[git-drev] Connecting to remote host '<host>' to retrieve storage usage...`
-     - Invoke `RemoteRunner.QueryUsage(ctx, opts.Config.Remote.Host, opts.Config.Remote.Path)`.
+     - Invoke `Storage.QueryUsage(ctx, opts.Config.Remote.Host, opts.Config.Remote.Path)`.
      - Under the hood, `QueryUsage` executes a single non-interactive SSH command (`ssh -T <host> /bin/sh -s -- <quoted-path>`) with `LC_ALL=C` and feeds a POSIX shell script on `stdin` that:
        1. Checks `[ -d "$1" ]`; if missing, prints `ERROR:Remote path '$1' does not exist.` and exits with status `66` (or dedicated sentinel parsed into `errcode.ErrRemoteNotFound`, exit code `6`).
        2. Computes human-readable total directory usage via `du -sh -- "$1" 2>/dev/null | cut -f1` and emits `TOTAL_SIZE:<size>` (defaulting to `"-"` if empty).

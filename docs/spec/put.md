@@ -95,7 +95,7 @@ type PutEnv struct {
 	Config  domain.ProjectConfig
 	Insp    *git.Inspector
 	Ops     *git.Operations
-	Remote  transport.RemoteRunner
+	Storage storage.Manager
 	Hook    hook.Runner
 	Logger  *term.Logger
 	UUIDGen func() (string, error)

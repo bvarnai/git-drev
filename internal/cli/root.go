@@ -8,6 +8,7 @@ import (
 	"github.com/bvarnai/git-drev/internal/errcode"
 	"github.com/bvarnai/git-drev/internal/git"
 	"github.com/bvarnai/git-drev/internal/hook"
+	"github.com/bvarnai/git-drev/internal/storage"
 	"github.com/bvarnai/git-drev/internal/term"
 	"github.com/bvarnai/git-drev/internal/transport"
 	"github.com/bvarnai/git-drev/internal/version"
@@ -29,7 +30,7 @@ type App struct {
 	Runner     git.Runner
 	Inspector  *git.Inspector
 	Operations *git.Operations
-	Remote     transport.RemoteRunner
+	Storage    storage.Manager
 	Hooks      hook.Runner
 	Opts       GlobalOptions
 	Stdout     io.Writer
@@ -64,7 +65,12 @@ func NewApp(stdout, stderr io.Writer, runner git.Runner) *App {
 	app.Runner = runner
 	app.Inspector = git.NewInspector(runner)
 	app.Operations = git.NewOperations(runner)
-	app.Remote = transport.NewExecRemoteRunner(stdout, stderr)
+	app.Storage = storage.NewClient(
+		transport.NewSSHRunner(),
+		transport.NewRsyncRunner(),
+		stdout,
+		stderr,
+	)
 	app.Hooks = hook.NewExecRunner()
 
 	rootCmd := &cobra.Command{

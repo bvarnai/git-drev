@@ -301,28 +301,36 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
 
   import (
       "context"
+      "io"
+  )
+
+  // SSHRunner executes remote commands over SSH.
+  type SSHRunner interface {
+      Run(ctx context.Context, host, cmd string) (stdout string, stderr string, err error)
+      RunStream(ctx context.Context, host, cmd string, stdin io.Reader, stdoutPipe func(io.Reader) error) (stderr string, err error)
+  }
+
+  // RsyncRunner executes rsync synchronization.
+  type RsyncRunner interface {
+      Sync(ctx context.Context, opts RsyncOptions) error
+  }
+  ```
+  ```go
+  package storage
+
+  import (
+      "context"
       "github.com/bvarnai/git-drev/internal/domain"
   )
 
-  // SyncRequest configures an rsync transfer operation.
-  type SyncRequest struct {
-      Host        string
-      RemotePath  string
-      LocalPath   string
-      Verbose     bool
-      Quiet       bool
-      Stats       bool
-      UserOptions string
-  }
-
-  // RemoteRunner abstracts SSH and rsync operations against the remote storage host.
-  type RemoteRunner interface {
+  // Manager abstracts high-level remote storage operations.
+  type Manager interface {
       CheckDirExists(ctx context.Context, host, remotePath string) (bool, error)
       CloneBaseline(ctx context.Context, host, srcPath, dstPath string) error
       RemoveDir(ctx context.Context, host, remotePath string) error
-      QueryUsage(ctx context.Context, host, basePath string) (totalSize string, revisions []domain.RemoteRevision, err error)
-      RsyncGet(ctx context.Context, req SyncRequest) error
-      RsyncPut(ctx context.Context, req SyncRequest) error
+      QueryUsage(ctx context.Context, host, basePath string, opts ...QueryUsageOptions) (totalSize string, revisions []domain.RemoteRevision, err error)
+      Download(ctx context.Context, req TransferRequest) error
+      Upload(ctx context.Context, req TransferRequest) error
   }
   ```
 
