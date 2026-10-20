@@ -17,7 +17,6 @@
   - **Standard error (`stderr`) conventions:**
     - All operational progress logs, elapsed time summaries (`[git-drev] Took X min Y sec`), warnings, hints, and error diagnostics MUST be written to `stderr` (fixing the legacy anti-pattern where `drs::common::log` wrote operational chatter to `stdout`).
     - Operational log format: `[git-drev] <message>` (suppressed when `--quiet` is active).
-    - Debug diagnostic format: `[git-drev] [debug] <message>` (emitted only when `--verbose` is active).
     - Warning format: `[git-drev] Warning: <message>`.
     - Error format: `[git-drev] Error: <message>` followed by optional `[git-drev] Hint: <actionable remediation>`.
   - **Terminal ergonomics & color handling:**

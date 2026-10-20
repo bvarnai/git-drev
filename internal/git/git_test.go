@@ -102,7 +102,7 @@ func TestInspectorAndOperationsIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runner := git.NewExecRunner(nil)
+	runner := git.NewExecRunner()
 	runner.BaseEnv = fix.Env
 
 	insp := git.NewInspector(runner)

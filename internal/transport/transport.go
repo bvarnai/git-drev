@@ -3,7 +3,6 @@ package transport
 import (
 	"context"
 	"io"
-	"os"
 	"strings"
 	"unicode"
 
@@ -12,22 +11,22 @@ import (
 
 // SSHRunner executes remote commands over SSH.
 type SSHRunner interface {
-	Run(ctx context.Context, host, cmd string) (stdout string, stderr string, err error)
-	RunStream(ctx context.Context, host, cmd string, stdin io.Reader, stdoutPipe func(io.Reader) error) (stderr string, err error)
+	Run(ctx context.Context, host, cmd string) (string, error)
+	RunStream(ctx context.Context, host, cmd string, stdin io.Reader, stdoutPipe func(io.Reader) error) error
 }
 
 // RsyncOptions holds parameters for an rsync execution.
 type RsyncOptions struct {
-	Host        string
-	RemotePath  string
-	LocalPath   string
-	IsUpload    bool
-	Verbose     bool
-	Quiet       bool
-	Stats       bool
-	UserOptions string
-	Stdout      io.Writer
-	Stderr      io.Writer
+	Host       string
+	RemotePath string
+	LocalPath  string
+	IsUpload   bool
+	Verbose    bool
+	Quiet      bool
+	Stats      bool
+	ExtraArgs  []string
+	Stdout     io.Writer
+	Stderr     io.Writer
 }
 
 // RsyncRunner executes rsync synchronization.
@@ -117,28 +116,4 @@ func TokenizeOptions(input string) ([]string, error) {
 	}
 
 	return tokens, nil
-}
-
-// SanitizedSubprocessEnv returns a sanitized environment slice for subprocess execution.
-func SanitizedSubprocessEnv() []string {
-	var env []string
-	for _, entry := range os.Environ() {
-		k, _, ok := strings.Cut(entry, "=")
-		if !ok {
-			continue
-		}
-		switch k {
-		case "LC_ALL", "LANG", "GIT_TERMINAL_PROMPT", "GIT_ADVICE":
-			continue
-		default:
-			env = append(env, entry)
-		}
-	}
-	env = append(env,
-		"LC_ALL=C",
-		"LANG=C",
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_ADVICE=0",
-	)
-	return env
 }

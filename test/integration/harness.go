@@ -162,7 +162,7 @@ func (f *RepoFixture) MustGit(dir string, args ...string) string {
 // NewApp creates a *cli.App pre-wired with the fixture's working directory,
 // isolated git environment, and LocalRemoteRunner.
 func (f *RepoFixture) NewApp(stdout, stderr io.Writer) *cli.App {
-	runner := git.NewExecRunner(nil)
+	runner := git.NewExecRunner()
 	runner.BaseEnv = f.Env
 	app := cli.NewApp(stdout, stderr, runner)
 	app.WorkingDir = f.WorkDir
