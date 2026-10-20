@@ -146,6 +146,82 @@ remote:
 			},
 		},
 		{
+			name: "successful put on branch with non-zero marker commit clones baseline from parent UUID",
+			args: []string{"put", "-s", "100"},
+			setupFS: func(t *testing.T, dir string) {
+				_ = os.Remove(filepath.Join(dir, ".git", "index.lock"))
+			},
+			mockGit: map[string]mockGitResponse{
+				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
+				"symbolic-ref --quiet --short HEAD":                             {out: "feature"},
+				"log -n 1 --format=%s HEAD --":                                  {out: `{"uuid":"11111111-1111-4111-8111-111111111111","marker":"true"}`},
+				"add --all":                                                     {out: ""},
+				"commit --allow-empty -m *":                                     {out: "[feature a1b2c3d] revision"},
+				"push --force-with-lease origin refs/heads/feature":             {out: "Everything up-to-date"},
+			},
+			mockStorage: &storage.MockManager{
+				CloneBaselineFn: func(ctx context.Context, host, basePath, srcUUID, dstUUID string) error {
+					assert.Equal(t, "backup.example.com", host)
+					assert.Equal(t, "/storage/myrepo", basePath)
+					assert.Equal(t, "11111111-1111-4111-8111-111111111111", srcUUID)
+					return nil
+				},
+				UploadFn: func(ctx context.Context, req storage.TransferRequest) error {
+					assert.Equal(t, "backup.example.com", req.Host)
+					assert.Equal(t, "/storage/myrepo", req.BasePath)
+					return nil
+				},
+			},
+			expectedCode: errcode.ExitSuccess,
+			checkExecuted: func(t *testing.T, executed []string, storageCalls []string) {
+				var foundClone, foundUpload bool
+				for _, c := range storageCalls {
+					if len(c) >= 13 && c[:13] == "CloneBaseline" {
+						foundClone = true
+					}
+					if len(c) >= 6 && c[:6] == "Upload" {
+						foundUpload = true
+					}
+				}
+				assert.True(t, foundClone, "expected CloneBaseline call for non-zero marker commit")
+				assert.True(t, foundUpload, "expected Upload call")
+			},
+		},
+		{
+			name: "put on branch with ZeroUUID marker commit skips CloneBaseline",
+			args: []string{"put", "-s", "100"},
+			setupFS: func(t *testing.T, dir string) {
+				_ = os.Remove(filepath.Join(dir, ".git", "index.lock"))
+			},
+			mockGit: map[string]mockGitResponse{
+				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
+				"symbolic-ref --quiet --short HEAD":                             {out: "main"},
+				"log -n 1 --format=%s HEAD --":                                  {out: `{"uuid":"00000000-0000-0000-0000-000000000000","marker":"true"}`},
+				"add --all":                                                     {out: ""},
+				"commit --allow-empty -m *":                                     {out: "[main a1b2c3d] revision"},
+				"push --force-with-lease origin refs/heads/main":                {out: "Everything up-to-date"},
+			},
+			mockStorage: &storage.MockManager{
+				CloneBaselineFn: func(ctx context.Context, host, basePath, srcUUID, dstUUID string) error {
+					t.Fatalf("CloneBaseline must not be called when parent is ZeroUUID")
+					return nil
+				},
+				UploadFn: func(ctx context.Context, req storage.TransferRequest) error {
+					assert.Equal(t, "backup.example.com", req.Host)
+					assert.Equal(t, "/storage/myrepo", req.BasePath)
+					return nil
+				},
+			},
+			expectedCode: errcode.ExitSuccess,
+			checkExecuted: func(t *testing.T, executed []string, storageCalls []string) {
+				for _, c := range storageCalls {
+					if len(c) >= 13 && c[:13] == "CloneBaseline" {
+						t.Fatalf("CloneBaseline was called: %s", c)
+					}
+				}
+			},
+		},
+		{
 			name: "stale push resolution drops older revision when local < remote",
 			args: []string{"put", "-s", "50"},
 			setupFS: func(t *testing.T, dir string) {

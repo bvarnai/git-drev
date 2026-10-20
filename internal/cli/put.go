@@ -121,7 +121,7 @@ func RunPut(
 
 	// 6. Attempt server-side baseline clone
 	if lastMeta, headErr := insp.HeadCommitMeta(ctx, repoRoot); headErr == nil &&
-		lastMeta.UUID != "" && lastMeta.UUID != domain.ZeroUUID && !lastMeta.IsMarker() {
+		domain.IsValidUUID(lastMeta.UUID) && lastMeta.UUID != domain.ZeroUUID {
 
 		shortPrev := lastMeta.UUID
 		if len(shortPrev) > 8 {

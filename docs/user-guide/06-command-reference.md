@@ -39,7 +39,9 @@ Creates a new revision branch with an initial marker commit carrying the parent 
 - **Behavior:**
   - If `<branch>` exists locally, checks it out idempotently.
   - If `<branch>` exists on `origin`, creates a local tracking branch and switches to it.
-  - If new, records an initial marker commit (`{"uuid":"<parent-uuid>","marker":"true"}`) and pushes to `origin`.
+  - If new, records an initial marker commit (`{"uuid":"<parent-uuid>","marker":"true"}`) and pushes to `origin`:
+    - **From an existing revision:** Captures the current revision UUID so the first `git drev put` on the new branch can hardlink-clone the parent snapshot on the remote storage host.
+    - **From an unversioned commit or empty repository:** Records `00000000-0000-0000-0000-000000000000` (`ZeroUUID`), signaling that the first `put` will perform a full initial upload.
 - **Dynamic completion:** Autocompletes existing branch names.
 
 ---

@@ -41,14 +41,14 @@ func (r *LocalRemoteRunner) HasRevision(ctx context.Context, host, basePath, uui
 	return fi.IsDir(), nil
 }
 
-// CloneBaseline copies srcUUID to dstUUID preserving timestamps and permissions via `cp -R -a`.
+// CloneBaseline copies srcUUID to dstUUID preserving timestamps and permissions via `cp -al --`.
 func (r *LocalRemoteRunner) CloneBaseline(ctx context.Context, host, basePath, srcUUID, dstUUID string) error {
 	srcPath := filepath.FromSlash(storage.RevisionPath(basePath, srcUUID))
 	dstPath := filepath.FromSlash(storage.RevisionPath(basePath, dstUUID))
 	if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
 		return err
 	}
-	cmd := exec.CommandContext(ctx, "cp", "-R", "-a", srcPath, dstPath)
+	cmd := exec.CommandContext(ctx, "cp", "-al", "--", srcPath, dstPath)
 	return cmd.Run()
 }
 
