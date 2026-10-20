@@ -204,3 +204,88 @@ func TestRemoteLifecycle_ConcurrentPushOptimisticRetry(t *testing.T) {
 		t.Fatalf("expected both revisions 10 and 20 in replica git log, got:\n%s", logSubjects)
 	}
 }
+
+func TestRemoteLifecycle_MarkerCommitReusesParentBaseline(t *testing.T) {
+	f := integration.NewRepoFixture(t)
+
+	// 1. Put initial revision on main
+	f.WriteFile("data/large.bin", "heavy-dataset-payload-v1")
+	var stdout, stderr bytes.Buffer
+	if err := f.RunDrev(&stdout, &stderr, "put", "--sequence", "10"); err != nil {
+		t.Fatalf("put on main failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	mainLog := f.MustGit(f.WorkDir, "log", "-1", "--format=%s")
+	mainMeta, err := domain.ParseRevisionMeta(mainLog)
+	if err != nil {
+		t.Fatalf("failed to parse main revision meta: %v", err)
+	}
+	if mainMeta.UUID == "" || mainMeta.UUID == domain.ZeroUUID {
+		t.Fatalf("expected valid UUID on main, got %q", mainMeta.UUID)
+	}
+
+	// 2. Create branch feature/from-main branching from main
+	stdout.Reset()
+	stderr.Reset()
+	if err := f.RunDrev(&stdout, &stderr, "create", "feature/from-main"); err != nil {
+		t.Fatalf("create feature/from-main failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	// Verify HEAD is a marker commit carrying mainMeta.UUID
+	markerLog := f.MustGit(f.WorkDir, "log", "-1", "--format=%s")
+	markerMeta, err := domain.ParseRevisionMeta(markerLog)
+	if err != nil {
+		t.Fatalf("failed to parse marker meta: %v", err)
+	}
+	if !markerMeta.IsMarker() {
+		t.Fatalf("expected marker commit, got %q", markerLog)
+	}
+	if markerMeta.UUID != mainMeta.UUID {
+		t.Fatalf("expected marker to hold parent UUID %q, got %q", mainMeta.UUID, markerMeta.UUID)
+	}
+
+	// 3. Verify get on new branch fails because no revision has been published yet
+	stdout.Reset()
+	stderr.Reset()
+	if err := f.RunDrev(&stdout, &stderr, "get"); err == nil {
+		t.Fatalf("expected get on branch with marker commit to fail, but succeeded")
+	}
+
+	// 4. Put on feature/from-main with an extra file
+	f.WriteFile("data/extra.txt", "small delta")
+	stdout.Reset()
+	stderr.Reset()
+	if err := f.RunDrev(&stdout, &stderr, "put", "--sequence", "11"); err != nil {
+		t.Fatalf("put on feature/from-main failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	// Verify baseline clone was NOT skipped
+	if strings.Contains(stderr.String(), "Unable to use previous revision") {
+		t.Fatalf("expected put to reuse parent revision as baseline, but got fallback:\n%s", stderr.String())
+	}
+
+	// Verify new revision commit
+	branchLog := f.MustGit(f.WorkDir, "log", "-1", "--format=%s")
+	branchMeta, err := domain.ParseRevisionMeta(branchLog)
+	if err != nil {
+		t.Fatalf("failed to parse branch revision meta: %v", err)
+	}
+	if branchMeta.UUID == mainMeta.UUID {
+		t.Fatalf("expected new UUID, got identical %q", branchMeta.UUID)
+	}
+
+	// Verify that data/large.bin on the remote was hardlinked from mainMeta.UUID
+	srcFile := filepath.Join(f.RemotePath, mainMeta.UUID, "large.bin")
+	dstFile := filepath.Join(f.RemotePath, branchMeta.UUID, "large.bin")
+	fiSrc, err := os.Stat(srcFile)
+	if err != nil {
+		t.Fatalf("stat src file: %v", err)
+	}
+	fiDst, err := os.Stat(dstFile)
+	if err != nil {
+		t.Fatalf("stat dst file: %v", err)
+	}
+	if !os.SameFile(fiSrc, fiDst) {
+		t.Fatalf("expected large.bin to be hardlinked between %s and %s", srcFile, dstFile)
+	}
+}

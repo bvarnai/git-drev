@@ -18,7 +18,9 @@ Unlike standard Git commits that store tracked directory tree blobs, `git-drev` 
   ```json
   {"uuid":"4a123f89-8d7b-4b10-8f6a-49321ef19b12","marker":"true"}
   ```
-  The marker stores the parent revision's UUID (or `00000000-0000-0000-0000-000000000000` if no parent revision exists) to establish the baseline linkage for future `cp -al --` server clones.
+  The marker distinguishes between two branch initialization scenarios:
+  - **Branching from an existing revision:** The marker records the parent revision's `<uuid>`. When the first `git drev put` runs on the new branch, `git-drev` uses this UUID to hardlink-clone (`cp -al --`) the parent revision directory on the remote server, avoiding a full re-upload while keeping the parent branch's snapshot completely isolated and immutable.
+  - **Initializing with no prior revisions:** When creating the first branch in a brand-new repository (or off a standard Git commit with no `git-drev` history), the marker records `00000000-0000-0000-0000-000000000000` (`ZeroUUID`). This signals to `git drev put` that no remote baseline exists, performing a full clean upload.
 
 ---
 
@@ -73,8 +75,9 @@ flowchart TD
 
 1. **Preflight assertions:** Verifies that `HEAD` is attached to a valid branch, no `.git/index.lock` exists, and `remote.host` / `remote.path` are configured.
 2. **Server-side hardlink clone:**
-   - If a parent revision UUID exists on the branch (and is not a marker commit or `ZeroUUID`), `git-drev` executes `cp -al -- <parent_uuid> <new_uuid>` directly on the remote server.
-   - This creates a hardlinked baseline of the previous build in milliseconds without consuming extra data blocks.
+   - If a parent revision UUID exists on the branch (from a previous revision commit or a non-zero marker commit), `git-drev` executes `cp -al -- <parent_uuid> <new_uuid>` directly on the remote server.
+   - If the branch starts from `ZeroUUID` (`00000000-0000-0000-0000-000000000000`) or the parent revision has been purged on the server, `git-drev` gracefully falls back to a full upload.
+   - Hardlinking creates a byte-for-byte baseline of the previous build in milliseconds without duplicating storage blocks or network transfer.
 3. **Rsync delta upload:**
    - Runs `rsync` from your local `workdir` (or `<source_directory>`) to the remote `<path>/<new_uuid>/` directory.
    - Only new or modified files and byte ranges are transmitted over the network. Unmodified files remain hardlinked.
