@@ -174,9 +174,9 @@ c5e956ec-cfcd-48e2-88f7-c7fa8f85eb8c      306M  2026-10-16 01:14:04  d78f5e8    
 fe6453a6-6ba5-49c4-9821-baed6b995c18      306M  2026-10-18 01:12:36  ffc680b     -                     seq: 3
 ```
 
-> [!TIP]
-> **Preserving hardlinks when build pipelines reset timestamps (`-c` / `--checksum`):**
-> Many nightly build and archive tools (including Eclipse's `.tar.gz` packager) touch the modification timestamp (`mtime`) of unchanged `.jar` or binary files on every build. Because default `rsync` checks `(size, mtime)`, changed timestamps on identical files will cause `rsync` to re-transfer them and break server-side `cp -al` hardlinks. Adding `-c` (`--checksum`) to `.git-drev.yaml` (`remote.rsync.put: "-c"` and `remote.rsync.get: "-c"`) instructs `rsync` to compare file checksums, preserving hardlinks for 100% of byte-identical files.
+> [!IMPORTANT]
+> **Why `-c` (`--checksum`) is required for deduplicating rebuilt artifacts:**
+> Most CI pipelines and archive tools (including Eclipse's `.tar.gz` packager) touch the modification timestamp (`mtime`) of unchanged `.jar` or binary files on every build. Because default `rsync` checks `(size, mtime)`, changed timestamps on byte-identical files cause `rsync` to re-upload them and **break the server-side `cp -al` hardlinks** (reducing deduplication from **68.4%** to **3.4%** on Eclipse builds). Configuring `-c` (`--checksum`) in `.git-drev.yaml` (`remote.rsync.put` and `remote.rsync.get`) instructs `rsync` to compare file checksums instead of timestamps, preserving hardlinks for 100% of byte-identical files.
 
 ---
 
@@ -227,8 +227,10 @@ remote:
   host: storage-server
   path: /srv/drev/my-project
   rsync:
-    get: -az --delete-during --stats
-    put: -az --delete-during --whole-file --stats
+    # -c (--checksum) ensures byte-identical files with newer build timestamps
+    # are skipped over the wire and retain their cp -al hardlinks on the server
+    get: -cz --stats
+    put: -cz --whole-file --stats
 ```
 
 Check your effective cascading configuration anytime with:

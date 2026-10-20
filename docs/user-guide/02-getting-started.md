@@ -137,8 +137,10 @@ remote:
   host: storage-server
   path: /srv/drev/{repo}
   rsync:
-    get: -az --delete-during --stats
-    put: -az --delete-during --whole-file --stats
+    # -c (--checksum) skips byte-identical files even when build tools update mtimes,
+    # preserving server-side cp -al hardlinks across revisions
+    get: -cz --stats
+    put: -cz --whole-file --stats
 ```
 
 > [!TIP]
