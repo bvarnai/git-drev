@@ -159,6 +159,24 @@ func TestBuildRsyncArgs(t *testing.T) {
 		}
 		assert.Equal(t, expected, args)
 	})
+
+	t.Run("RsyncPut rejects in-place mutation options that corrupt hardlinked baselines", func(t *testing.T) {
+		for _, badOpt := range []string{"--inplace", "--append", "--append-verify"} {
+			req := transport.SyncRequest{
+				Host:        "backup.example.com",
+				RemotePath:  "/storage/repo/uuid/",
+				LocalPath:   "/work/data/",
+				UserOptions: "-z " + badOpt,
+			}
+			_, err := transport.BuildRsyncArgs(req, true)
+			require.Error(t, err, "expected %s to be rejected on put", badOpt)
+			assert.Equal(t, errcode.ExitConfig, errcode.ExitCode(err))
+
+			// Allowed on RsyncGet (local workdir is not hardlinked across revisions)
+			_, getErr := transport.BuildRsyncArgs(req, false)
+			require.NoError(t, getErr, "expected %s to be allowed on get", badOpt)
+		}
+	})
 }
 
 func TestParseQueryUsageOutput(t *testing.T) {

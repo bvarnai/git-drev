@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <style>
+      .blue-element { fill: #3b87eb; }
+      .blue-stroke { stroke: #3b87eb; stroke-width: 14; stroke-linecap: round; fill: none; }
+      .orange-element { fill: #e5933a; }
+      .orange-stroke { stroke: #e5933a; stroke-width: 14; stroke-linecap: round; fill: none; }
+      .green-element { fill: #5cc68d; }
+      .green-stroke { stroke: #5cc68d; stroke-width: 14; stroke-linecap: round; fill: none; }
+      .badge-text {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        font-weight: 800;
+        font-size: 46px;
+        dominant-baseline: central;
+      }
+    </style>
+  </defs>
+
+  <!-- Dark Slate Rounded-Square Background -->
+  <rect width="512" height="512" rx="76" fill="#1e2530" />
+
+  <!-- Upper Branch (Orange S-Curve from middle commit to v2) -->
+  <path d="M 104 268 C 180 268, 172 148, 248 148" class="orange-stroke" />
+  <circle cx="248" cy="148" r="18" class="orange-element" />
+
+  <!-- Lower Branch (Green S-Curve from bottom commit to v1) -->
+  <path d="M 104 400 C 180 400, 172 308, 248 308" class="green-stroke" />
+  <circle cx="248" cy="308" r="18" class="green-element" />
+
+  <!-- Git Trunk (Vertical Blue Line & Commit Nodes rendered on top of branch origins) -->
+  <line x1="104" y1="112" x2="104" y2="400" class="blue-stroke" />
+  <circle cx="104" cy="112" r="20" class="blue-element" />
+  <circle cx="104" cy="268" r="20" class="blue-element" />
+  <circle cx="104" cy="400" r="20" class="blue-element" />
+
+  <!-- Orange Directory / Folder Icon (v2) -->
+  <g transform="translate(290, 114)">
+    <!-- Folder Back & Top-Left Tab -->
+    <path d="M 0 10 A 8 8 0 0 1 8 2 L 28 2 A 8 8 0 0 1 34 5 L 42 14 L 72 14 A 8 8 0 0 1 80 22 L 80 60 A 8 8 0 0 1 72 68 L 8 68 A 8 8 0 0 1 0 60 Z" class="orange-element" />
+    <!-- Subtle Folder Crease Line -->
+    <line x1="0" y1="22" x2="80" y2="22" stroke="#1e2530" stroke-width="3.5" opacity="0.45" />
+  </g>
+  <text x="386" y="150" class="badge-text orange-element">v2</text>
+
+  <!-- Green Directory / Folder Icon (v1) -->
+  <g transform="translate(290, 274)">
+    <!-- Folder Back & Top-Left Tab -->
+    <path d="M 0 10 A 8 8 0 0 1 8 2 L 28 2 A 8 8 0 0 1 34 5 L 42 14 L 72 14 A 8 8 0 0 1 80 22 L 80 60 A 8 8 0 0 1 72 68 L 8 68 A 8 8 0 0 1 0 60 Z" class="green-element" />
+    <!-- Subtle Folder Crease Line -->
+    <line x1="0" y1="22" x2="80" y2="22" stroke="#1e2530" stroke-width="3.5" opacity="0.45" />
+  </g>
+  <text x="386" y="310" class="badge-text green-element">v1</text>
+</svg>

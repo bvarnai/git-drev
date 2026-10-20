@@ -1,0 +1,38 @@
+name: Feature request
+description: Suggest an idea or enhancement for git-drev
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting a new feature or improvement for `git-drev`!
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Is your feature request related to a problem?
+      description: A clear and concise description of the limitation or workflow friction you experienced.
+      placeholder: I am always frustrated when...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution / Technical Design
+      description: A clear and concise description of what you want to happen and how it aligns with git-drev's architecture.
+      placeholder: Add a new flag or subcommand that...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative solutions or workarounds you've considered.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Add any other context, CLI examples, or logs here.
