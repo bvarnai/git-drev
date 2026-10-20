@@ -32,10 +32,10 @@ import (
 	"context"
 	"io"
 
-	"git-drev/internal/domain"
-	"git-drev/internal/git"
-	"git-drev/internal/term"
-	"git-drev/internal/transport"
+	"github.com/bvarnai/git-drev/internal/domain"
+	"github.com/bvarnai/git-drev/internal/git"
+	"github.com/bvarnai/git-drev/internal/term"
+	"github.com/bvarnai/git-drev/internal/transport"
 )
 
 // UsageOptions encapsulates the validated parameters for executing the usage command.

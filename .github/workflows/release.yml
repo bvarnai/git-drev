@@ -48,7 +48,7 @@ jobs:
             "windows/arm64/git-drev.exe"
           )
 
-          LDFLAGS="-s -w -X 'git-drev/internal/version.Version=v${VERSION}' -X 'git-drev/internal/version.Commit=${COMMIT}' -X 'git-drev/internal/version.Date=${BUILD_DATE}'"
+          LDFLAGS="-s -w -X 'github.com/bvarnai/git-drev/internal/version.Version=v${VERSION}' -X 'github.com/bvarnai/git-drev/internal/version.Commit=${COMMIT}' -X 'github.com/bvarnai/git-drev/internal/version.Date=${BUILD_DATE}'"
 
           for TARGET in "${TARGETS[@]}"; do
             IFS="/" read -r GOOS GOARCH BIN_NAME <<< "$TARGET"

@@ -261,7 +261,7 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
   import (
       "context"
       "io"
-      "git-drev/internal/domain"
+      "github.com/bvarnai/git-drev/internal/domain"
   )
 
   // CommitRecord represents a parsed Git commit from git log.
@@ -301,7 +301,7 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
 
   import (
       "context"
-      "git-drev/internal/domain"
+      "github.com/bvarnai/git-drev/internal/domain"
   )
 
   // SyncRequest configures an rsync transfer operation.

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"git-drev/internal/errcode"
-	"git-drev/internal/hook"
+	"github.com/bvarnai/git-drev/internal/errcode"
+	"github.com/bvarnai/git-drev/internal/hook"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

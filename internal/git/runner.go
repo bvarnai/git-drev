@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"git-drev/internal/errcode"
+	"github.com/bvarnai/git-drev/internal/errcode"
 )
 
 // Runner represents the direct Git execution boundary interface.

@@ -6,7 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"git-drev/internal/cli"
+	"github.com/bvarnai/git-drev/internal/cli"
 )
 
 func main() {

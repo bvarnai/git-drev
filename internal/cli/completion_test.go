@@ -5,8 +5,8 @@ import (
 	"context"
 	"testing"
 
-	"git-drev/internal/cli"
-	"git-drev/internal/errcode"
+	"github.com/bvarnai/git-drev/internal/cli"
+	"github.com/bvarnai/git-drev/internal/errcode"
 	"github.com/stretchr/testify/assert"
 )
 

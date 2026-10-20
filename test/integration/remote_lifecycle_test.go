@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"git-drev/internal/domain"
-	"git-drev/test/integration"
+	"github.com/bvarnai/git-drev/internal/domain"
+	"github.com/bvarnai/git-drev/test/integration"
 )
 
 func TestRemoteLifecycle_PutGetUsageWorkflow(t *testing.T) {

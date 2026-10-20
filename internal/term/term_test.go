@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"git-drev/internal/errcode"
-	"git-drev/internal/term"
+	"github.com/bvarnai/git-drev/internal/errcode"
+	"github.com/bvarnai/git-drev/internal/term"
 )
 
 func mapEnv(m map[string]string) func(string) (string, bool) {

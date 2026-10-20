@@ -5,9 +5,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"git-drev/internal/domain"
-	"git-drev/internal/errcode"
-	"git-drev/internal/git"
+	"github.com/bvarnai/git-drev/internal/domain"
+	"github.com/bvarnai/git-drev/internal/errcode"
+	"github.com/bvarnai/git-drev/internal/git"
 )
 
 // InsideWorkTree ensures the directory is inside a valid Git work tree and returns its root path and relative prefix.

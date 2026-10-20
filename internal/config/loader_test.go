@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"git-drev/internal/config"
-	"git-drev/internal/domain"
-	"git-drev/internal/errcode"
+	"github.com/bvarnai/git-drev/internal/config"
+	"github.com/bvarnai/git-drev/internal/domain"
+	"github.com/bvarnai/git-drev/internal/errcode"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"

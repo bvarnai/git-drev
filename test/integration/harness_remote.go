@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"git-drev/internal/domain"
-	"git-drev/internal/errcode"
-	"git-drev/internal/transport"
+	"github.com/bvarnai/git-drev/internal/domain"
+	"github.com/bvarnai/git-drev/internal/errcode"
+	"github.com/bvarnai/git-drev/internal/transport"
 )
 
 // LocalRemoteRunner implements transport.RemoteRunner using the local filesystem

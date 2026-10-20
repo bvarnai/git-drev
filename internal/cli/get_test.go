@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"git-drev/internal/cli"
-	"git-drev/internal/errcode"
-	"git-drev/internal/git"
-	"git-drev/internal/transport"
+	"github.com/bvarnai/git-drev/internal/cli"
+	"github.com/bvarnai/git-drev/internal/errcode"
+	"github.com/bvarnai/git-drev/internal/git"
+	"github.com/bvarnai/git-drev/internal/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

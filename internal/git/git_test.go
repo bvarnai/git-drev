@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"git-drev/internal/domain"
-	"git-drev/internal/errcode"
-	"git-drev/internal/git"
-	"git-drev/test/integration"
+	"github.com/bvarnai/git-drev/internal/domain"
+	"github.com/bvarnai/git-drev/internal/errcode"
+	"github.com/bvarnai/git-drev/internal/git"
+	"github.com/bvarnai/git-drev/test/integration"
 )
 
 func TestBuildSanitizedEnv(t *testing.T) {

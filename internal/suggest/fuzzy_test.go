@@ -3,7 +3,7 @@ package suggest_test
 import (
 	"testing"
 
-	"git-drev/internal/suggest"
+	"github.com/bvarnai/git-drev/internal/suggest"
 	"github.com/stretchr/testify/assert"
 )
 

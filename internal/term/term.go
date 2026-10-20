@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"git-drev/internal/errcode"
+	"github.com/bvarnai/git-drev/internal/errcode"
 )
 
 // Prefix is the canonical operational log prefix emitted on stderr.

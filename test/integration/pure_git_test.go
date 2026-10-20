@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"git-drev/test/integration"
+	"github.com/bvarnai/git-drev/test/integration"
 )
 
 func TestPureGit_CreateSelectUpdateWorkflow(t *testing.T) {

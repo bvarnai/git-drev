@@ -42,11 +42,11 @@ import (
 	"context"
 	"time"
 
-	"git-drev/internal/domain"
-	"git-drev/internal/git"
-	"git-drev/internal/hook"
-	"git-drev/internal/term"
-	"git-drev/internal/transport"
+	"github.com/bvarnai/git-drev/internal/domain"
+	"github.com/bvarnai/git-drev/internal/git"
+	"github.com/bvarnai/git-drev/internal/hook"
+	"github.com/bvarnai/git-drev/internal/term"
+	"github.com/bvarnai/git-drev/internal/transport"
 )
 
 // MaxPushRetries bounds the optimistic concurrency retry loop when concurrent

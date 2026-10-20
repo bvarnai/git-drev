@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"git-drev/internal/config"
+	"github.com/bvarnai/git-drev/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

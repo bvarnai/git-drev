@@ -1,7 +1,7 @@
 package config
 
 import (
-	"git-drev/internal/domain"
+	"github.com/bvarnai/git-drev/internal/domain"
 )
 
 // MergeConfigs overlays override on top of base and returns a new merged ProjectConfig.

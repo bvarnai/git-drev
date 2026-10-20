@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"git-drev/internal/domain"
+	"github.com/bvarnai/git-drev/internal/domain"
 	"gopkg.in/yaml.v3"
 )
 

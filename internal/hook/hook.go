@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"git-drev/internal/errcode"
+	"github.com/bvarnai/git-drev/internal/errcode"
 )
 
 // DefaultTimeout is the standard execution timeout applied to project hooks.

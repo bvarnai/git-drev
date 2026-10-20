@@ -35,9 +35,9 @@ package cli
 import (
 	"context"
 
-	"git-drev/internal/domain"
-	"git-drev/internal/git"
-	"git-drev/internal/term"
+	"github.com/bvarnai/git-drev/internal/domain"
+	"github.com/bvarnai/git-drev/internal/git"
+	"github.com/bvarnai/git-drev/internal/term"
 )
 
 // SelectTargetKind classifies how the user-supplied target argument was interpreted.

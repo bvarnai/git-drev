@@ -1,0 +1,119 @@
+name: Publish to Scoop
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag to publish to Scoop (e.g. v1.0.0)'
+        required: false
+        type: string
+
+jobs:
+  update-bucket:
+    name: Update Scoop Bucket
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Checkout Scoop Bucket
+        uses: actions/checkout@v4
+        with:
+          repository: bvarnai/scoop-bucket
+          token: ${{ secrets.SCOOP_BUCKET_PAT }}
+          path: scoop-bucket
+
+      - name: Update Scoop Manifest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG_NAME="${{ github.event.inputs.tag_name || github.event.release.tag_name }}"
+
+          if [[ -z "$TAG_NAME" ]]; then
+            echo "Error: Tag name could not be determined. Provide a tag name if running manually."
+            exit 1
+          fi
+
+          echo "Processing Scoop publication for tag: $TAG_NAME"
+
+          mkdir -p dist_hashes
+          gh release download "$TAG_NAME" \
+            --repo "${{ github.repository }}" \
+            --pattern "*.sha256" \
+            --dir dist_hashes
+
+          X64_HASH_FILE=$(ls dist_hashes/*windows_amd64.zip.sha256 2>/dev/null || true)
+          ARM64_HASH_FILE=$(ls dist_hashes/*windows_arm64.zip.sha256 2>/dev/null || true)
+
+          if [[ -z "$X64_HASH_FILE" ]]; then
+            echo "Error: windows_amd64 sha256 file not found in downloaded release assets."
+            exit 1
+          fi
+
+          X64_HASH=$(awk '{print $1}' "$X64_HASH_FILE")
+          echo "Extracted x64 hash: $X64_HASH"
+
+          ARM64_HASH=""
+          if [[ -n "$ARM64_HASH_FILE" ]]; then
+            ARM64_HASH=$(awk '{print $1}' "$ARM64_HASH_FILE")
+            echo "Extracted arm64 hash: $ARM64_HASH"
+          fi
+
+          # Canonical release download URLs for Scoop manifest
+          X64_ZIP_URL="https://github.com/${{ github.repository }}/releases/download/${TAG_NAME}/git-drev_${TAG_NAME}_windows_amd64.zip"
+          ARM64_ZIP_URL="https://github.com/${{ github.repository }}/releases/download/${TAG_NAME}/git-drev_${TAG_NAME}_windows_arm64.zip"
+
+          # Strip leading 'v' for standard Scoop versioning (e.g. v1.0.0 -> 1.0.0)
+          VERSION="${TAG_NAME#v}"
+          echo "Target Scoop version: $VERSION"
+
+          MANIFEST="scoop-bucket/bucket/git-drev.json"
+          if [[ ! -f "$MANIFEST" ]]; then
+            echo "Error: Manifest $MANIFEST does not exist in scoop-bucket repository."
+            exit 1
+          fi
+
+          # Update the manifest JSON fields
+          if [[ -n "$ARM64_ZIP_URL" && -n "$ARM64_HASH" ]]; then
+            jq --arg ver "$VERSION" \
+               --arg x64_url "$X64_ZIP_URL" \
+               --arg x64_hash "$X64_HASH" \
+               --arg arm64_url "$ARM64_ZIP_URL" \
+               --arg arm64_hash "$ARM64_HASH" \
+               '.version = $ver |
+                .architecture["64bit"].url = $x64_url |
+                .architecture["64bit"].hash = $x64_hash |
+                .architecture["arm64"].url = $arm64_url |
+                .architecture["arm64"].hash = $arm64_hash' \
+               "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
+          else
+            jq --arg ver "$VERSION" \
+               --arg x64_url "$X64_ZIP_URL" \
+               --arg x64_hash "$X64_HASH" \
+               '.version = $ver |
+                .architecture["64bit"].url = $x64_url |
+                .architecture["64bit"].hash = $x64_hash' \
+               "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
+          fi
+
+          echo "Updated manifest content:"
+          cat "$MANIFEST"
+
+      - name: Commit and Push to Scoop Bucket
+        run: |
+          TAG_NAME="${{ github.event.inputs.tag_name || github.event.release.tag_name }}"
+          VERSION="${TAG_NAME#v}"
+
+          cd scoop-bucket
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add bucket/git-drev.json
+          git commit -m "git-drev: Update to version $VERSION ($TAG_NAME)" || echo "No changes to commit"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.SCOOP_BUCKET_PAT }}

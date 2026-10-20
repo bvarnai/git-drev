@@ -7,8 +7,8 @@ import (
 	"strings"
 	"unicode"
 
-	"git-drev/internal/domain"
-	"git-drev/internal/errcode"
+	"github.com/bvarnai/git-drev/internal/domain"
+	"github.com/bvarnai/git-drev/internal/errcode"
 )
 
 // SyncRequest configures an rsync transfer operation.
