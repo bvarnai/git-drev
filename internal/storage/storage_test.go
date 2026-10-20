@@ -237,8 +237,14 @@ func TestQueryUsage(t *testing.T) {
 		assert.Equal(t, errcode.ExitRemoteNotFound, errcode.ExitCode(err))
 	})
 
-	t.Run("executes queryUsageScript via /bin/sh matching 8-4-4-4-12 UUIDs", func(t *testing.T) {
+	t.Run("executes queryUsageScript via sh matching 8-4-4-4-12 UUIDs", func(t *testing.T) {
+		shBin, lookErr := exec.LookPath("sh")
+		if lookErr != nil {
+			t.Skip("sh not available in PATH")
+		}
+
 		tmpDir := t.TempDir()
+		slashTmpDir := filepath.ToSlash(tmpDir)
 		validLower := "110523c6-5569-4e14-a9fc-2e7e7a2b56e7"
 		validUpper := "D1E6DA01-3B54-47DE-9125-3BDCE0B0303B"
 		truncatedUUID := "110523c6-5569-4e14-a9fc-2e7e7a2b" // 8-4-4-4-8 (invalid)
@@ -252,7 +258,8 @@ func TestQueryUsage(t *testing.T) {
 
 		shSSH := &transport.MockSSHRunner{
 			RunStreamFn: func(ctx context.Context, host, cmdStr string, stdin io.Reader, stdoutPipe func(io.Reader) error) error {
-				cmd := exec.CommandContext(ctx, "/bin/sh", "-c", cmdStr)
+				localCmd := strings.Replace(cmdStr, "/bin/sh ", "sh ", 1)
+				cmd := exec.CommandContext(ctx, shBin, "-c", localCmd)
 				cmd.Stdin = stdin
 				var outBuf bytes.Buffer
 				cmd.Stdout = &outBuf
@@ -265,7 +272,7 @@ func TestQueryUsage(t *testing.T) {
 		client := storage.NewClient(shSSH, &transport.MockRsyncRunner{})
 
 		// Fast summary mode
-		totalFast, revsFast, err := client.QueryUsage(ctx, "host1", tmpDir, storage.QueryUsageOptions{Verbose: false})
+		totalFast, revsFast, err := client.QueryUsage(ctx, "host1", slashTmpDir, storage.QueryUsageOptions{Verbose: false})
 		require.NoError(t, err)
 		assert.NotEmpty(t, totalFast)
 		require.Len(t, revsFast, 2)
@@ -273,7 +280,7 @@ func TestQueryUsage(t *testing.T) {
 		assert.Equal(t, strings.ToLower(validUpper), revsFast[1].UUID)
 
 		// Verbose mode
-		totalVerbose, revsVerbose, err := client.QueryUsage(ctx, "host1", tmpDir, storage.QueryUsageOptions{Verbose: true})
+		totalVerbose, revsVerbose, err := client.QueryUsage(ctx, "host1", slashTmpDir, storage.QueryUsageOptions{Verbose: true})
 		require.NoError(t, err)
 		assert.NotEmpty(t, totalVerbose)
 		require.Len(t, revsVerbose, 2)
