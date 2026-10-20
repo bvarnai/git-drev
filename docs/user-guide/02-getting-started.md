@@ -139,8 +139,8 @@ remote:
   rsync:
     # -c (--checksum) skips byte-identical files even when build tools update mtimes,
     # preserving server-side cp -al hardlinks across revisions
-    get: -cz --stats
-    put: -cz --whole-file --stats
+    get: -c
+    put: -c
 ```
 
 > [!TIP]

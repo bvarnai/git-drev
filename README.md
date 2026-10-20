@@ -177,10 +177,10 @@ git drev --version
 Initialize a `.git-drev.yaml` configuration file in your metadata repository:
 
 ```yaml
-# Directory containing active revision files (relative to repository root)
+# Directory containing active revision files (optional, defaults to "data")
 workdir: data
 
-# Default branch used when no argument is supplied to 'select'
+# Default branch when no argument is supplied to 'select' (optional, defaults to "main")
 branch:
   default: main
 
@@ -189,14 +189,15 @@ remote:
   host: storage-server
   path: /srv/drev/my-project
   rsync:
-    # -c (--checksum) ensures byte-identical files with newer build timestamps
-    # are skipped over the wire and retain their cp -al hardlinks on the server
-    get: -cz --stats
-    put: -cz --whole-file --stats
+    get: -c
+    put: -c
 ```
 
 > [!IMPORTANT]
-> **Use `-c` (`--checksum`) when CI pipelines regenerate file timestamps:** Most build systems and archive tools touch `mtime` on unchanged files during every build. Passing `-c` in `remote.rsync.put` and `remote.rsync.get` instructs `rsync` to compare file checksums rather than timestamps, preventing `rsync` from re-uploading identical files and breaking server-side `cp -al` hardlinks.
+> **Choosing whether to include `-c` (`--checksum`):**
+> `git-drev` does not force `-c` by default because checksummed transfers require reading every file from disk on both client and server. Choose based on how your files are produced:
+> - **CI / clean builds & unpacked archives (`get: -c`, `put: -c` — recommended):** Clean builds and archive tools (`tar`, Maven/Gradle) update `mtime` on every file even when 80–90% of the output is byte-identical. Without `-c`, `rsync` treats every file with a new timestamp as modified, re-uploads it, and **breaks the server-side `cp -al` hardlinks** (destroying storage deduplication).
+> - **Incremental local builds & static datasets (omit `-c`):** If your workflow preserves modification timestamps on unchanged files (or manages multi-gigabyte media trees where hashing every file is too slow), omit `-c` so `rsync` uses its instant `(size, mtime)` check.
 
 Check your effective cascading configuration anytime with:
 ```bash
