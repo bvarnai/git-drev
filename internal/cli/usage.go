@@ -85,7 +85,7 @@ func RunUsage(
 
 	var spinner *term.Spinner
 	if logger != nil {
-		spinner = logger.StartSpinner(fmt.Sprintf("Connecting to remote host '%s' to retrieve storage usage...", cfg.Remote.Host))
+		spinner = logger.StartSpinner(fmt.Sprintf("Connecting to host '%s'...", cfg.Remote.Host))
 		defer spinner.Stop()
 	}
 
@@ -94,13 +94,22 @@ func RunUsage(
 	totalSize, revisions, queryErr := remote.QueryUsage(ctx, cfg.Remote.Host, basePath, transport.QueryUsageOptions{
 		Verbose: showDetails,
 		OnProgress: func(current, total int, uuid string) {
-			if spinner != nil {
-				shortUUID := uuid
-				if len(shortUUID) > 8 {
-					shortUUID = shortUUID[:8]
-				}
-				spinner.Update(fmt.Sprintf("Measuring revision %d/%d (%s) on '%s'...", current, total, shortUUID, cfg.Remote.Host))
+			if spinner == nil {
+				return
 			}
+			if current == 0 {
+				if total > 0 {
+					spinner.Update(fmt.Sprintf("Calculating total storage usage across %d revision(s)...", total))
+				} else {
+					spinner.Update("Calculating total storage usage...")
+				}
+				return
+			}
+			shortUUID := uuid
+			if len(shortUUID) > 8 {
+				shortUUID = shortUUID[:8]
+			}
+			spinner.Update(fmt.Sprintf("Scanning revision %d/%d (%s)...", current, total, shortUUID))
 		},
 	})
 	if spinner != nil {
@@ -111,11 +120,12 @@ func RunUsage(
 	}
 
 	if logger != nil {
-		logger.Infof("Remote storage usage for host:%s path:%s", cfg.Remote.Host, cfg.Remote.Path)
+		logger.Infof("Retrieved storage usage from host '%s'", cfg.Remote.Host)
 	}
 
 	// Render summary to stdout
-	fmt.Fprintf(stdout, "\nSummary:\n  Total space used:  %s\n\n", totalSize)
+	fmt.Fprintf(stdout, "\nSummary:\n  Remote storage:    %s:%s\n  Total space used:  %s\n  Revisions found:   %d\n\n",
+		cfg.Remote.Host, cfg.Remote.Path, totalSize, len(revisions))
 
 	res := UsageResult{
 		TotalSize:     totalSize,
@@ -131,7 +141,6 @@ func RunUsage(
 
 	if !showDetails {
 		if logger != nil {
-			logger.Infof("Found %d revision directory(ies) on remote storage.", len(revisions))
 			logger.HintAlways(`Use -a/--all to view the detailed breakdown of revisions.`)
 		}
 		return res, nil

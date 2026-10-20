@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path"
@@ -128,14 +129,26 @@ func RunPut(
 		lastMeta.UUID != "" && lastMeta.UUID != domain.ZeroUUID && !lastMeta.IsMarker() {
 
 		prevRevPath := path.Join(baseRemotePath, lastMeta.UUID)
-		if cloneErr := remote.CloneBaseline(ctx, cfg.Remote.Host, prevRevPath, newRevPath); cloneErr != nil {
+		shortPrev := lastMeta.UUID
+		if len(shortPrev) > 8 {
+			shortPrev = shortPrev[:8]
+		}
+		var cloneSpinner *term.Spinner
+		if logger != nil && logger.IsTTY() {
+			cloneSpinner = logger.StartSpinner(fmt.Sprintf("Cloning baseline revision '%s' on host '%s'...", shortPrev, cfg.Remote.Host))
+		}
+		cloneErr := remote.CloneBaseline(ctx, cfg.Remote.Host, prevRevPath, newRevPath)
+		if cloneSpinner != nil {
+			cloneSpinner.Stop()
+		}
+		if cloneErr != nil {
 			if logger != nil {
-				logger.Info("Unable to use previous revision, doing a full copy")
+				logger.Info("Unable to use previous revision, performing a full copy")
 			}
 		}
 	} else {
 		if logger != nil {
-			logger.Info("Unable to use previous revision, doing a full copy")
+			logger.Info("Unable to use previous revision, performing a full copy")
 		}
 	}
 
@@ -150,12 +163,16 @@ func RunPut(
 	}()
 
 	// 7. Upload directory payload via rsync
+	shortNew := newUUID
+	if len(shortNew) > 8 {
+		shortNew = shortNew[:8]
+	}
 	var putSpinner *term.Spinner
 	if !opts.Verbose && !opts.Stats && logger != nil {
-		putSpinner = logger.StartSpinner("Putting directory revision to remote host (this might take a while)")
+		putSpinner = logger.StartSpinner(fmt.Sprintf("Uploading directory revision '%s' to host '%s'...", shortNew, cfg.Remote.Host))
 		defer putSpinner.Stop()
 	} else if logger != nil {
-		logger.Info("Putting directory revision to remote host (this might take a while)")
+		logger.Infof("Uploading directory revision '%s' to host '%s'...", shortNew, cfg.Remote.Host)
 	}
 
 	syncReq := transport.SyncRequest{
@@ -173,6 +190,9 @@ func RunPut(
 	}
 	if putSpinner != nil {
 		putSpinner.Stop()
+	}
+	if logger != nil {
+		logger.Infof("Uploaded directory revision '%s' to host '%s'", shortNew, cfg.Remote.Host)
 	}
 
 	// 8. Execute .git-drev-put-hook if present
@@ -232,7 +252,7 @@ func RunPut(
 
 	// 11. Optimistic concurrency push loop
 	if logger != nil {
-		logger.Info("Pushing revision metadata")
+		logger.Infof("Pushing revision metadata to 'origin/%s'", branch)
 	}
 
 	for attempt := 1; attempt <= MaxPushRetries; attempt++ {

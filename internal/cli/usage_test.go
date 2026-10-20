@@ -86,8 +86,10 @@ remote:
 			},
 			expectedCode: errcode.ExitSuccess,
 			validateOut: func(t *testing.T, stdout string, stderr string) {
+				assert.Contains(t, stdout, "Remote storage:    backup.example.com:/storage/myrepo")
 				assert.Contains(t, stdout, "Total space used:  1.5G")
-				assert.Contains(t, stderr, "Found 1 revision directory(ies)")
+				assert.Contains(t, stdout, "Revisions found:   1")
+				assert.Contains(t, stderr, "Retrieved storage usage from host 'backup.example.com'")
 				assert.Contains(t, stderr, "Hint: Use -a/--all")
 			},
 		},

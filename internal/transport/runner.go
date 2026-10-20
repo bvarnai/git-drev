@@ -136,8 +136,6 @@ if [ ! -d "$target" ]; then
     echo "ERROR:Remote path '$target' does not exist." >&2
     exit 66
 fi
-total_size=$(du -sh -- "$target" 2>/dev/null | cut -f1)
-echo "TOTAL_SIZE:${total_size:--}"
 
 rev_dirs=""
 count=0
@@ -154,6 +152,9 @@ for d in "$target"/*; do
 done
 
 echo "COUNT:${count}"
+total_size=$(du -sh -- "$target" 2>/dev/null | cut -f1)
+echo "TOTAL_SIZE:${total_size:--}"
+
 if [ "$mode" != "verbose" ]; then
     printf "%s" "$rev_dirs" | while IFS= read -r d; do
         [ -n "$d" ] || continue
@@ -168,6 +169,7 @@ printf "%s" "$rev_dirs" | while IFS= read -r d; do
     [ -n "$d" ] || continue
     idx=$((idx + 1))
     name=$(basename -- "$d")
+    echo "SCAN:${idx}:${count}:${name}"
     size=$(du -sh -- "$d" 2>/dev/null | cut -f1)
     mtime=$(stat -c %Y -- "$d" 2>/dev/null || stat -f %m -- "$d" 2>/dev/null || echo 0)
     echo "REV:${name}:${size:--}:${mtime:-0}:${idx}:${count}"
@@ -218,15 +220,16 @@ func (r *ExecRemoteRunner) QueryUsage(ctx context.Context, host, basePath string
 		if strings.HasPrefix(line, "COUNT:") {
 			if n, err := strconv.Atoi(strings.TrimPrefix(line, "COUNT:")); err == nil {
 				totalRevs = n
+				if opt.OnProgress != nil {
+					opt.OnProgress(0, totalRevs, "")
+				}
 			}
-		} else if strings.HasPrefix(line, "REV:") && opt.OnProgress != nil {
-			parts := strings.Split(strings.TrimPrefix(line, "REV:"), ":")
-			if len(parts) >= 5 {
-				curr, _ := strconv.Atoi(parts[3])
-				tot, _ := strconv.Atoi(parts[4])
-				opt.OnProgress(curr, tot, parts[0])
-			} else if len(parts) >= 1 && totalRevs > 0 {
-				opt.OnProgress(len(lines), totalRevs, parts[0])
+		} else if strings.HasPrefix(line, "SCAN:") && opt.OnProgress != nil {
+			parts := strings.SplitN(strings.TrimPrefix(line, "SCAN:"), ":", 3)
+			if len(parts) == 3 {
+				curr, _ := strconv.Atoi(parts[0])
+				tot, _ := strconv.Atoi(parts[1])
+				opt.OnProgress(curr, tot, parts[2])
 			}
 		}
 	}
