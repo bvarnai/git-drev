@@ -18,6 +18,7 @@
   <a href="#the-producer--consumer-model">Producer & Consumer model</a> •
   <a href="#quick-start">Quick start</a> •
   <a href="#key-advantages">Key advantages</a> •
+  <a href="#benchmark-real-world-eclipse-sdk-builds">Benchmark</a> •
   <a href="#installation">Installation</a> •
   <a href="#documentation-wiki">Documentation wiki</a>
 </p>
@@ -125,6 +126,22 @@ git drev info
 
 ---
 
+## Benchmark: Real-world Eclipse SDK builds
+
+Across **5 consecutive daily [Eclipse SDK integration builds (`I-builds`)](https://download.eclipse.org/eclipse/downloads/)** (`linux-gtk-x86_64`, **306 MB unpacked** / **273 MB `.tar.gz`** across **1,368 files** per build, where ~81% of files remain identical day-to-day):
+
+| Metric | Traditional (`curl` + `tar -xzf`) | `git-drev` (`select` + `get` / `put`) | Improvement |
+| :--- | :--- | :--- | :--- |
+| **Avg. daily update time (Consumer)** | `25.92s` (download + extract) | **`2.19s`** (`git drev select` + `get`) | **11.8x faster** |
+| **Total sync time across all 5 builds** | `123.75s` (5 full downloads) | **`13.61s`** (1 cold + 4 incremental) | **9.1x faster** |
+| **Avg. network payload per daily update** | `272.99 MiB` (full `.tar.gz`) | **`35.12 MiB`** (changed files/deltas only) | **87.1% less traffic** |
+| **Server disk space for 5 unpacked builds** | `1,530 MB` (`5 × 306 MB` unpacked) | **`483 MB`** (`cp -al` hardlinked storage) | **68.4% less storage (`3.17x` dedup)** |
+| **Server disk space vs. 5 `.tar.gz` archives** | `1,365 MB` (`5 × 273 MB` compressed) | **`483 MB`** (immediately usable directories) | **65.0% less storage than `.tar.gz`** |
+
+See [Chapter 5: Storage architecture & retention](docs/user-guide/05-storage-and-retention.md#6-real-world-benchmark-eclipse-sdk-builds) for the full per-build breakdown and `git drev usage -v` analysis.
+
+---
+
 ## Installation
 
 > [!NOTE]
@@ -172,9 +189,14 @@ remote:
   host: storage-server
   path: /srv/drev/my-project
   rsync:
-    get: -az --delete-during --stats
-    put: -az --delete-during --whole-file --stats
+    # -c (--checksum) ensures byte-identical files with newer build timestamps
+    # are skipped over the wire and retain their cp -al hardlinks on the server
+    get: -cz --stats
+    put: -cz --whole-file --stats
 ```
+
+> [!IMPORTANT]
+> **Use `-c` (`--checksum`) when CI pipelines regenerate file timestamps:** Most build systems and archive tools touch `mtime` on unchanged files during every build. Passing `-c` in `remote.rsync.put` and `remote.rsync.get` instructs `rsync` to compare file checksums rather than timestamps, preventing `rsync` from re-uploading identical files and breaking server-side `cp -al` hardlinks.
 
 Check your effective cascading configuration anytime with:
 ```bash
