@@ -150,7 +150,11 @@ func RunPut(
 	}()
 
 	// 7. Upload directory payload via rsync
-	if logger != nil {
+	var putSpinner *term.Spinner
+	if !opts.Verbose && !opts.Stats && logger != nil {
+		putSpinner = logger.StartSpinner("Putting directory revision to remote host (this might take a while)")
+		defer putSpinner.Stop()
+	} else if logger != nil {
 		logger.Info("Putting directory revision to remote host (this might take a while)")
 	}
 
@@ -166,6 +170,9 @@ func RunPut(
 
 	if err := remote.RsyncPut(ctx, syncReq); err != nil {
 		return nil, err
+	}
+	if putSpinner != nil {
+		putSpinner.Stop()
 	}
 
 	// 8. Execute .git-drev-put-hook if present

@@ -20,6 +20,7 @@ var uuidRegex = regexp.MustCompile(`(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9
 
 // UsageOptions holds options for `git-drev usage`.
 type UsageOptions struct {
+	All       bool
 	Verbose   bool
 	Quiet     bool
 	CallerDir string
@@ -82,12 +83,29 @@ func RunUsage(
 		return UsageResult{}, err
 	}
 
+	var spinner *term.Spinner
 	if logger != nil {
-		logger.Infof("Connecting to remote host '%s' to retrieve storage usage...", cfg.Remote.Host)
+		spinner = logger.StartSpinner(fmt.Sprintf("Connecting to remote host '%s' to retrieve storage usage...", cfg.Remote.Host))
+		defer spinner.Stop()
 	}
 
 	basePath := strings.TrimRight(cfg.Remote.Path, "/")
-	totalSize, revisions, queryErr := remote.QueryUsage(ctx, cfg.Remote.Host, basePath)
+	showDetails := opts.All || opts.Verbose
+	totalSize, revisions, queryErr := remote.QueryUsage(ctx, cfg.Remote.Host, basePath, transport.QueryUsageOptions{
+		Verbose: showDetails,
+		OnProgress: func(current, total int, uuid string) {
+			if spinner != nil {
+				shortUUID := uuid
+				if len(shortUUID) > 8 {
+					shortUUID = shortUUID[:8]
+				}
+				spinner.Update(fmt.Sprintf("Measuring revision %d/%d (%s) on '%s'...", current, total, shortUUID, cfg.Remote.Host))
+			}
+		},
+	})
+	if spinner != nil {
+		spinner.Stop()
+	}
 	if queryErr != nil {
 		return UsageResult{}, queryErr
 	}
@@ -111,10 +129,10 @@ func RunUsage(
 		return res, nil
 	}
 
-	if !opts.Verbose {
+	if !showDetails {
 		if logger != nil {
 			logger.Infof("Found %d revision directory(ies) on remote storage.", len(revisions))
-			logger.HintAlways(`Use -v/--verbose to view the detailed breakdown of revisions.`)
+			logger.HintAlways(`Use -a/--all to view the detailed breakdown of revisions.`)
 		}
 		return res, nil
 	}
@@ -223,11 +241,13 @@ func formatRefs(refs []string) string {
 }
 
 func (a *App) newUsageCmd() *cobra.Command {
+	opts := UsageOptions{}
+
 	cmd := &cobra.Command{
 		Use:   "usage",
 		Short: "Display storage consumption of revisions on the remote host",
 		Long: `Queries the remote storage host via SSH to display total space consumption
-and, when invoked with -v/--verbose, correlates remote revision directories with Git commits.`,
+and, when invoked with -a/--all, correlates remote revision directories with Git commits.`,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
 				return errcode.NewError(errcode.ErrUsage, "usage takes no arguments (got: %s)", args[0])
@@ -235,11 +255,9 @@ and, when invoked with -v/--verbose, correlates remote revision directories with
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts := UsageOptions{
-				Verbose:   a.Opts.Verbose,
-				Quiet:     a.Opts.Quiet,
-				CallerDir: a.WorkingDir,
-			}
+			opts.Verbose = a.Opts.Verbose
+			opts.Quiet = a.Opts.Quiet
+			opts.CallerDir = a.WorkingDir
 			_, err := RunUsage(
 				cmd.Context(),
 				a.Inspector,
@@ -254,5 +272,6 @@ and, when invoked with -v/--verbose, correlates remote revision directories with
 		},
 	}
 
+	cmd.Flags().BoolVarP(&opts.All, "all", "a", false, "Display detailed breakdown of all revisions")
 	return cmd
 }

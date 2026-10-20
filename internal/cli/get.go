@@ -153,7 +153,11 @@ func RunGet(
 	}
 
 	// 6. Download payload via rsync
-	if logger != nil {
+	var getSpinner *term.Spinner
+	if !opts.Verbose && !opts.Stats && logger != nil {
+		getSpinner = logger.StartSpinner("Getting directory revision from remote host (this might take a while)")
+		defer getSpinner.Stop()
+	} else if logger != nil {
 		logger.Info("Getting directory revision from remote host (this might take a while)")
 	}
 
@@ -169,6 +173,9 @@ func RunGet(
 
 	if err := remote.RsyncGet(ctx, syncReq); err != nil {
 		return nil, err
+	}
+	if getSpinner != nil {
+		getSpinner.Stop()
 	}
 
 	if logger != nil {

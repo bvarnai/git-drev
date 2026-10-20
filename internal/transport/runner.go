@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -130,63 +131,127 @@ func (r *ExecRemoteRunner) RemoveDir(ctx context.Context, host, remotePath strin
 
 const queryUsageScript = `set -e
 target="$1"
+mode="$2"
 if [ ! -d "$target" ]; then
     echo "ERROR:Remote path '$target' does not exist." >&2
     exit 66
 fi
 total_size=$(du -sh -- "$target" 2>/dev/null | cut -f1)
 echo "TOTAL_SIZE:${total_size:--}"
+
+rev_dirs=""
+count=0
 for d in "$target"/*; do
     [ -d "$d" ] || continue
     name=$(basename -- "$d")
     case "$name" in
         [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])
-            size=$(du -sh -- "$d" 2>/dev/null | cut -f1)
-            mtime=$(stat -c %Y -- "$d" 2>/dev/null || stat -f %m -- "$d" 2>/dev/null || echo 0)
-            echo "REV:${name}:${size:--}:${mtime:-0}"
+            count=$((count + 1))
+            rev_dirs="${rev_dirs}${d}
+"
             ;;
     esac
+done
+
+echo "COUNT:${count}"
+if [ "$mode" != "verbose" ]; then
+    printf "%s" "$rev_dirs" | while IFS= read -r d; do
+        [ -n "$d" ] || continue
+        name=$(basename -- "$d")
+        echo "REV:${name}:-:0"
+    done
+    exit 0
+fi
+
+idx=0
+printf "%s" "$rev_dirs" | while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    idx=$((idx + 1))
+    name=$(basename -- "$d")
+    size=$(du -sh -- "$d" 2>/dev/null | cut -f1)
+    mtime=$(stat -c %Y -- "$d" 2>/dev/null || stat -f %m -- "$d" 2>/dev/null || echo 0)
+    echo "REV:${name}:${size:--}:${mtime:-0}:${idx}:${count}"
 done
 `
 
 // QueryUsage executes remote storage discovery and returns total size and discovered revision directories.
-func (r *ExecRemoteRunner) QueryUsage(ctx context.Context, host, basePath string) (string, []domain.RemoteRevision, error) {
+func (r *ExecRemoteRunner) QueryUsage(ctx context.Context, host, basePath string, opts ...QueryUsageOptions) (string, []domain.RemoteRevision, error) {
 	if err := ctx.Err(); err != nil {
 		return "", nil, errcode.WrapError(errcode.ErrInterrupted, err, "operation interrupted")
 	}
 
-	cmdStr := fmt.Sprintf("/bin/sh -s -- %s", POSIXEscape(basePath))
+	var opt QueryUsageOptions
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+
+	modeArg := "summary"
+	if opt.Verbose {
+		modeArg = "verbose"
+	}
+
+	cmdStr := fmt.Sprintf("/bin/sh -s -- %s %s", POSIXEscape(basePath), POSIXEscape(modeArg))
 	cmd := exec.CommandContext(ctx, "ssh", "-T", host, cmdStr)
 	cmd.Env = sanitizedSubprocessEnv()
 	cmd.Stdin = strings.NewReader(queryUsageScript)
 	cmd.WaitDelay = 3 * time.Second
 
-	var outBuf, errBuf bytes.Buffer
-	cmd.Stdout = &outBuf
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", nil, errcode.WrapError(errcode.ErrRuntime, err, "failed to create stdout pipe")
+	}
+
+	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 
-	err := cmd.Run()
-	outStr := outBuf.String()
+	if err := cmd.Start(); err != nil {
+		return "", nil, errcode.NewError(errcode.ErrTransport, "SSH usage query start failed on host %q: %s", host, err.Error())
+	}
+
+	var lines []string
+	var totalRevs int
+	scanner := bufio.NewScanner(stdoutPipe)
+	for scanner.Scan() {
+		line := scanner.Text()
+		lines = append(lines, line)
+
+		if strings.HasPrefix(line, "COUNT:") {
+			if n, err := strconv.Atoi(strings.TrimPrefix(line, "COUNT:")); err == nil {
+				totalRevs = n
+			}
+		} else if strings.HasPrefix(line, "REV:") && opt.OnProgress != nil {
+			parts := strings.Split(strings.TrimPrefix(line, "REV:"), ":")
+			if len(parts) >= 5 {
+				curr, _ := strconv.Atoi(parts[3])
+				tot, _ := strconv.Atoi(parts[4])
+				opt.OnProgress(curr, tot, parts[0])
+			} else if len(parts) >= 1 && totalRevs > 0 {
+				opt.OnProgress(len(lines), totalRevs, parts[0])
+			}
+		}
+	}
+
+	runErr := cmd.Wait()
 	errStr := errBuf.String()
 
-	if err != nil {
+	if runErr != nil {
 		if ctx.Err() != nil {
 			return "", nil, errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "operation interrupted")
 		}
 
 		var exitErr *exec.ExitError
-		if (errors.As(err, &exitErr) && exitErr.ExitCode() == 66) || strings.Contains(errStr, "ERROR:Remote path") {
+		if (errors.As(runErr, &exitErr) && exitErr.ExitCode() == 66) || strings.Contains(errStr, "ERROR:Remote path") {
 			return "", nil, errcode.NewError(errcode.ErrRemoteNotFound, "remote path %q does not exist on host %q", basePath, host)
 		}
 
 		errMsg := strings.TrimSpace(errStr)
 		if errMsg == "" {
-			errMsg = err.Error()
+			errMsg = runErr.Error()
 		}
 		return "", nil, errcode.NewError(errcode.ErrTransport, "SSH usage query failed on host %q: %s", host, errMsg)
 	}
 
-	totalSize, revisions := ParseQueryUsageOutput(outStr)
+	totalSize, revisions := ParseQueryUsageOutput(strings.Join(lines, "\n"))
 	return totalSize, revisions, nil
 }
 
@@ -207,12 +272,12 @@ func ParseQueryUsageOutput(output string) (totalSize string, revisions []domain.
 			continue
 		}
 		if strings.HasPrefix(line, "REV:") {
-			parts := strings.SplitN(strings.TrimPrefix(line, "REV:"), ":", 3)
+			parts := strings.Split(strings.TrimPrefix(line, "REV:"), ":")
 			if len(parts) >= 2 {
 				uuid := strings.ToLower(parts[0])
 				size := parts[1]
 				var mtime time.Time
-				if len(parts) == 3 {
+				if len(parts) >= 3 {
 					if epoch, err := strconv.ParseInt(parts[2], 10, 64); err == nil && epoch > 0 {
 						mtime = time.Unix(epoch, 0)
 					}

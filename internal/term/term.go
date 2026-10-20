@@ -43,6 +43,7 @@ type Logger struct {
 	verbose   bool
 	quiet     bool
 	useColor  bool
+	isTTY     bool
 	envLookup func(key string) (string, bool)
 }
 
@@ -70,6 +71,7 @@ func New(opts Options) *Logger {
 		verbose:   opts.Verbose,
 		quiet:     opts.Quiet,
 		useColor:  useColor,
+		isTTY:     opts.IsTTY,
 		envLookup: envLookup,
 	}
 
@@ -169,6 +171,11 @@ func (l *Logger) Quiet() bool {
 // UseColor reports whether ANSI escape sequences are enabled on this logger.
 func (l *Logger) UseColor() bool {
 	return l.useColor
+}
+
+// IsTTY reports whether the underlying stderr stream is an interactive terminal.
+func (l *Logger) IsTTY() bool {
+	return l.isTTY
 }
 
 // Out writes functional data to stdout followed by a newline.

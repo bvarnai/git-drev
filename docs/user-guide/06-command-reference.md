@@ -121,9 +121,9 @@ Fetches the latest refs from `origin` and hard-resets the active local branch to
 ### `git drev usage`
 Queries the remote storage host via SSH to inspect storage consumption and optionally correlate remote revision directories against local Git history.
 
-- **Usage:** `git drev usage [-v]`
+- **Usage:** `git drev usage [-a|--all]`
 - **Flags:**
-  - `-v`, `--verbose`: Scans local Git history (`git log --all`) to correlate remote UUID directories against commits, branches, and tags, printing a 6-column table (`UUID`, `Size`, `Created`, `Commit`, `Branch/Tag`, `Message`) where unreferenced directories show `[orphaned]` in the `Commit` column.
+  - `-a`, `--all`: Scans local Git history (`git log --all`) to correlate remote UUID directories against commits, branches, and tags, printing a 6-column table (`UUID`, `Size`, `Created`, `Commit`, `Branch/Tag`, `Message`) where unreferenced directories show `[orphaned]` in the `Commit` column.
 
 ---
 

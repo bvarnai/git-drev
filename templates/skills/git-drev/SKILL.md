@@ -27,7 +27,7 @@ This skill guides the AI assistant in using `git-drev` (or `git drev`) as the un
 | **Update Metadata Only** | `git drev update` | Fetches `origin` and hard-resets the active local branch to `origin/<branch>` without downloading the directory payload. |
 | **Revision Info** | `git drev info` | Injects `GIT_DREV_*` environment variables and runs `<repo-root>/.git-drev-info-hook`. |
 | **Active Branch Name** | `git drev name` | Prints the current attached local branch name to `stdout` (or fails with exit code `4` if `HEAD` is detached). |
-| **Storage Footprint** | `git drev usage` | Calculates incremental (`Size`) and cumulative (`Cumulative`) disk usage per revision on the remote storage server via `du -sh -P`. |
+| **Storage Footprint** | `git drev usage [-a]` | Displays remote storage consumption summary, or detailed per-revision breakdown table when `-a`/`--all` is passed. |
 | **Configuration Audit** | `git drev config [--sources]` | Prints the merged 3-tier YAML configuration (`User Global -> $GIT_DREV_CONFIG -> .git-drev.yaml`), optionally annotated with provenance comments. |
 
 ---
