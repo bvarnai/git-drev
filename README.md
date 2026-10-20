@@ -128,11 +128,7 @@ git drev info
 
 ## Benchmark: Real-world Eclipse SDK builds
 
-To measure real-world transfer speed and storage deduplication, we benchmarked **5 consecutive daily [Eclipse SDK integration builds (`I-builds`)](https://download.eclipse.org/eclipse/downloads/)** (`linux-gtk-x86_64`, `I20261015-2300` through `I20261019-2300`):
-- Each build archive is **273.0 MiB** compressed (`.tar.gz`) and unpacks to **302.7 MiB** (**306M** on disk across **1,368 files**, mostly OSGi `.jar` bundles and native libraries).
-- Between consecutive daily builds, **~81% of files (1,091–1,124 files, ~262 MiB)** are byte-for-byte identical, while only **244–277 files (19–56 MiB)** actually change.
-
-### Headline comparison (5 daily builds)
+Across **5 consecutive daily [Eclipse SDK integration builds (`I-builds`)](https://download.eclipse.org/eclipse/downloads/)** (`linux-gtk-x86_64`, **306 MB unpacked** / **273 MB `.tar.gz`** across **1,368 files** per build, where ~81% of files remain identical day-to-day):
 
 | Metric | Traditional (`curl` + `tar -xzf`) | `git-drev` (`select` + `get` / `put`) | Improvement |
 | :--- | :--- | :--- | :--- |
@@ -142,41 +138,7 @@ To measure real-world transfer speed and storage deduplication, we benchmarked *
 | **Server disk space for 5 unpacked builds** | `1,530 MB` (`5 × 306 MB` unpacked) | **`483 MB`** (`cp -al` hardlinked storage) | **68.4% less storage (`3.17x` dedup)** |
 | **Server disk space vs. 5 `.tar.gz` archives** | `1,365 MB` (`5 × 273 MB` compressed) | **`483 MB`** (immediately usable directories) | **65.0% less storage than `.tar.gz`** |
 
-### Per-build breakdown
-
-| Build ID | Unpacked size (files) | Baseline: Download + Extract | Producer: `git drev put` (sent) | Consumer: `git drev select` + `get` (received) | Consumer speedup |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `I20261015-2300` *(Cold)* | `302.7 MiB` (1,368) | `19.10s` + `0.98s` = **`20.08s`** | `5.77s` (`302.9 MiB`, 1,368 files) | **`4.84s`** (`302.9 MiB`, 1,368 files) | **4.1x faster** |
-| `I20261016-2300` *(Delta)* | `302.7 MiB` (1,368) | `34.89s` + `1.01s` = **`35.90s`** | `2.40s` (`31.7 MiB`, 272 files) | **`2.15s`** (`31.7 MiB`, 272 files) | **16.7x faster** |
-| `I20261017-2300` *(Delta)* | `302.7 MiB` (1,368) | `14.68s` + `0.99s` = **`15.67s`** | `2.41s` (`33.5 MiB`, 260 files) | **`2.16s`** (`33.5 MiB`, 260 files) | **7.3x faster** |
-| `I20261018-2300` *(Delta)* | `302.7 MiB` (1,368) | `37.41s` + `0.99s` = **`38.40s`** | `2.17s` (`19.1 MiB`, 244 files) | **`2.03s`** (`19.1 MiB`, 244 files) | **18.9x faster** |
-| `I20261019-2300` *(Delta)* | `302.7 MiB` (1,368) | `12.74s` + `0.97s` = **`13.71s`** | `2.71s` (`56.3 MiB`, 277 files) | **`2.43s`** (`56.2 MiB`, 277 files) | **5.6x faster** |
-| **Total / Cumulative** | **`1,513.4 MiB`** (6,840) | **`123.75s`** (`1,364.9 MiB` `.tar.gz`) | **`15.47s`** (`443.5 MiB` total sent) | **`13.61s`** (`443.4 MiB` total received) | **9.1x faster** |
-
-### Remote storage deduplication (`git drev usage -v`)
-
-Even though all 5 revisions are stored as full, unpacked **306M** directory trees on the remote SSH server, `cp -al` hardlink cloning deduplicates unchanged files across revisions so the entire 5-build history consumes only **483M** on disk:
-
-```text
-$ git drev usage -v
-Summary:
-  Remote storage:    drs:/volume1/storage_drs/data/git-drs-benchmark
-  Total space used:  483M
-  Revisions found:   5
-
-Revisions breakdown:
-UUID                                      Size  Created              Commit      Branch/Tag            Message
-------------------------------------  --------  -------------------  ----------  --------------------  ----------------------
-0f6d2793-d87d-4dcc-9dd3-eec67425cdcf      306M  2026-10-17 01:13:29  58000a4     -                     seq: 2
-62ec298a-ed76-449b-b922-76be5f584e86      306M  2026-10-20 01:12:34  4d1b2c9     main, origin/main     seq: 5
-79aeba02-49df-48d9-85a1-208c3b78db77      306M  2026-10-19 01:12:05  aa5a9b9     -                     seq: 4
-c5e956ec-cfcd-48e2-88f7-c7fa8f85eb8c      306M  2026-10-16 01:14:04  d78f5e8     -                     seq: 1
-fe6453a6-6ba5-49c4-9821-baed6b995c18      306M  2026-10-18 01:12:36  ffc680b     -                     seq: 3
-```
-
-> [!IMPORTANT]
-> **Why `-c` (`--checksum`) is required for deduplicating rebuilt artifacts:**
-> Most CI pipelines and archive tools (including Eclipse's `.tar.gz` packager) touch the modification timestamp (`mtime`) of unchanged `.jar` or binary files on every build. Because default `rsync` checks `(size, mtime)`, changed timestamps on byte-identical files cause `rsync` to re-upload them and **break the server-side `cp -al` hardlinks** (reducing deduplication from **68.4%** to **3.4%** on Eclipse builds). Configuring `-c` (`--checksum`) in `.git-drev.yaml` (`remote.rsync.put` and `remote.rsync.get`) instructs `rsync` to compare file checksums instead of timestamps, preserving hardlinks for 100% of byte-identical files.
+See [Chapter 5: Storage architecture & retention](docs/user-guide/05-storage-and-retention.md#6-real-world-benchmark-eclipse-sdk-builds) for the full per-build breakdown and `git drev usage -v` analysis.
 
 ---
 
@@ -232,6 +194,9 @@ remote:
     get: -cz --stats
     put: -cz --whole-file --stats
 ```
+
+> [!IMPORTANT]
+> **Use `-c` (`--checksum`) when CI pipelines regenerate file timestamps:** Most build systems and archive tools touch `mtime` on unchanged files during every build. Passing `-c` in `remote.rsync.put` and `remote.rsync.get` instructs `rsync` to compare file checksums rather than timestamps, preventing `rsync` from re-uploading identical files and breaking server-side `cp -al` hardlinks.
 
 Check your effective cascading configuration anytime with:
 ```bash
