@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"git-drev/internal/domain"
-	"git-drev/internal/errcode"
+	"github.com/bvarnai/git-drev/internal/domain"
+	"github.com/bvarnai/git-drev/internal/errcode"
 )
 
 // ExecRemoteRunner executes SSH and rsync commands using system binaries.

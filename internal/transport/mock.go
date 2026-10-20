@@ -3,7 +3,7 @@ package transport
 import (
 	"context"
 
-	"git-drev/internal/domain"
+	"github.com/bvarnai/git-drev/internal/domain"
 )
 
 // MockRemoteRunner provides a configurable in-memory mock implementing RemoteRunner.

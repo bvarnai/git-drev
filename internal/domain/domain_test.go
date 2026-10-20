@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"git-drev/internal/domain"
+	"github.com/bvarnai/git-drev/internal/domain"
 )
 
 func TestUUIDValidationAndParsing(t *testing.T) {

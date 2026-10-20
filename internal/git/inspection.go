@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"git-drev/internal/domain"
-	"git-drev/internal/errcode"
+	"github.com/bvarnai/git-drev/internal/domain"
+	"github.com/bvarnai/git-drev/internal/errcode"
 )
 
 // CommitRecord represents a parsed Git commit from git log.

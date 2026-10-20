@@ -33,8 +33,8 @@ import (
 	"context"
 	"io"
 
-	"git-drev/internal/git"
-	"git-drev/internal/term"
+	"github.com/bvarnai/git-drev/internal/git"
+	"github.com/bvarnai/git-drev/internal/term"
 )
 
 // DetachedHeadDisplay is the canonical human-readable output emitted to stdout

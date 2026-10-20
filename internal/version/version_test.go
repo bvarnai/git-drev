@@ -3,7 +3,7 @@ package version_test
 import (
 	"testing"
 
-	"git-drev/internal/version"
+	"github.com/bvarnai/git-drev/internal/version"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -7,7 +7,7 @@ import (
 	"io"
 	"testing"
 
-	"git-drev/internal/errcode"
+	"github.com/bvarnai/git-drev/internal/errcode"
 )
 
 func TestExitCode(t *testing.T) {

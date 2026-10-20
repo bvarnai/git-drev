@@ -5,12 +5,12 @@ import (
 	"errors"
 	"io"
 
-	"git-drev/internal/errcode"
-	"git-drev/internal/git"
-	"git-drev/internal/hook"
-	"git-drev/internal/term"
-	"git-drev/internal/transport"
-	"git-drev/internal/version"
+	"github.com/bvarnai/git-drev/internal/errcode"
+	"github.com/bvarnai/git-drev/internal/git"
+	"github.com/bvarnai/git-drev/internal/hook"
+	"github.com/bvarnai/git-drev/internal/term"
+	"github.com/bvarnai/git-drev/internal/transport"
+	"github.com/bvarnai/git-drev/internal/version"
 	"github.com/spf13/cobra"
 )
 

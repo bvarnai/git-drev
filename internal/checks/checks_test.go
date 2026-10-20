@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"git-drev/internal/checks"
-	"git-drev/internal/domain"
-	"git-drev/internal/errcode"
-	"git-drev/internal/git"
+	"github.com/bvarnai/git-drev/internal/checks"
+	"github.com/bvarnai/git-drev/internal/domain"
+	"github.com/bvarnai/git-drev/internal/errcode"
+	"github.com/bvarnai/git-drev/internal/git"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

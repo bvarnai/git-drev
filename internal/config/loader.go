@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"git-drev/internal/domain"
-	"git-drev/internal/errcode"
+	"github.com/bvarnai/git-drev/internal/domain"
+	"github.com/bvarnai/git-drev/internal/errcode"
 	"gopkg.in/yaml.v3"
 )
 

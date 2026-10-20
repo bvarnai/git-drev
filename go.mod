@@ -1,4 +1,4 @@
-module git-drev
+module github.com/bvarnai/git-drev
 
 go 1.22
 

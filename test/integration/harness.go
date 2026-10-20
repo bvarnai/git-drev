@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	"git-drev/internal/cli"
-	"git-drev/internal/domain"
-	"git-drev/internal/git"
+	"github.com/bvarnai/git-drev/internal/cli"
+	"github.com/bvarnai/git-drev/internal/domain"
+	"github.com/bvarnai/git-drev/internal/git"
 	"gopkg.in/yaml.v3"
 )
 

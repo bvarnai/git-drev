@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"git-drev/internal/errcode"
+	"github.com/bvarnai/git-drev/internal/errcode"
 )
 
 // WildcardFetchRefspec is the canonical origin fetch refspec required so all

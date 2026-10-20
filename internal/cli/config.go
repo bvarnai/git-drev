@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"io"
 
-	"git-drev/internal/config"
-	"git-drev/internal/errcode"
-	"git-drev/internal/git"
-	"git-drev/internal/term"
+	"github.com/bvarnai/git-drev/internal/config"
+	"github.com/bvarnai/git-drev/internal/errcode"
+	"github.com/bvarnai/git-drev/internal/git"
+	"github.com/bvarnai/git-drev/internal/term"
 	"github.com/spf13/cobra"
 )
 
