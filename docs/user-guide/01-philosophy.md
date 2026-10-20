@@ -84,23 +84,34 @@ Teams typically use one of two layouts:
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Producer as Producer (CI / build machine)
+    actor Producer as Producer (CI / Build)
     participant Git as Git Remote
-    participant Storage as SSH Storage Server
-    actor Consumer as Consumer (Tester / Developer)
+    participant Storage as SSH Storage Host
+    actor Consumer as Consumer (Developer / QA)
 
-    Note over Producer: Step 1: Initialize revision branch
-    Producer->>Git: git drev create release/1.0
+    rect rgba(59, 135, 235, 0.12)
+        Note over Producer,Git: Producer runs: git drev create release/1.0
+        Producer->>Git: git checkout -b release/1.0 & git push (marker commit)
+    end
+
     Producer->>Producer: Build artifacts into workdir/
-    Note over Producer: Step 2: Publish revision
-    Producer->>Storage: cp -al -- parent_uuid new_uuid (server-side)
-    Producer->>Storage: rsync workdir/ -> new_uuid/ (deltas)
-    Producer->>Git: git commit (JSON subject) & git push
 
-    Note over Consumer: Step 3: Consume revision
-    Consumer->>Git: git drev select release/1.0
-    Consumer->>Storage: git drev get (rsync new_uuid/ -> workdir/)
-    Note over Consumer: Local workdir matches remote snapshot
+    rect rgba(229, 147, 58, 0.12)
+        Note over Producer,Storage: Producer runs: git drev put
+        Producer->>Storage: ssh: cp -al -- <parent_uuid> <new_uuid>
+        Producer->>Storage: rsync: workdir/ -> <new_uuid>/
+        Producer->>Git: git commit (JSON subject) & git push --force-with-lease
+    end
+
+    rect rgba(92, 198, 141, 0.12)
+        Note over Git,Consumer: Consumer runs: git drev select release/1.0
+        Consumer->>Git: git fetch --all & git checkout release/1.0
+    end
+
+    rect rgba(92, 198, 141, 0.12)
+        Note over Storage,Consumer: Consumer runs: git drev get
+        Consumer->>Storage: rsync: <new_uuid>/ -> workdir/
+    end
 ```
 
 ### The Producer (CI / build automation)
