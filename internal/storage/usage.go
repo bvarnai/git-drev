@@ -35,7 +35,7 @@ for d in "$target"/*; do
     [ -d "$d" ] || continue
     name=$(basename -- "$d")
     case "$name" in
-        [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])
+        [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])
             count=$((count + 1))
             rev_dirs="${rev_dirs}${d}
 "
@@ -84,38 +84,18 @@ func (c *Client) QueryUsage(ctx context.Context, host, basePath string, opts ...
 		mode = "verbose"
 	}
 
-	cmdStr := fmt.Sprintf("/bin/sh -c %s -- %s %s",
-		transport.POSIXEscape(queryUsageScript),
+	cmdStr := fmt.Sprintf("/bin/sh -s -- %s %s",
 		transport.POSIXEscape(basePath),
 		mode,
 	)
 
-	var lines []string
-	var totalRevs int
+	var totalSize string
+	var revisions []domain.RemoteRevision
 
-	errStr, runErr := c.ssh.RunStream(ctx, host, cmdStr, nil, func(stdout io.Reader) error {
-		scanner := bufio.NewScanner(stdout)
-		for scanner.Scan() {
-			line := scanner.Text()
-			lines = append(lines, line)
-
-			if strings.HasPrefix(line, "COUNT:") {
-				if n, err := strconv.Atoi(strings.TrimPrefix(line, "COUNT:")); err == nil {
-					totalRevs = n
-					if opt.OnProgress != nil {
-						opt.OnProgress(0, totalRevs, "")
-					}
-				}
-			} else if strings.HasPrefix(line, "SCAN:") && opt.OnProgress != nil {
-				parts := strings.SplitN(strings.TrimPrefix(line, "SCAN:"), ":", 3)
-				if len(parts) == 3 {
-					curr, _ := strconv.Atoi(parts[0])
-					tot, _ := strconv.Atoi(parts[1])
-					opt.OnProgress(curr, tot, parts[2])
-				}
-			}
-		}
-		return scanner.Err()
+	runErr := c.ssh.RunStream(ctx, host, cmdStr, strings.NewReader(queryUsageScript), func(stdout io.Reader) error {
+		var parseErr error
+		totalSize, revisions, parseErr = ParseUsageStream(stdout, opt.OnProgress)
+		return parseErr
 	})
 
 	if runErr != nil {
@@ -123,28 +103,32 @@ func (c *Client) QueryUsage(ctx context.Context, host, basePath string, opts ...
 			return "", nil, errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "operation interrupted")
 		}
 
-		var ec exitCoder
-		if (errors.As(runErr, &ec) && ec.ExitCode() == 66) || strings.Contains(errStr, "ERROR:Remote path") {
+		var cmdErr *transport.CommandError
+		errStr := runErr.Error()
+		exitCode := -1
+		if errors.As(runErr, &cmdErr) {
+			exitCode = cmdErr.ExitCode
+			if strings.TrimSpace(cmdErr.Stderr) != "" {
+				errStr = strings.TrimSpace(cmdErr.Stderr)
+			}
+		}
+
+		if exitCode == 66 || strings.Contains(errStr, "ERROR:Remote path") {
 			return "", nil, errcode.NewError(errcode.ErrRemoteNotFound, "remote path %q does not exist on host %q", basePath, host)
 		}
 
-		errMsg := strings.TrimSpace(errStr)
-		if errMsg == "" {
-			errMsg = runErr.Error()
-		}
-		return "", nil, errcode.NewError(errcode.ErrTransport, "SSH usage query failed on host %q: %s", host, errMsg)
+		return "", nil, errcode.NewError(errcode.ErrTransport, "SSH usage query failed on host %q: %s", host, errStr)
 	}
 
-	totalSize, revisions := ParseQueryUsageOutput(strings.Join(lines, "\n"))
 	return totalSize, revisions, nil
 }
 
-// ParseQueryUsageOutput parses standard stdout emitted by queryUsageScript.
-func ParseQueryUsageOutput(output string) (totalSize string, revisions []domain.RemoteRevision) {
+// ParseUsageStream parses standard output emitted by queryUsageScript directly from r in a single pass.
+func ParseUsageStream(r io.Reader, onProgress func(current, total int, uuid string)) (totalSize string, revisions []domain.RemoteRevision, err error) {
 	totalSize = "-"
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
 		}
@@ -152,6 +136,23 @@ func ParseQueryUsageOutput(output string) (totalSize string, revisions []domain.
 			totalSize = strings.TrimPrefix(line, "TOTAL_SIZE:")
 			if totalSize == "" {
 				totalSize = "-"
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "COUNT:") {
+			if n, err := strconv.Atoi(strings.TrimPrefix(line, "COUNT:")); err == nil && onProgress != nil {
+				onProgress(0, n, "")
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "SCAN:") {
+			if onProgress != nil {
+				parts := strings.SplitN(strings.TrimPrefix(line, "SCAN:"), ":", 3)
+				if len(parts) == 3 {
+					curr, _ := strconv.Atoi(parts[0])
+					tot, _ := strconv.Atoi(parts[1])
+					onProgress(curr, tot, parts[2])
+				}
 			}
 			continue
 		}
@@ -174,5 +175,11 @@ func ParseQueryUsageOutput(output string) (totalSize string, revisions []domain.
 			}
 		}
 	}
+	return totalSize, revisions, scanner.Err()
+}
+
+// ParseQueryUsageOutput parses standard stdout emitted by queryUsageScript string.
+func ParseQueryUsageOutput(output string) (totalSize string, revisions []domain.RemoteRevision) {
+	totalSize, revisions, _ = ParseUsageStream(strings.NewReader(output), nil)
 	return totalSize, revisions
 }

@@ -10,7 +10,7 @@ The following flags are accepted by the root `git-drev` command and all subcomma
 
 | Flag | Short | Type | Description |
 | :--- | :--- | :--- | :--- |
-| `--verbose` | `-v` | `bool` | Enable verbose diagnostic logging (`[git-drev] [debug]`) and detailed command/transfer output. Mutually exclusive with `--quiet`. |
+| `--verbose` | `-v` | `bool` | Enable verbose operational logging and detailed command/transfer output. Mutually exclusive with `--quiet`. |
 | `--quiet` | `-q` | `bool` | Suppress informational progress and status logs, emitting only errors or strict machine-parseable output. Mutually exclusive with `--verbose`. |
 | `--no-color` | — | `bool` | Disable ANSI color styling on `stdout` and `stderr` regardless of TTY status. |
 | `--version` | — | `bool` | Print semantic version, commit hash, and build information to `stdout` and exit `0`. |

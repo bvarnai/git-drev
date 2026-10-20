@@ -56,11 +56,7 @@ func NewApp(stdout, stderr io.Writer, runner git.Runner) *App {
 	}
 
 	if runner == nil {
-		runner = git.NewExecRunner(func(gitCmd string) {
-			if app.Logger != nil {
-				app.Logger.Debugf("executing: %s", gitCmd)
-			}
-		})
+		runner = git.NewExecRunner()
 	}
 	app.Runner = runner
 	app.Inspector = git.NewInspector(runner)

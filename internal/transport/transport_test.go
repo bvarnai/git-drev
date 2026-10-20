@@ -1,6 +1,7 @@
 package transport_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/bvarnai/git-drev/internal/errcode"
@@ -97,29 +98,30 @@ func TestBuildRsyncArgs(t *testing.T) {
 	t.Parallel()
 
 	t.Run("validation of required fields", func(t *testing.T) {
-		_, err := transport.BuildRsyncArgs(transport.RsyncOptions{Host: "", RemotePath: "/path", LocalPath: "/local"}, true)
+		_, err := transport.BuildRsyncArgs(transport.RsyncOptions{Host: "", RemotePath: "/path", LocalPath: "/local"})
 		require.Error(t, err)
 		assert.Equal(t, errcode.ExitConfig, errcode.ExitCode(err))
 
-		_, err = transport.BuildRsyncArgs(transport.RsyncOptions{Host: "host", RemotePath: "", LocalPath: "/local"}, true)
+		_, err = transport.BuildRsyncArgs(transport.RsyncOptions{Host: "host", RemotePath: "", LocalPath: "/local"})
 		require.Error(t, err)
 		assert.Equal(t, errcode.ExitConfig, errcode.ExitCode(err))
 
-		_, err = transport.BuildRsyncArgs(transport.RsyncOptions{Host: "host", RemotePath: "/path", LocalPath: ""}, true)
+		_, err = transport.BuildRsyncArgs(transport.RsyncOptions{Host: "host", RemotePath: "/path", LocalPath: ""})
 		require.Error(t, err)
 		assert.Equal(t, errcode.ExitUsage, errcode.ExitCode(err))
 	})
 
 	t.Run("Rsync upload argument construction", func(t *testing.T) {
 		opts := transport.RsyncOptions{
-			Host:        "backup.example.com",
-			RemotePath:  "/storage/repo/uuid/",
-			LocalPath:   "/work/data/",
-			Verbose:     true,
-			Stats:       true,
-			UserOptions: `--exclude="*.tmp" --bwlimit=5000`,
+			Host:       "backup.example.com",
+			RemotePath: "/storage/repo/uuid/",
+			LocalPath:  "/work/data/",
+			IsUpload:   true,
+			Verbose:    true,
+			Stats:      true,
+			ExtraArgs:  []string{`--exclude=*.tmp`, `--bwlimit=5000`},
 		}
-		args, err := transport.BuildRsyncArgs(opts, true)
+		args, err := transport.BuildRsyncArgs(opts)
 		require.NoError(t, err)
 
 		expected := []string{
@@ -142,9 +144,10 @@ func TestBuildRsyncArgs(t *testing.T) {
 			Host:       "backup.example.com",
 			RemotePath: "/storage/repo/uuid/",
 			LocalPath:  "/work/data/",
+			IsUpload:   false,
 			Quiet:      true,
 		}
-		args, err := transport.BuildRsyncArgs(opts, false)
+		args, err := transport.BuildRsyncArgs(opts)
 		require.NoError(t, err)
 
 		expected := []string{
@@ -158,22 +161,26 @@ func TestBuildRsyncArgs(t *testing.T) {
 		}
 		assert.Equal(t, expected, args)
 	})
+}
 
-	t.Run("Rsync upload rejects in-place mutation options that corrupt hardlinked baselines", func(t *testing.T) {
-		for _, badOpt := range []string{"--inplace", "--append", "--append-verify"} {
-			opts := transport.RsyncOptions{
-				Host:        "backup.example.com",
-				RemotePath:  "/storage/repo/uuid/",
-				LocalPath:   "/work/data/",
-				UserOptions: "-z " + badOpt,
-			}
-			_, err := transport.BuildRsyncArgs(opts, true)
-			require.Error(t, err, "expected %s to be rejected on put", badOpt)
-			assert.Equal(t, errcode.ExitConfig, errcode.ExitCode(err))
+func TestCommandError(t *testing.T) {
+	t.Parallel()
 
-			// Allowed on download (local workdir is not hardlinked across revisions)
-			_, getErr := transport.BuildRsyncArgs(opts, false)
-			require.NoError(t, getErr, "expected %s to be allowed on get", badOpt)
-		}
-	})
+	cmdErr := &transport.CommandError{
+		Command:  "ssh",
+		Args:     []string{"-T", "host1", "test -d '/path'"},
+		ExitCode: 1,
+		Stderr:   "directory not found",
+	}
+
+	assert.Contains(t, cmdErr.Error(), "ssh -T host1 test -d '/path' failed (exit 1): directory not found")
+	assert.True(t, errors.Is(cmdErr, errcode.ErrTransport))
+
+	code, ok := transport.ExitCodeOf(cmdErr)
+	assert.True(t, ok)
+	assert.Equal(t, 1, code)
+
+	otherErr := errors.New("regular error")
+	_, ok = transport.ExitCodeOf(otherErr)
+	assert.False(t, ok)
 }

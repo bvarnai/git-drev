@@ -79,15 +79,13 @@ func ExitCodeOf(err error) (int, bool) {
 
 // ExecRunner implements Runner using os/exec with LC_ALL=C and non-interactive safeguards.
 type ExecRunner struct {
-	DebugFn    func(cmd string)
 	BaseEnv    []string
 	BinaryPath string
 }
 
 // NewExecRunner creates a new ExecRunner.
-func NewExecRunner(debugFn func(cmd string)) *ExecRunner {
+func NewExecRunner() *ExecRunner {
 	return &ExecRunner{
-		DebugFn:    debugFn,
 		BinaryPath: "git",
 	}
 }
@@ -139,10 +137,6 @@ func (r *ExecRunner) RunStream(ctx context.Context, dir string, stdout, stderr i
 	resolvedBin, lookErr := exec.LookPath(binName)
 	if lookErr != nil {
 		return errcode.WrapError(errcode.ErrTransport, lookErr, "Required binary %q not found in $PATH", binName)
-	}
-
-	if r.DebugFn != nil {
-		r.DebugFn("git " + strings.Join(args, " "))
 	}
 
 	cmd := exec.CommandContext(ctx, resolvedBin, args...)

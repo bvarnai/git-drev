@@ -205,22 +205,6 @@ func (l *Logger) Infof(format string, args ...any) {
 	l.Info(fmt.Sprintf(format, args...))
 }
 
-// Debug emits `[git-drev] [debug] <msg>` to stderr only when Verbose is enabled and Quiet is false.
-func (l *Logger) Debug(msg string) {
-	if !l.verbose || l.quiet {
-		return
-	}
-	l.writeLine(fmt.Sprintf("%s [debug] %s", Prefix, msg))
-}
-
-// Debugf emits a formatted `[git-drev] [debug] <msg>` line to stderr only when Verbose is enabled.
-func (l *Logger) Debugf(format string, args ...any) {
-	if !l.verbose || l.quiet {
-		return
-	}
-	l.Debug(fmt.Sprintf(format, args...))
-}
-
 // Warn emits `[git-drev] Warning: <msg>` to stderr.
 func (l *Logger) Warn(msg string) {
 	if l.useColor {

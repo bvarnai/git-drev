@@ -114,7 +114,6 @@ func TestLoggerOutputFormatsAndQuiet(t *testing.T) {
 		})
 
 		logger.Infof("Checking branch '%s'", "main")
-		logger.Debug("Verbose diagnostic")
 		logger.Warn("Something minor")
 		logger.Hint("Use -v for details")
 
@@ -125,7 +124,6 @@ func TestLoggerOutputFormatsAndQuiet(t *testing.T) {
 		lines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 		wantLines := []string{
 			"[git-drev] Checking branch 'main'",
-			"[git-drev] [debug] Verbose diagnostic",
 			"[git-drev] Warning: Something minor",
 			"[git-drev] Hint: Use -v for details",
 			"[git-drev] Error: Detached HEAD state detected, aborting",
@@ -141,7 +139,7 @@ func TestLoggerOutputFormatsAndQuiet(t *testing.T) {
 		}
 	})
 
-	t.Run("quiet mode suppresses Info and Debug but keeps Warn and Error", func(t *testing.T) {
+	t.Run("quiet mode suppresses Info and Hint but keeps Warn and Error", func(t *testing.T) {
 		var buf bytes.Buffer
 		logger := term.New(term.Options{
 			Stderr:    &buf,
@@ -151,7 +149,6 @@ func TestLoggerOutputFormatsAndQuiet(t *testing.T) {
 		})
 
 		logger.Info("suppressed info")
-		logger.Debug("suppressed debug")
 		logger.Hint("suppressed informational hint")
 		logger.Error("fatal failure")
 

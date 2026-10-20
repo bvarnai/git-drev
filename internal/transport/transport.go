@@ -2,6 +2,8 @@ package transport
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -12,27 +14,68 @@ import (
 
 // SSHRunner executes remote commands over SSH.
 type SSHRunner interface {
-	Run(ctx context.Context, host, cmd string) (stdout string, stderr string, err error)
-	RunStream(ctx context.Context, host, cmd string, stdin io.Reader, stdoutPipe func(io.Reader) error) (stderr string, err error)
+	Run(ctx context.Context, host, cmd string) (string, error)
+	RunStream(ctx context.Context, host, cmd string, stdin io.Reader, stdoutPipe func(io.Reader) error) error
 }
 
 // RsyncOptions holds parameters for an rsync execution.
 type RsyncOptions struct {
-	Host        string
-	RemotePath  string
-	LocalPath   string
-	IsUpload    bool
-	Verbose     bool
-	Quiet       bool
-	Stats       bool
-	UserOptions string
-	Stdout      io.Writer
-	Stderr      io.Writer
+	Host       string
+	RemotePath string
+	LocalPath  string
+	IsUpload   bool
+	Verbose    bool
+	Quiet      bool
+	Stats      bool
+	ExtraArgs  []string
+	Stdout     io.Writer
+	Stderr     io.Writer
 }
 
 // RsyncRunner executes rsync synchronization.
 type RsyncRunner interface {
 	Sync(ctx context.Context, opts RsyncOptions) error
+}
+
+// CommandError captures the exit code, command, and output streams of a failed subprocess execution.
+type CommandError struct {
+	Command  string
+	Args     []string
+	ExitCode int
+	Stdout   string
+	Stderr   string
+	Cause    error
+}
+
+// Error formats the failed command invocation and its stderr/stdout output.
+func (e *CommandError) Error() string {
+	cmdStr := e.Command
+	if len(e.Args) > 0 {
+		cmdStr += " " + strings.Join(e.Args, " ")
+	}
+	out := strings.TrimSpace(e.Stderr)
+	if out == "" {
+		out = strings.TrimSpace(e.Stdout)
+	}
+	if out != "" {
+		return fmt.Sprintf("%s failed (exit %d): %s", cmdStr, e.ExitCode, out)
+	}
+	return fmt.Sprintf("%s failed (exit %d)", cmdStr, e.ExitCode)
+}
+
+// Unwrap allows errors.Is(err, errcode.ErrTransport) to match CommandError.
+func (e *CommandError) Unwrap() error {
+	return errcode.ErrTransport
+}
+
+// ExitCodeOf extracts the process exit code from err if it wraps a *CommandError,
+// or returns (-1, false) otherwise.
+func ExitCodeOf(err error) (int, bool) {
+	var cmdErr *CommandError
+	if errors.As(err, &cmdErr) {
+		return cmdErr.ExitCode, true
+	}
+	return -1, false
 }
 
 // POSIXEscape returns a single-quoted POSIX-safe representation of s.

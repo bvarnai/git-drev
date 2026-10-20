@@ -3,11 +3,13 @@ package transport
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/bvarnai/git-drev/internal/errcode"
@@ -22,7 +24,7 @@ func NewRsyncRunner() *ExecRsyncRunner {
 }
 
 // BuildRsyncArgs constructs sanitized, deterministic rsync command arguments.
-func BuildRsyncArgs(opts RsyncOptions, isPut bool) ([]string, error) {
+func BuildRsyncArgs(opts RsyncOptions) ([]string, error) {
 	if opts.Host == "" {
 		return nil, errcode.NewError(errcode.ErrConfig, "remote host is not configured")
 	}
@@ -50,28 +52,13 @@ func BuildRsyncArgs(opts RsyncOptions, isPut bool) ([]string, error) {
 		args = append(args, "--stats")
 	}
 
-	if strings.TrimSpace(opts.UserOptions) != "" {
-		tokens, err := TokenizeOptions(opts.UserOptions)
-		if err != nil {
-			return nil, err
-		}
-
-		if isPut {
-			for _, opt := range tokens {
-				switch opt {
-				case "--inplace", "--append", "--append-verify":
-					return nil, errcode.NewError(errcode.ErrConfig, "rsync option %q is not allowed in remote.rsync.put because it mutates hardlinked baseline revisions in-place", opt).
-						WithHint("Remove %q from remote.rsync.put so rsync replaces modified files atomically.", opt)
-				}
-			}
-		}
-
-		args = append(args, tokens...)
+	if len(opts.ExtraArgs) > 0 {
+		args = append(args, opts.ExtraArgs...)
 	}
 
 	remoteSpec := fmt.Sprintf("%s:%s", opts.Host, opts.RemotePath)
 
-	if isPut {
+	if opts.IsUpload {
 		args = append(args, opts.LocalPath, remoteSpec)
 	} else {
 		args = append(args, remoteSpec, opts.LocalPath)
@@ -86,7 +73,7 @@ func (r *ExecRsyncRunner) Sync(ctx context.Context, opts RsyncOptions) error {
 		return errcode.WrapError(errcode.ErrInterrupted, err, "operation interrupted")
 	}
 
-	args, err := BuildRsyncArgs(opts, opts.IsUpload)
+	args, err := BuildRsyncArgs(opts)
 	if err != nil {
 		return err
 	}
@@ -94,6 +81,12 @@ func (r *ExecRsyncRunner) Sync(ctx context.Context, opts RsyncOptions) error {
 	cmd := exec.CommandContext(ctx, "rsync", args...)
 	cmd.Env = SanitizedSubprocessEnv()
 	cmd.WaitDelay = 3 * time.Second
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		return cmd.Process.Signal(syscall.SIGTERM)
+	}
 
 	var errBuf bytes.Buffer
 	if opts.Verbose || opts.Stats {
@@ -124,9 +117,16 @@ func (r *ExecRsyncRunner) Sync(ctx context.Context, opts RsyncOptions) error {
 		errMsg = runErr.Error()
 	}
 
-	op := "get"
-	if opts.IsUpload {
-		op = "put"
+	var exitErr *exec.ExitError
+	if errors.As(runErr, &exitErr) {
+		return &CommandError{
+			Command:  "rsync",
+			Args:     args,
+			ExitCode: exitErr.ExitCode(),
+			Stderr:   errMsg,
+			Cause:    runErr,
+		}
 	}
-	return errcode.NewError(errcode.ErrTransport, "rsync %s failed: %s", op, errMsg)
+
+	return errcode.WrapError(errcode.ErrTransport, runErr, "rsync failed: %s", errMsg)
 }
