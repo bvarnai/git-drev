@@ -65,15 +65,15 @@ remote:
   host: storage-server
   path: /srv/drev/my-project
   rsync:
-    get: -cz --stats
-    put: -cz --whole-file --stats
+    get: -c
+    put: -c
 ```
 
 > [!IMPORTANT]
-> **Always use `-c` (`--checksum`) when build systems regenerate file timestamps:**
-> By default, `rsync -a` uses a fast `(size, mtime)` check to decide whether a file has changed. However, most CI pipelines, clean builds, and archive unpackers (`tar`, `zip`, Maven/Gradle/Tycho) update the modification timestamp (`mtime`) of every output file—even when 80–95% of the compiled `.jar`s, libraries, or assets are byte-for-byte identical to the previous build.
->
-> Without `-c` (`--checksum`), `rsync` treats every file with a newer timestamp as modified, re-transfers it, and replaces the file on the remote host—**breaking the `cp -al` hardlinks** created during baseline cloning and eliminating storage deduplication. Passing `-c` (`--checksum`) in `remote.rsync.put` and `remote.rsync.get` instructs `rsync` to compare file checksums instead of timestamps, ensuring 100% of byte-identical files retain their shared hardlinked inodes on the server and are skipped over the network.
+> **Choosing whether to include `-c` (`--checksum`):**
+> `git-drev` does not hardcode `-c` by default because checksummed transfers must read every file of matching size from disk on both client and server. Choose based on how your files are produced:
+> - **CI / clean builds & unpacked archives (`get: -c`, `put: -c` — recommended):** Clean builds and archive unpackers (`tar`, `zip`, Maven/Gradle/Tycho) update the modification timestamp (`mtime`) of every output file even when 80–95% of the compiled `.jar`s, libraries, or assets are byte-for-byte identical. Without `-c`, `rsync` treats every file with a newer timestamp as modified, re-transfers it, and replaces the file on the remote host—**breaking the `cp -al` hardlinks** created during baseline cloning and eliminating storage deduplication.
+> - **Incremental local builds & static datasets (omit `-c`):** If your workflow preserves `mtime` on unchanged files (or manages multi-gigabyte media trees where reading every file to compute checksums is too slow), omit `-c` so `rsync` uses its fast `(size, mtime)` check.
 
 ### Implicit & recommended flags explained
 `git-drev` always passes `-a --delete-during -e "ssh -T"` before appending your custom `get` or `put` options:
