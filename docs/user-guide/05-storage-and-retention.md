@@ -123,59 +123,89 @@ UUID                                  Size  Created     Commit      Branch/Tag  
 
 ## 5. Automated retention management
 
-Because hardlinks are reference-counted by the filesystem kernel, running `rm -rf` on an old `<uuid>` directory is completely safe: any inode still referenced by a newer revision remains intact on disk, and disk blocks are freed only when the last revision pointing to an inode is removed.
+Because hardlinks are reference-counted by the filesystem kernel, running `rm -rf` on an old `<uuid>` directory is completely safe: any inode still referenced by a newer revision remains intact on disk, and disk blocks are freed only when the last revision pointing to an inode is removed. Even when an old binary directory is pruned on the storage server, its metadata commit and any tracked build logs or manifests remain in Git history permanently.
 
-Teams typically combine two retention rules:
-1. **Orphan removal:** Delete any `<uuid>` directory not referenced by any commit in Git.
-2. **Sliding-window pruning (optional):** Prune binary snapshots for commits older than $N$ days (e.g., 30 days), while **always keeping** the latest commit (`HEAD`) of every branch and every Git tag so active branches always have a valid baseline for `cp -al` and `get`. (Even when an old binary directory is pruned, its commit and any tracked build logs remain in Git forever.)
+Because retention policies vary across teams and projects, `git-drev` provides a ready-to-use, customizable server-side script in [`scripts/cleanup.sh`](../../scripts/cleanup.sh).
 
-### Server-side retention cleanup script (`cleanup.sh`)
+### Retention rules in [`scripts/cleanup.sh`](../../scripts/cleanup.sh)
+The script inspects a bare clone of your Git metadata repository on the storage server and applies the following rules:
+1. **Last $N$ commits per open branch (`--commits`, default: `5`):** Always retains the latest $N$ commits on every active branch (`refs/heads/*` and `refs/remotes/*`), guaranteeing that even dormant branches keep their recent snapshots and `cp -al` baselines.
+2. **Sliding time window (`--days`, default: `30`):** Retains all commits authored within the last $M$ days on any active branch.
+3. **Tagged releases:** Never deletes revision directories referenced by any Git tag (both lightweight and annotated tags). Only the tagged commits themselves are pinned (`git rev-list --no-walk --tags`), allowing older untagged builds before a release tag to age out normally.
+4. **Branch marker baselines:** If a newly created branch (`git drev create`) only has an initial marker commit (`"msg":"created from <parent_uuid>"`), the script protects `<parent_uuid>` so the branch's server-side baseline is never deleted before its first `git drev put`.
+5. **Deleted branches & orphans:** Once a branch is deleted in Git, its commits are automatically dropped from the keep list and purged on the next cleanup run (unless retained by another active branch or tag).
+
+### CLI usage
 ```bash
-#!/usr/bin/env bash
-# cleanup.sh - Prune orphaned and expired git-drev revisions while preserving branch tips & tags
-set -euo pipefail
-
-STORAGE_PATH="/srv/drev/my-project"
-GIT_REPO_PATH="/srv/git/my-project.git"
-RETENTION_DAYS="${RETENTION_DAYS:-30}"
-
-echo "=== Starting git-drev retention cleanup (window: ${RETENTION_DAYS} days) ==="
-
-# 1. Collect UUIDs from commits within the retention window PLUS all current branch tips and tags
-mapfile -t KEEP_UUIDS < <(
-  {
-    git --git-dir="${GIT_REPO_PATH}" log --all --since="${RETENTION_DAYS} days ago" --format=%s
-    git --git-dir="${GIT_REPO_PATH}" for-each-ref --format='%(subject)' refs/heads/ refs/tags/
-  } | grep -oE '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' \
-    | tr '[:upper:]' '[:lower:]' \
-    | sort -u
-)
-
-echo "Retaining ${#KEEP_UUIDS[@]} active revision UUIDs."
-
-# 2. Remove UUID directories not in KEEP_UUIDS
-for dir in "${STORAGE_PATH}"/*; do
-  [[ -d "${dir}" ]] || continue
-  uuid=$(basename "${dir}" | tr '[:upper:]' '[:lower:]')
-
-  if [[ "${uuid}" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
-    if ! printf '%s\n' "${KEEP_UUIDS[@]}" | grep -qx "${uuid}"; then
-      echo "Removing expired/orphaned revision: ${uuid}"
-      rm -rf -- "${dir}"
-    fi
-  fi
-done
-
-echo "=== Cleanup completed ==="
+./scripts/cleanup.sh [options] <git-dir> <storage-dir>
 ```
 
-### Scheduling with cron
-Set up a weekly cron job on the storage server:
+| Flag | Default | Description |
+| :--- | :--- | :--- |
+| `-n`, `--dry-run` | `false` | Preview which revision directories would be deleted without modifying the filesystem. |
+| `-d`, `--days <N>` | `30` | Retain all commits from the last `<N>` days on open branches (`0` to disable time window). |
+| `-c`, `--commits <N>` | `5` | Retain the latest `<N>` commits on each open branch (`0` to disable commit count window). |
+| `-h`, `--help` | - | Display usage and cron configuration instructions. |
 
+---
+
+### Step-by-step server setup (GitHub / GitLab + Cron)
+
+When your metadata repository is hosted on GitHub or GitLab, configure your storage server with a **dedicated read-only Deploy Key** so a nightly cron job can fetch branch/tag updates and run [`scripts/cleanup.sh`](../../scripts/cleanup.sh) without sharing client write credentials:
+
+```mermaid
+flowchart TD
+    Client["git-drev client"] -->|"Write SSH key (ssh / rsync)"| Storage["Storage server (/srv/drev/storage)"]
+    Cron["Nightly cron job"] -->|"Triggers"| Script["scripts/cleanup.sh"]
+    Script -->|"1. git fetch --prune (Read-only Deploy Key)"| GitHost["GitHub / GitLab metadata repo"]
+    Script -->|"2. Prunes expired UUID directories"| Storage
+```
+
+#### Step 1: Generate a dedicated read-only SSH key on the storage server
+Log in to your storage server and generate a passphrase-less key dedicated to fetching metadata:
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/github_drev_readonly -N "" -C "git-drev-server-cleanup"
+```
+
+#### Step 2: Register the public key as a read-only Deploy Key
+1. Display the public key:
+   ```bash
+   cat ~/.ssh/github_drev_readonly.pub
+   ```
+2. In your GitHub metadata repository, navigate to **Settings → Deploy keys → Add deploy key**.
+3. Paste the public key and **leave "Allow write access" unchecked** so the storage server has strictly read-only access to Git metadata.
+
+#### Step 3: Configure an SSH host alias on the storage server
+Add a host alias to `~/.ssh/config` on the storage server so `git fetch` uses the read-only deploy key:
+```ssh-config
+Host github.com-drev
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/github_drev_readonly
+    IdentitiesOnly yes
+```
+
+#### Step 4: Create a bare clone of the metadata repository
+Clone the metadata repository onto the storage server using the SSH host alias:
+```bash
+git clone --bare git@github.com-drev:myorg/myproject-meta.git /srv/drev/myproject-meta.git
+```
+
+#### Step 5: Verify with `--dry-run` and schedule via Cron
+First, test the fetch and cleanup in dry-run mode:
+```bash
+git --git-dir=/srv/drev/myproject-meta.git fetch origin '+refs/heads/*:refs/heads/*' --prune --tags
+/srv/drev/cleanup.sh --dry-run --days 30 --commits 5 /srv/drev/myproject-meta.git /srv/drev/storage/myproject
+```
+
+Then add a nightly job to `crontab -e`:
 ```cron
-# Run retention cleanup every Sunday at 03:00 AM
-0 3 * * 0 /usr/local/bin/drev-cleanup.sh >> /var/log/drev-cleanup.log 2>&1
+# Fetch pruned branches/tags and purge expired revisions every night at 02:00 AM
+0 2 * * * git --git-dir=/srv/drev/myproject-meta.git fetch origin '+refs/heads/*:refs/heads/*' --prune --tags && /srv/drev/cleanup.sh --days 30 --commits 5 /srv/drev/myproject-meta.git /srv/drev/storage/myproject >> /var/log/git-drev-cleanup.log 2>&1
 ```
+
+> [!TIP]
+> **Why Separate SSH Keys Matter:** Clients connect to the storage server using their SSH keys in `authorized_keys`, while the storage server connects outbound to GitHub using its read-only deploy key (`github_drev_readonly`). Rotating or revoking a developer's SSH key on the storage server never disrupts automated retention cleanup.
 
 ---
 
