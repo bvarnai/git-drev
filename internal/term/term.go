@@ -15,6 +15,9 @@ import (
 // Prefix is the canonical operational log prefix emitted on stderr.
 const Prefix = "[git-drev]"
 
+// ColorEnvVar is the environment variable controlling ANSI color output.
+const ColorEnvVar = "GIT_DREV_COLOR"
+
 // ANSI SGR color escape sequences.
 const (
 	ansiReset   = "\x1b[0m"
@@ -26,6 +29,7 @@ const (
 
 // Options configures a Logger instance.
 type Options struct {
+	Stdin       io.Reader
 	Stdout      io.Writer
 	Stderr      io.Writer
 	Verbose     bool
@@ -39,6 +43,7 @@ type Options struct {
 // to stderr, and provides stream and terminal formatting utilities.
 type Logger struct {
 	mu        sync.Mutex
+	stdin     io.Reader
 	stdout    io.Writer
 	stderr    io.Writer
 	verbose   bool
@@ -51,6 +56,10 @@ type Logger struct {
 // New constructs a Logger from Options, evaluating color policy and emitting a
 // warning to stderr if GIT_DREV_COLOR contains an unrecognized value.
 func New(opts Options) *Logger {
+	stdin := opts.Stdin
+	if stdin == nil {
+		stdin = os.Stdin
+	}
 	stdout := opts.Stdout
 	if stdout == nil {
 		stdout = os.Stdout
@@ -67,6 +76,7 @@ func New(opts Options) *Logger {
 	useColor, invalidColorVal := ResolveColorPolicy(opts.NoColorFlag, opts.IsTTY, envLookup)
 
 	l := &Logger{
+		stdin:     stdin,
 		stdout:    stdout,
 		stderr:    stderr,
 		verbose:   opts.Verbose,
@@ -77,7 +87,7 @@ func New(opts Options) *Logger {
 	}
 
 	if invalidColorVal != "" {
-		l.Warnf("Invalid GIT_DREV_COLOR value %q; falling back to \"auto\"", invalidColorVal)
+		l.Warnf("Invalid %s value %q; falling back to \"auto\"", ColorEnvVar, invalidColorVal)
 	}
 	return l
 }
@@ -110,7 +120,7 @@ func ResolveColorPolicy(noColorFlag bool, isTTY bool, envLookup func(string) (st
 		envLookup = os.LookupEnv
 	}
 
-	rawColor, hasColorEnv := envLookup("GIT_DREV_COLOR")
+	rawColor, hasColorEnv := envLookup(ColorEnvVar)
 	trimmedColor := strings.TrimSpace(rawColor)
 	lowerColor := strings.ToLower(trimmedColor)
 
@@ -147,6 +157,11 @@ func ResolveColorPolicy(noColorFlag bool, isTTY bool, envLookup func(string) (st
 	}
 
 	return isTTY, invalidColorVal
+}
+
+// Stderr returns the underlying stderr io.Writer.
+func (l *Logger) Stderr() io.Writer {
+	return l.stderr
 }
 
 // Writer returns the underlying stderr io.Writer.
@@ -191,25 +206,30 @@ func (l *Logger) Out(format string, args ...any) {
 }
 
 // Info emits `[git-drev] <msg>` to stderr unless Quiet is enabled.
-func (l *Logger) Info(msg string) {
+func (l *Logger) Info(format string, args ...any) {
 	if l.quiet {
 		return
+	}
+	msg := format
+	if len(args) > 0 {
+		msg = fmt.Sprintf(format, args...)
 	}
 	l.writeLine(fmt.Sprintf("%s %s", Prefix, msg))
 }
 
 // Infof emits a formatted `[git-drev] <msg>` line to stderr unless Quiet is enabled.
 func (l *Logger) Infof(format string, args ...any) {
-	if l.quiet {
-		return
-	}
-	l.Info(fmt.Sprintf(format, args...))
+	l.Info(format, args...)
 }
 
 // Debug emits `[git-drev] Debug: <msg>` to stderr if verbose mode is enabled.
-func (l *Logger) Debug(msg string) {
+func (l *Logger) Debug(format string, args ...any) {
 	if !l.verbose {
 		return
+	}
+	msg := format
+	if len(args) > 0 {
+		msg = fmt.Sprintf(format, args...)
 	}
 	if l.useColor {
 		l.writeLine(fmt.Sprintf("%s %sDebug: %s%s", Prefix, ansiMagenta, msg, ansiReset))
@@ -220,14 +240,15 @@ func (l *Logger) Debug(msg string) {
 
 // Debugf emits a formatted `[git-drev] Debug: <msg>` line to stderr if verbose mode is enabled.
 func (l *Logger) Debugf(format string, args ...any) {
-	if !l.verbose {
-		return
-	}
-	l.Debug(fmt.Sprintf(format, args...))
+	l.Debug(format, args...)
 }
 
 // Warn emits `[git-drev] Warning: <msg>` to stderr.
-func (l *Logger) Warn(msg string) {
+func (l *Logger) Warn(format string, args ...any) {
+	msg := format
+	if len(args) > 0 {
+		msg = fmt.Sprintf(format, args...)
+	}
 	if l.useColor {
 		l.writeLine(fmt.Sprintf("%s %sWarning: %s%s", Prefix, ansiYellow, msg, ansiReset))
 		return
@@ -237,20 +258,24 @@ func (l *Logger) Warn(msg string) {
 
 // Warnf emits a formatted `[git-drev] Warning: <msg>` line to stderr.
 func (l *Logger) Warnf(format string, args ...any) {
-	l.Warn(fmt.Sprintf(format, args...))
+	l.Warn(format, args...)
 }
 
 // Hint emits `[git-drev] Hint: <msg>` to stderr unless Quiet is enabled.
-func (l *Logger) Hint(msg string) {
+func (l *Logger) Hint(format string, args ...any) {
 	if l.quiet {
 		return
 	}
-	l.HintAlways(msg)
+	l.HintAlways(format, args...)
 }
 
 // HintAlways emits `[git-drev] Hint: <msg>` to stderr even when Quiet is enabled
 // (used for error remediation hints attached to fatal errors).
-func (l *Logger) HintAlways(msg string) {
+func (l *Logger) HintAlways(format string, args ...any) {
+	msg := format
+	if len(args) > 0 {
+		msg = fmt.Sprintf(format, args...)
+	}
 	if l.useColor {
 		l.writeLine(fmt.Sprintf("%s %sHint: %s%s", Prefix, ansiCyan, msg, ansiReset))
 		return
@@ -259,7 +284,11 @@ func (l *Logger) HintAlways(msg string) {
 }
 
 // Error emits `[git-drev] Error: <msg>` to stderr (never suppressed by Quiet).
-func (l *Logger) Error(msg string) {
+func (l *Logger) Error(format string, args ...any) {
+	msg := format
+	if len(args) > 0 {
+		msg = fmt.Sprintf(format, args...)
+	}
 	if l.useColor {
 		l.writeLine(fmt.Sprintf("%s %sError: %s%s", Prefix, ansiRed, msg, ansiReset))
 		return
@@ -269,7 +298,7 @@ func (l *Logger) Error(msg string) {
 
 // Errorf emits a formatted `[git-drev] Error: <msg>` line to stderr (never suppressed by Quiet).
 func (l *Logger) Errorf(format string, args ...any) {
-	l.Error(fmt.Sprintf(format, args...))
+	l.Error(format, args...)
 }
 
 // LogError emits `[git-drev] Error: <err>` and, if err carries an errcode.Hint, follows it
