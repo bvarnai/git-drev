@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/bvarnai/git-drev/internal/command"
 	"github.com/bvarnai/git-drev/internal/errcode"
 )
 
@@ -76,7 +77,7 @@ func (r *ExecRsyncRunner) Sync(ctx context.Context, opts RsyncOptions) error {
 		return err
 	}
 
-	cmd := NewCommand(ctx, "rsync", args...)
+	cmd := command.New(ctx, "rsync", args...)
 
 	var errBuf bytes.Buffer
 	if opts.Verbose || opts.Stats {
@@ -109,7 +110,7 @@ func (r *ExecRsyncRunner) Sync(ctx context.Context, opts RsyncOptions) error {
 
 	var exitErr *exec.ExitError
 	if errors.As(runErr, &exitErr) {
-		return NewCommandError(cmd, exitErr, "", errMsg)
+		return command.NewError(cmd, exitErr, "", errMsg, errcode.ErrTransport)
 	}
 
 	return errcode.WrapError(errcode.ErrTransport, runErr, "rsync failed: %s", errMsg)

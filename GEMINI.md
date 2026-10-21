@@ -9,13 +9,14 @@
   - `internal/domain/`: Pure Go value types (`ProjectConfig`, `BranchConfig`, `RemoteConfig`, `RsyncConfig`, `RevisionMeta`, `RemoteRevision`, `ZeroUUID`). Depends only on Go stdlib.
   - `internal/errcode/`: Sentinel error categories (`ErrRuntime`=1, `ErrUsage`=2, `ErrConfig`/`ErrNotRepository`=3, `ErrGitState`/`ErrDetachedHead`=4, `ErrGitExec`=5, `ErrRemoteNotFound`=6, `ErrTransport`=7, `ErrInterrupted`=130). Depends only on Go stdlib.
   - `internal/config/`: 3-tier YAML configuration loader (`loader.go`), cascading merger (`merge.go`), provenance reporter (`report.go`), and schema validator.
+  - `internal/command/`: Low-level subprocess execution primitives (`New`), environment sanitization (`SanitizedEnv`), and structured exit error representation (`Error`, `ExitCodeOf`).
   - `internal/git/`: Thin `Runner` interface (`Run`, `RunLines`, `RunWithEnv`, `RunStream`), `Inspector` (read-only plumbing inspection), and `Operations` (mutating Git operations).
   - `internal/transport/`: Generic SSH (`SSHRunner`) and rsync (`RsyncRunner`) execution engine.
   - `internal/storage/`: Remote revision storage manager (`Manager`, `Client`), directory management, baseline hardlinking, and usage discovery.
   - `internal/hook/`: Project hook runner (`.git-drev-put-hook`, `.git-drev-info-hook`) with timeout (`GIT_DREV_HOOK_TIMEOUT`, default `5m`) and `GIT_DREV_*` environment injection.
   - `internal/term/`: Structured `stderr` logger, TTY/`NO_COLOR`/`GIT_DREV_COLOR` detection, and decoupled `Timer`.
   - `test/integration/`: End-to-end integration tests using isolated Git repositories in `t.TempDir()`.
-- **Dependency Boundaries:** `internal/config`, `internal/git`, `internal/transport`, `internal/storage`, and `internal/hook` may depend on `domain`, `errcode`, and `term`, but NEVER on `internal/cli`.
+- **Dependency Boundaries:** `internal/command`, `internal/config`, `internal/git`, `internal/transport`, `internal/storage`, and `internal/hook` may depend on `domain`, `errcode`, and `term`, but NEVER on `internal/cli`.
 
 ## Coding Standards & Idioms
 In accordance with the [Google Go Style Guide](https://google.github.io/styleguide/go/guide) and `docs/spec/global.md`:

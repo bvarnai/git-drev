@@ -7,14 +7,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"strings"
-	"syscall"
-	"time"
 
+	"github.com/bvarnai/git-drev/internal/command"
 	"github.com/bvarnai/git-drev/internal/errcode"
 )
 
@@ -44,9 +41,9 @@ func (e *CommandError) Error() string {
 	cmd := "git " + strings.Join(e.Args, " ")
 	out := e.CombinedOutput()
 	if out != "" {
-		return fmt.Sprintf("%s failed (exit %d): %s", cmd, e.ExitCode, out)
+		return cmd + " failed (exit " + strings.TrimSpace(command.ExitCodeString(e.ExitCode)) + "): " + out
 	}
-	return fmt.Sprintf("%s failed (exit %d)", cmd, e.ExitCode)
+	return cmd + " failed (exit " + command.ExitCodeString(e.ExitCode) + ")"
 }
 
 // Unwrap allows errors.Is(err, errcode.ErrGitExec) to match CommandError by default.
@@ -67,14 +64,18 @@ func (e *CommandError) CombinedOutput() string {
 	return o
 }
 
-// ExitCodeOf extracts the process exit code from err if it wraps a *CommandError,
-// or returns (-1, false) otherwise.
+// ExitCodeOf extracts the process exit code from err if it wraps a *CommandError or *command.Error.
 func ExitCodeOf(err error) (int, bool) {
-	var cmdErr *CommandError
-	if errors.As(err, &cmdErr) {
-		return cmdErr.ExitCode, true
+	var gitErr *CommandError
+	if errors.As(err, &gitErr) {
+		return gitErr.ExitCode, true
 	}
-	return -1, false
+	return command.ExitCodeOf(err)
+}
+
+// BuildSanitizedEnv constructs a child process environment with mandatory overrides.
+func BuildSanitizedEnv(baseEnv []string, extraEnv ...[]string) []string {
+	return command.SanitizedEnv(baseEnv, extraEnv...)
 }
 
 // ExecRunner implements Runner using os/exec with LC_ALL=C and non-interactive safeguards.
@@ -139,23 +140,13 @@ func (r *ExecRunner) RunStream(ctx context.Context, dir string, stdout, stderr i
 		return errcode.WrapError(errcode.ErrTransport, lookErr, "Required binary %q not found in $PATH", binName)
 	}
 
-	cmd := exec.CommandContext(ctx, resolvedBin, args...)
+	cmd := command.New(ctx, resolvedBin, args...)
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	cmd.Env = BuildSanitizedEnv(r.BaseEnv, extraEnv)
+	cmd.Env = command.SanitizedEnv(r.BaseEnv, extraEnv)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	cmd.WaitDelay = 3 * time.Second
-	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
-			return cmd.Process.Kill()
-		}
-		return nil
-	}
 
 	runErr := cmd.Run()
 	if runErr != nil {
@@ -164,51 +155,16 @@ func (r *ExecRunner) RunStream(ctx context.Context, dir string, stdout, stderr i
 		}
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) {
-			var cmdArgs []string
-			if len(cmd.Args) > 1 {
-				cmdArgs = append([]string(nil), cmd.Args[1:]...)
-			}
+			baseErr := command.NewError(cmd, exitErr, "", "", errcode.ErrGitExec)
 			return &CommandError{
-				Args:     cmdArgs,
-				ExitCode: exitErr.ExitCode(),
+				Args:     baseErr.Args,
+				ExitCode: baseErr.ExitCode,
+				Stdout:   baseErr.Stdout,
+				Stderr:   baseErr.Stderr,
 				Cause:    runErr,
 			}
 		}
 		return errcode.WrapError(errcode.ErrTransport, runErr, "failed to execute %s", binName)
 	}
 	return nil
-}
-
-// BuildSanitizedEnv constructs a child process environment from baseEnv (or os.Environ()
-// if baseEnv is nil), appends extraEnv, and enforces mandatory overrides per
-// docs/spec/global.md Section 2: LC_ALL=C, LANG=C, GIT_TERMINAL_PROMPT=0, and GIT_ADVICE=0.
-func BuildSanitizedEnv(baseEnv []string, extraEnv ...[]string) []string {
-	if baseEnv == nil {
-		baseEnv = os.Environ()
-	}
-	combined := make([]string, 0, len(baseEnv)+8)
-	combined = append(combined, baseEnv...)
-	for _, extra := range extraEnv {
-		combined = append(combined, extra...)
-	}
-
-	filtered := make([]string, 0, len(combined)+4)
-	for _, entry := range combined {
-		k, _, ok := strings.Cut(entry, "=")
-		if !ok {
-			continue
-		}
-		switch k {
-		case "LC_ALL", "LANG", "GIT_TERMINAL_PROMPT", "GIT_ADVICE":
-			continue
-		default:
-			filtered = append(filtered, entry)
-		}
-	}
-	return append(filtered,
-		"LC_ALL=C",
-		"LANG=C",
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_ADVICE=0",
-	)
 }
