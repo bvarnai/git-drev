@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -49,6 +50,9 @@ func commitWithDate(t *testing.T, f *RepoFixture, msg string, commitTime time.Ti
 }
 
 func TestCleanupScript(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("server-side retention script (cleanup.sh) requires a Linux host environment")
+	}
 	t.Parallel()
 
 	f := NewRepoFixture(t)

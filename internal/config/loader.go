@@ -20,9 +20,13 @@ const (
 
 // FindUserConfigFile searches for user-level global configuration in $HOME.
 func FindUserConfigFile() string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return ""
+	home := os.Getenv("HOME")
+	if home == "" {
+		var err error
+		home, err = os.UserHomeDir()
+		if err != nil || home == "" {
+			return ""
+		}
 	}
 
 	candidates := []string{

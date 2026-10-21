@@ -25,6 +25,7 @@ type RepoFixture struct {
 	BaseDir    string
 	OriginDir  string
 	WorkDir    string
+	StorageDir string
 	RemotePath string
 	Env        []string
 }
@@ -36,6 +37,9 @@ func NewRepoFixture(tb testing.TB) *RepoFixture {
 	tb.Helper()
 
 	baseDir := tb.TempDir()
+	if resolved, err := filepath.EvalSymlinks(baseDir); err == nil {
+		baseDir = resolved
+	}
 	originDir := filepath.Join(baseDir, "origin.git")
 	workDir := filepath.Join(baseDir, "work")
 	remoteStorageDir := filepath.Join(baseDir, "remote-storage")
@@ -49,12 +53,18 @@ func NewRepoFixture(tb testing.TB) *RepoFixture {
 
 	env := IsolatedGitEnv(homeDir)
 
+	remotePath := filepath.ToSlash(remoteStorageDir)
+	if !strings.HasPrefix(remotePath, "/") {
+		remotePath = "/remote-storage"
+	}
+
 	f := &RepoFixture{
 		T:          tb,
 		BaseDir:    baseDir,
 		OriginDir:  originDir,
 		WorkDir:    workDir,
-		RemotePath: filepath.ToSlash(remoteStorageDir),
+		StorageDir: remoteStorageDir,
+		RemotePath: remotePath,
 		Env:        env,
 	}
 
@@ -166,7 +176,7 @@ func (f *RepoFixture) NewApp(stdout, stderr io.Writer) *cli.App {
 	runner.BaseEnv = f.Env
 	app := cli.NewApp(stdout, stderr, runner)
 	app.WorkingDir = f.WorkDir
-	app.Storage = NewLocalRemoteRunner(f.BaseDir)
+	app.Storage = NewLocalRemoteRunner(f.BaseDir, f.StorageDir, f.RemotePath)
 	return app
 }
 
@@ -189,6 +199,7 @@ func (f *RepoFixture) CloneReplica(name string) *RepoFixture {
 		BaseDir:    f.BaseDir,
 		OriginDir:  f.OriginDir,
 		WorkDir:    replicaDir,
+		StorageDir: f.StorageDir,
 		RemotePath: f.RemotePath,
 		Env:        f.Env,
 	}

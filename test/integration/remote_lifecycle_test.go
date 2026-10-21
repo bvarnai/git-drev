@@ -44,8 +44,8 @@ func TestRemoteLifecycle_PutGetUsageWorkflow(t *testing.T) {
 		t.Fatalf("expected seq 100, got %q", meta.Seq)
 	}
 
-	// Verify remote storage received files under f.RemotePath/<uuid>/
-	remoteRevDir := filepath.Join(f.RemotePath, meta.UUID)
+	// Verify remote storage received files under f.StorageDir/<uuid>/
+	remoteRevDir := filepath.Join(f.StorageDir, meta.UUID)
 	data, err := os.ReadFile(filepath.Join(remoteRevDir, "model.bin"))
 	if err != nil {
 		t.Fatalf("remote file model.bin missing: %v", err)
@@ -117,7 +117,7 @@ func TestRemoteLifecycle_PutGetUsageWorkflow(t *testing.T) {
 
 	// 6. Test orphaned directory detection in usage
 	orphanedUUID := "11111111-2222-3333-4444-555555555555"
-	orphanedDir := filepath.Join(f.RemotePath, orphanedUUID)
+	orphanedDir := filepath.Join(f.StorageDir, orphanedUUID)
 	if err := os.MkdirAll(orphanedDir, 0o755); err != nil {
 		t.Fatalf("mkdir orphaned: %v", err)
 	}
@@ -288,8 +288,8 @@ func TestRemoteLifecycle_MarkerCommitReusesParentBaseline(t *testing.T) {
 	}
 
 	// Verify that data/large.bin on the remote was hardlinked from mainMeta.UUID
-	srcFile := filepath.Join(f.RemotePath, mainMeta.UUID, "large.bin")
-	dstFile := filepath.Join(f.RemotePath, branchMeta.UUID, "large.bin")
+	srcFile := filepath.Join(f.StorageDir, mainMeta.UUID, "large.bin")
+	dstFile := filepath.Join(f.StorageDir, branchMeta.UUID, "large.bin")
 	fiSrc, err := os.Stat(srcFile)
 	if err != nil {
 		t.Fatalf("stat src file: %v", err)

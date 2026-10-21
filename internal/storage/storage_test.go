@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -238,6 +239,9 @@ func TestQueryUsage(t *testing.T) {
 	})
 
 	t.Run("executes queryUsageScript via sh matching 8-4-4-4-12 UUIDs", func(t *testing.T) {
+		if runtime.GOOS != "linux" {
+			t.Skip("server-side POSIX/Linux queryUsageScript test runs on linux")
+		}
 		shBin, lookErr := exec.LookPath("sh")
 		if lookErr != nil {
 			t.Skip("sh not available in PATH")
