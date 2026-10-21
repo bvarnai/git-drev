@@ -240,7 +240,7 @@ info_hook() {
 		hookFile := filepath.Join(tempDir, "timeout-hook.sh")
 		content := `
 info_hook() {
-  while true; do :; done
+  sleep 5 >/dev/null 2>&1
 }
 `
 		require.NoError(t, os.WriteFile(hookFile, []byte(content), 0o644))
@@ -263,7 +263,7 @@ info_hook() {
 		hookFile := filepath.Join(tempDir, "interrupt-hook.sh")
 		content := `
 info_hook() {
-  while true; do :; done
+  sleep 5 >/dev/null 2>&1
 }
 `
 		require.NoError(t, os.WriteFile(hookFile, []byte(content), 0o644))
