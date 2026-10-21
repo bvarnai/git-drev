@@ -20,7 +20,7 @@ type QueryUsageOptions struct {
 	// Detailed enables per-revision size and mtime scanning via SSH du and stat.
 	Detailed bool
 	// Verbose is preserved for backward compatibility and treated as Detailed if true.
-	Verbose bool
+	Verbose    bool
 	OnProgress func(current, total int, uuid string)
 }
 
