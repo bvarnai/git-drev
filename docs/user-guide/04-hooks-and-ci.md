@@ -149,7 +149,7 @@ pipeline {
             steps {
                 sshagent(['storage-server-key']) {
                     sh '''
-                        git drev put -s "${BUILD_NUMBER}" --stats
+                        git drev put -s "${BUILD_NUMBER}"
                     '''
                 }
             }
@@ -193,5 +193,5 @@ jobs:
 
       - name: Publish Revision
         run: |
-          git drev put -s "${{ github.run_number }}" --stats
+          git drev put -s "${{ github.run_number }}"
 ```

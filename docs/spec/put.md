@@ -137,7 +137,7 @@ func RunPut(ctx context.Context, env PutEnv, opts PutOptions) (*PutResult, error
    - Query the current `HEAD` commit subject via `env.Insp.HeadCommitMeta(ctx, RepoRoot)` (`git log -n 1 --format=%s HEAD --`).
    - If `HEAD` exists, its subject parses as valid `domain.RevisionMeta`, `meta.UUID` matches RFC 4122 hex format, and `meta.UUID != domain.ZeroUUID`:
      - Register a deferred rollback flag `remoteStagingCreated = true` so that if `put` fails or is interrupted before the commit is pushed, a best-effort remote cleanup can remove `<remote.path>/<uuid>` if needed (or leave cleanup on interruption).
-     - Invoke `env.Remote.CloneBaseline(ctx, cfg.Remote.Host, srcPath, dstPath)` where `srcPath = path.Join(cfg.Remote.Path, meta.UUID)` and `dstPath = path.Join(cfg.Remote.Path, uuid)`.
+     - Invoke `env.Storage.CloneBaseline(ctx, cfg.Remote.Host, cfg.Remote.Path, meta.UUID, uuid)`.
      - If `CloneBaseline` succeeds, set `result.BaselineUUID = meta.UUID` and log `[git-drev] Baseline revision uuid is '<last_uuid>'`.
      - If `CloneBaseline` returns an error (e.g., previous revision was purged on the server or `HEAD` was an initial commit without a remote directory), treat it as a non-fatal fallback and log `[git-drev] Unable to use previous revision, doing a full copy`.
    - Otherwise (unparseable `HEAD`, empty repository, or `meta.UUID == domain.ZeroUUID`), skip SSH `cp` and log `[git-drev] Unable to use previous revision, doing a full copy`.
@@ -194,7 +194,7 @@ func RunPut(ctx context.Context, env PutEnv, opts PutOptions) (*PutResult, error
    - When `ctx.Done()` fires during step 2 (`CloneBaseline`) or step 3 (`Upload`), the active `ssh` or `rsync` subprocess is terminated (`SIGTERM` followed by `SIGKILL` after 3s).
    - A deferred cleanup handler runs with a detached `context.WithTimeout(context.Background(), 10*time.Second)` to execute `env.Remote.RemoveRevision(cleanupCtx, cfg.Remote.Host, cfg.Remote.Path, uuid)` (`ssh -T <host> rm -rf -- '<path>/<uuid>'`) if any remote files were staged before the commit was created, preventing orphaned half-uploaded directories on the server.
 - **No premature index pollution:**
-   - Unlike legacy `put.sh` (which ran `git add --all` before `rsync`), `git-drev put` does not touch the Git index until after `rsync` and `.git-drev-put-hook` succeed. If `rsync` or the hook fails, the local Git index and commit history remain untouched.
+   - `git-drev put` does not touch the Git index until after `rsync` and `.git-drev-put-hook` succeed. If `rsync` or the hook fails, the local Git index and commit history remain untouched.
 - **Rebase abort guarantee:**
    - If `git rebase --strategy-option=theirs` fails or is interrupted during stale-push recovery, `git rebase --abort` is invoked via a cleanup `defer` before returning the error so the repository is never left mid-rebase.
 
@@ -268,26 +268,7 @@ func RunPut(ctx context.Context, env PutEnv, opts PutOptions) (*PutResult, error
 | `git push --force-with-lease` fails with non-stale error or exceeds `MaxPushRetries` | `errcode.ErrGitExec` | `5` | `[git-drev] Error: Push failed: <detail>` |
 | Process receives `SIGINT` or `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[git-drev] Error: Operation interrupted` |
 
-## 7. Legacy Modernization & Edge Cases
-
-### Fixed Legacy Quirks
-1. **Broken `--no-sequence-check` Double `shift` (`legacy/put.sh:56-60`):**
-   - *Legacy bug:* The `--no-sequence-check` case executed `shift` before AND after setting `sequence_check="false"`, silently swallowing the subsequent CLI argument (such as `-s <seq>` or `<source_directory>`).
-   - *Modernized resolution:* Parsed via a typed boolean flag; consumes zero positional arguments.
-2. **Broken Single-Iteration Stale Push Loop (`legacy/put.sh:207-252`):**
-   - *Legacy bug:* At the end of `while [[ -n "${stale}" ]]`, line 251 unconditionally executed `stale=`, overwriting `stale="true"` set on line 243 when the second `git push` also hit a stale-info rejection. Thus, a second concurrent push collision silently exited `0` without pushing the local commit!
-   - *Modernized resolution:* Deterministic `for attempt := 1; attempt <= MaxPushRetries; attempt++` loop that only exits `0` when `PushForceWithLease` succeeds or when `DroppedOlder` resets to a newer remote sequence.
-3. **Premature `git add --all` Index Pollution (`legacy/put.sh:105` & `180`):**
-   - *Legacy bug:* `put.sh` ran `git add --all` before `rsync` and again after `put_hook`. If `rsync` failed, unstaged files in the working tree were left staged in the Git index.
-   - *Modernized resolution:* `git add --all` runs strictly once, after `rsync` and `.git-drev-put-hook` have both succeeded.
-4. **Baseline Clone Attempt on `ZeroUUID` Marker Commits (`legacy/put.sh:126-128`):**
-   - *Legacy bug:* After `git-drev create`, the initial marker commit has `"uuid":"00000000-0000-0000-0000-000000000000"`, which matches `$DRS_UUID_REGEXP`. Legacy `put.sh` always wasted an SSH round-trip trying to `cp -R -a /path/00000000-...` on the remote server.
-   - *Modernized resolution:* Explicitly check `meta.UUID != domain.ZeroUUID` before attempting `CloneBaseline`.
-5. **Unvalidated `--sequence` & Bash Arithmetic Injection (`legacy/put.sh:220`):**
-   - *Legacy bug:* `--sequence` was not validated until `(( sequence < last_sequence ))` inside the stale-push handler, where non-numeric input in `sequence` caused Bash arithmetic syntax errors or variable evaluation.
-   - *Modernized resolution:* Validate `--sequence` upfront during flag parsing using `strconv.ParseUint(s, 10, 64)`.
-6. **Typo in Error & Log Messages (`legacy/put.sh:96, 186`):**
-   - *Legacy quirk:* Fixed `"does not exists"` -> `"does not exist"` and `"Commiting"` -> `"Committing"`.
+## 7. Edge Cases & Boundary Conditions
 
 ### Boundary Conditions
 - **Symlinks:**

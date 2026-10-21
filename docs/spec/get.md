@@ -142,7 +142,7 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
      - Call `deps.Remote.HasRevision(ctx, deps.Config.Remote.Host, deps.Config.Remote.Path, uuid)`.
      - If an SSH transport error occurs (exit status `255` or connection failure), return `ErrTransport` (exit code `7`).
      - If the remote directory does not exist (`exists == false`), return `ErrRemoteNotFound` (exit code `6`) with error message `Unable to find revision '<uuid>' on remote host` and remediation hint `Revision might be gone already (that's normal depending on your retention policy)`.
-     - *(Ordering improvement over legacy `get.sh`: verifying remote revision existence before calling `MkdirAll` prevents leaving behind an empty newly created `<target_directory>` when the remote revision has expired or been purged.)*
+     - *(Verifying remote revision existence before calling `MkdirAll` prevents leaving behind an empty newly created `<target_directory>` when the remote revision has expired or been purged.)*
    - **Step 2.5: Prepare local target directory:**
      - Inspect `opts.TargetDir` via `deps.FS.Stat(opts.TargetDir)`.
      - If it exists and `!info.IsDir()`, return `ErrRuntime` (exit code `1`) with message `Target path '<path>' exists and is not a directory`.
@@ -187,19 +187,18 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
   | `ssh -T <host> sh -c 'test -d "$1"' -- <remote.path>/<uuid>` | `RepoRoot` | Empty (`0` if directory exists, `1` if missing, `255` on SSH error) | Exit `1` $\rightarrow$ `ErrRemoteNotFound` (exit `6`); exit `255`/other $\rightarrow$ `ErrTransport` (exit `7`) |
   | `rsync [implicit-flags] [user-flags] -e "ssh -T" -- <host>:<remote.path>/<uuid>/ <target_dir>/` | `RepoRoot` | Progress/stats stream routed to `stderr` | Non-zero exit $\rightarrow$ `ErrTransport` (exit `7`) |
 
-  - **Implicit `rsync` flag construction order:**
-    1. Verbosity/progress flags:
-       - If `--quiet` (`-q`): `--quiet`
-       - Else: `--info=progress2` (if `stderr` is a TTY) and, if `--verbose` (`-v`) is set, `-v --itemize-changes`
-    2. Statistics flag:
-       - If `--stats`: `--stats`
-    3. Core archive & deletion flags:
+  - **Implicit `rsync` flag construction order (`transport.BuildRsyncArgs`):**
+    1. Core archive & deletion flags:
        - `-a --delete-during`
-    4. User-configured flags (appended last so user overrides win):
-       - Tokenized `remote.rsync.get`.
-    5. Transport & path arguments:
+    2. Transport flag:
        - `-e`, `<resolved-ssh-command>` (default `ssh -T` or `$GIT_DREV_SSH_COMMAND`)
-       - `--`
+    3. Verbosity & statistics flags:
+       - If `--verbose` (`-v`): `-v`
+       - If `--quiet` (`-q`): `-q`
+       - If `--stats`: `--stats`
+    4. User-configured flags (appended after implicit flags so user overrides win):
+       - Tokenized `remote.rsync.get`.
+    5. Path arguments:
        - `<host>:<remote.path>/<uuid>/`
        - `<target_directory>/`
 
@@ -245,27 +244,7 @@ func RunGet(ctx context.Context, deps GetDeps, opts GetOptions) (GetResult, erro
 | SSH connection failure or `rsync` subprocess non-zero exit | `errcode.ErrTransport` | `7` | `[git-drev] Error: Unable to get directory revision: <ssh/rsync error>` |
 | Execution canceled via `SIGINT` or `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[git-drev] Error: Operation interrupted` |
 
-## 7. Legacy Modernization & Edge Cases
-
-- **Fixed legacy quirks:**
-  1. **Detached `HEAD` corruption with `--latest` (`legacy/get.sh:78-83`):**
-     - *Legacy bug:* `legacy/get.sh` omitted `drs::common::precondition_detached` when `--latest` was passed and ran `branch=$(git rev-parse --abbrev-ref HEAD)` followed by `git reset --hard "origin/${branch}"`. In a detached `HEAD` state, `git rev-parse --abbrev-ref HEAD` outputs `"HEAD"`, causing `git reset --hard origin/HEAD` to silently reset the user's detached `HEAD` to the remote's default branch (`origin/main`) instead of failing!
-     - *Modernized fix:* When `--latest` is passed, `git-drev get` explicitly verifies `git symbolic-ref --quiet --short HEAD` first and fails with `ErrDetachedHead` (exit code `4`) if `HEAD` is detached, while continuing to allow detached `HEAD` when `--latest` is not passed.
-  2. **Premature `<target_directory>` creation before remote probe (`legacy/get.sh:109-126`):**
-     - *Legacy bug:* `legacy/get.sh` ran `mkdir -p "$1"` at line 111 *before* checking `ssh "${host}" "[ -d ${path}/${uuid} ]"` at line 122. If the remote revision had been purged by retention cleanup, `get.sh` left behind an empty newly created `<target_directory>` on disk.
-     - *Modernized fix:* `git-drev get` probes remote revision existence first (Step 2.4) and only creates `<target_directory>` (Step 2.5) after confirming the remote revision exists.
-  3. **Empty branch marker error routed to `stdout` (`legacy/get.sh:96-99`):**
-     - *Legacy bug:* When `marker == "true"`, `get.sh` called `drs::common::log "No directory revision available yet on current branch"` (which wrote to `stdout`) and then exited `1`.
-     - *Modernized fix:* Emits a structured error `[git-drev] Error: No directory revision available yet on current branch` to `stderr` and exits with code `4` (`ErrGitState`).
-  4. **Shell word-splitting on `<target_directory>` and `$rsyncOptions` (`legacy/get.sh:58,64,156`):**
-     - *Legacy bug:* `eval set -- "${params}"` split `<target_directory>` arguments containing spaces and silently discarded any words after `$1`; unquoted `rsync $rsyncOptions` expanded shell globs against the local working directory.
-     - *Modernized fix:* Positional arguments are validated for exact cardinality (`0..1`) without shell evaluation, and `rsync` arguments are passed directly as a `[]string` slice to `exec.CommandContext`.
-  5. **Unsafe remote shell interpolation (`legacy/get.sh:122`):**
-     - *Legacy bug:* `ssh "${host}" "[ -d ${path}/${uuid} ]"` interpolated `${path}` and `${uuid}` into a remote shell string without quoting.
-     - *Modernized fix:* Strictly validates `uuid` as RFC 4122 hex and passes the remote path as a positional parameter to `sh -c 'test -d "$1"' -- <remotePath>`.
-  6. **Stdout pollution from `rsync` (`legacy/get.sh:156`):**
-     - *Legacy bug:* `rsync` wrote `--info=progress2`, `--itemize-changes`, and `--stats` to `stdout` alongside `drs::common::log`.
-     - *Modernized fix:* Both `term.Logger` and the `rsync` subprocess `cmd.Stdout` are bound to `stderr` so `stdout` remains clean.
+## 7. Edge Cases & Boundary Conditions
 
 - **Boundary conditions:**
   - **Subdirectory invocation (`GIT_PREFIX`):** If a user invokes `git-drev get ./my-output` from `<repo-root>/sub/dir`, `<target_directory>` resolves to `<repo-root>/sub/dir/my-output`, whereas omitting `<target_directory>` always resolves `workdir` to `<repo-root>/<workdir>`.

@@ -15,7 +15,7 @@
 
 - **Positional arguments:**
   - **Cardinality:** Exact `0` positional arguments.
-  - **Validation rules:** Unlike legacy `drs::common::no_args` (which logged a warning to `stdout` and silently ignored unexpected positional arguments), passing any positional argument to `git drev update` MUST fail immediately with `errcode.ErrUsage` (exit code `2`) before performing any Git or network operations.
+  - **Validation rules:** Passing any positional argument to `git drev update` MUST fail immediately with `errcode.ErrUsage` (exit code `2`) before performing any Git or network operations.
 
 - **Preconditions & state assertions:**
   1. **Argument & Flag Validation:** Verify no positional arguments or unknown flags are present, and global flags (`--verbose` and `--quiet`) are not mutually exclusively set.
@@ -138,26 +138,12 @@ func RunUpdate(
 | `git` binary missing from `$PATH` | `errcode.ErrTransport` | `7` | `[git-drev] Error: Required binary 'git' not found in PATH` |
 | Context canceled via `SIGINT` or `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[git-drev] Error: Operation interrupted` |
 
-## 7. Legacy Modernization & Edge Cases
-- **Fixed legacy quirks:**
-  1. **Destructive `drs::common::check_remote_refs` (`common.sh:266-294`):**
-     - *Legacy bug:* `update.sh` called `drs::common::check_remote_refs`, which unconditionally ran `git config --unset-all remote.origin.fetch` and then looped over each prior refspec running `git ls-remote --exit-code origin` over the network before re-adding it. If the network dropped during `update`, `.git/config` was left with **zero fetch refspecs**, breaking subsequent `git fetch` calls.
-     - *Modernized behavior:* `EnsureRemoteFetchConfig` performs a non-destructive local config check and idempotently adds `+refs/heads/*:refs/remotes/origin/*` if absent; `git fetch --all --prune` handles pruning stale remote-tracking branches atomically in a single network connection.
-  2. **Silent Ignored Positional Arguments & `eval set --` Injection (`common.sh:211-243`):**
-     - *Legacy bug:* `drs::common::no_args` accumulated positional arguments into `params="${params} $1"`, evaluated `eval set -- "${params}"` (exposing shell metacharacter/glob expansion bugs), and if arguments were passed (e.g., `git drs-update mybranch` when the user confused `update` with `select`), printed `[drs] This command takes no argument(s), please check your input` to `stdout` and **proceeded to `git reset --hard` the current branch anyway**!
-     - *Modernized behavior:* Any positional argument is rejected before any state mutation with `errcode.ErrUsage` (exit code `2`) on `stderr`.
-  3. **Ambiguous Branch Name Resolution (`update.sh:29`, `update.sh:31`):**
-     - *Legacy bug:* `update.sh` resolved the branch via `git rev-parse --abbrev-ref HEAD` and passed `"origin/${branch}"` to `git reset --hard`. If a repository contained a local tag or directory named `origin/<branch>`, Git ref disambiguation could resolve the wrong object or treat it as a pathspec without `--`.
-     - *Modernized behavior:* Uses `git symbolic-ref --quiet --short HEAD` for unambiguous branch extraction, verifies `refs/remotes/origin/<branch>` via `git show-ref --verify --quiet`, and passes the full canonical ref `refs/remotes/origin/<branch> --` to `git reset --hard`.
-  4. **Subdirectory Invocation Failure (`common.sh:172-178`):**
-     - *Legacy bug:* `update.sh` checked `[[ ! -f "drs.json" ]]` relative to the current working directory without calling `git rev-parse --show-toplevel`, failing whenever invoked from a subdirectory via `$DRS_HOME/update.sh`.
-     - *Modernized behavior:* Resolves `RepoRoot` via `git rev-parse --show-toplevel` at startup and locates `.git-drev.yaml` at `RepoRoot`.
-
+## 7. Edge Cases & Boundary Conditions
 - **Boundary conditions:**
   - **Hierarchical branch names (`feature/foo/bar`):** `git symbolic-ref --quiet --short HEAD` preserves slashes (`feature/foo/bar`), and `refs/remotes/origin/feature/foo/bar` resolves accurately.
   - **Branch names starting with `-` or containing special characters:** Passing canonical `refs/remotes/origin/<branch>` followed by `--` to `git reset --hard` prevents leading-dash option injection and ref/path ambiguity.
   - **Subdirectory invocation (`GIT_PREFIX`):** Works identically whether invoked from `<repo-root>` or any nested subdirectory (including inside `workdir`).
-  - **Uncommitted tracked metadata modifications:** Because `origin` takes precedence in `git-drev` (see `docs/legacy/README.md` "Origin has precedence"), `git reset --hard refs/remotes/origin/<branch> --` intentionally discards uncommitted changes to tracked metadata files while leaving untracked/gitignored directories (such as `workdir`) intact.
+  - **Uncommitted tracked metadata modifications:** Because `origin` takes precedence in `git-drev`, `git reset --hard refs/remotes/origin/<branch> --` intentionally discards uncommitted changes to tracked metadata files while leaving untracked/gitignored directories (such as `workdir`) intact.
   - **Detached `HEAD` state:** Checked before `EnsureRemoteFetchConfig` or `FetchAll` so that no network call is wasted when `HEAD` is detached.
 
 ## 8. Black-Box Verification Scenarios
@@ -165,6 +151,6 @@ func RunUpdate(
 | :--- | :--- | :--- | :--- |
 | `TC-01` | Local repo with valid `.git-drev.yaml` is on branch `main` at commit `A`. Remote `origin/main` has advanced to commit `B`. Tracked file `env.json` has local uncommitted edits; gitignored `data/build.bin` exists locally. | `git-drev update` | Exit code `0`.<br>`stdout`: empty.<br>`stderr`: contains `[git-drev] Updating branch 'main' to origin/main`.<br>Repo state: `HEAD` and `refs/heads/main` point to commit `B`; `env.json` matches commit `B`; `data/build.bin` remains intact. |
 | `TC-02` | Local repo with valid `.git-drev.yaml` is in detached `HEAD` state (e.g., checked out at a specific revision UUID or tag). | `git-drev update` | Exit code `4` (`ErrDetachedHead`).<br>`stdout`: empty.<br>`stderr`: contains `[git-drev] Error: Detached HEAD state detected, aborting` and `[git-drev] Hint: Use "git-drev select <branch>" to select a branch first.`.<br>Repo state: `HEAD` remains unchanged; no `git fetch` or `git reset` is executed. |
-| `TC-03` | Local repo is on branch `main`, and the user accidentally passes a branch name argument (`feature-x`). | `git-drev update feature-x` | Exit code `2` (`ErrUsage`).<br>`stdout`: empty.<br>`stderr`: contains `[git-drev] Error: update takes no positional arguments`.<br>Repo state: `HEAD` and working tree remain completely untouched (unlike legacy `drs-update` which warned and reset `main` anyway). |
+| `TC-03` | Local repo is on branch `main`, and the user accidentally passes a branch name argument (`feature-x`). | `git-drev update feature-x` | Exit code `2` (`ErrUsage`).<br>`stdout`: empty.<br>`stderr`: contains `[git-drev] Error: update takes no positional arguments`.<br>Repo state: `HEAD` and working tree remain completely untouched. |
 | `TC-04` | Local repo is on a newly created local branch `local-only` (created via `git checkout -b local-only`) that has never been pushed to `origin` (or was deleted on `origin`). | `git-drev update` | Exit code `4` (`ErrGitState`).<br>`stdout`: empty.<br>`stderr`: contains `[git-drev] Error: Remote branch 'origin/local-only' does not exist`.<br>Repo state: `refs/remotes/origin/*` is updated/pruned by fetch, `git reset --hard` is not executed, and `HEAD` remains on `local-only` at its existing commit. |
 | `TC-05` | Local repo was cloned with `git clone --single-branch` (so `remote.origin.fetch` only maps `main`), then switched to branch `release/1.0` which has new commits on `origin`, and command is invoked from subdirectory `data/sub/`. | `git-drev update -q` | Exit code `0`.<br>`stdout`: empty.<br>`stderr`: empty (`--quiet`).<br>Repo state: `.git/config` contains `+refs/heads/*:refs/remotes/origin/*`, `refs/remotes/origin/release/1.0` is fetched, and `HEAD` is hard-reset to `origin/release/1.0`. |

@@ -16,7 +16,7 @@
 - **Positional arguments:**
   - **Cardinality:** `0` (exact).
   - **Path resolution behavior:** Not applicable (no positional arguments accepted).
-  - **Validation rules:** Passing one or more positional arguments is rejected immediately with `errcode.ErrUsage` (exit code `2`), replacing the legacy `drs::common::no_args` anti-pattern that logged a message to `stdout` and continued execution.
+  - **Validation rules:** Passing one or more positional arguments is rejected immediately with `errcode.ErrUsage` (exit code `2`).
 
 - **Preconditions & state assertions:**
   1. **Non-bare Git working tree:** Must be invoked inside a valid, non-bare Git working tree (`git rev-parse --is-inside-work-tree == "true"`). Invoking outside a Git repository or inside a bare repository fails with `errcode.ErrNotRepository` (exit code `3`).
@@ -213,21 +213,7 @@ func (s *InfoService) RunInfo(ctx context.Context, cfg domain.ProjectConfig, opt
 | Git subprocess (`symbolic-ref`/`rev-parse`) failure | `errcode.ErrGitExec` | `5` | `[git-drev] Error: git command failed: ...` |
 | Context canceled via `SIGINT` or `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[git-drev] Error: operation interrupted` |
 
-## 7. Legacy Modernization & Edge Cases
-- **Fixed legacy quirks:**
-  1. **In-process `source "${DRS_INFO_HOOK_FILE}"` namespace pollution & crash risk (`legacy/info.sh:20-23`):**
-     - *Legacy flaw:* `info.sh` sourced `drs-info-hook.sh` directly into the main Bash process and called `info_hook "$@"`. A hook that called `exit`, mutated shell options (`set -e`, `IFS`), or overwrote internal `drs` variables corrupted the runner, and if `drs-info-hook.sh` existed but omitted the `info_hook` function definition, Bash failed with `info_hook: command not found` (exit code `127`).
-     - *Modernized Go behavior:* Executes `.git-drev-info-hook` in an isolated OS subprocess with a bounded timeout (`GIT_DREV_HOOK_TIMEOUT`, default `5m`), clean environment (`GIT_DREV_*` variables), and dual-mode support (either an executable script with `#!<interpreter>` or a shell script defining `info_hook()`). If a shell script `.git-drev-info-hook` does not define `info_hook()`, its top-level statements execute cleanly without failing on `info_hook: command not found`.
-  2. **Silent ignoring of excess positional arguments & `eval set -- "${params}"` injection (`legacy/info.sh:17`, `legacy/common.sh:211-243`):**
-     - *Legacy flaw:* `drs::common::no_args` accumulated positional arguments into `params`, ran `eval set -- "${params}"` (vulnerable to shell metacharacter/glob expansion), and when `$# != 0`, merely printed `[drs] This command takes no argument(s), please check your input` to `stdout` and **proceeded to execute `info_hook` anyway**, forwarding the unexpected arguments to `info_hook "$@"`.
-     - *Modernized Go behavior:* Any positional arguments passed to `git-drev info` immediately return `errcode.ErrUsage` (exit code `2`) to `stderr` before executing the hook.
-  3. **Subdirectory invocation failure (`legacy/info.sh:14,20`):**
-     - *Legacy flaw:* `info.sh` checked `[[ -f "drs.json" ]]` and `[[ -f "drs-info-hook.sh" ]]` relative to the current working directory without calling `git rev-parse --show-toplevel`. Invoking `drs/info.sh` from a subdirectory failed with `[drs] ! No configuration file 'drs.json' found`.
-     - *Modernized Go behavior:* Resolves `RepoRoot` via `git rev-parse --show-toplevel` and changes the working directory to `RepoRoot` prior to reading `.git-drev.yaml` or executing `.git-drev-info-hook`.
-  4. **Operational chatter polluting `stdout` (`legacy/info.sh:25`):**
-     - *Legacy flaw:* When no hook existed, `drs::common::log 'No info hook found'` printed `[drs] No info hook found` to `stdout`, breaking scripts or pipelines consuming `git drs-info` output.
-     - *Modernized Go behavior:* Emits `[git-drev] No info hook found` to `stderr` (and suppresses it completely when `-q` / `--quiet` is active), leaving `stdout` completely empty when no hook is present.
-
+## 7. Edge Cases & Boundary Conditions
 - **Boundary conditions:**
   - **Symlinks:** If `<repo-root>/.git-drev-info-hook` is a symlink pointing to a regular file inside the repository, `os.Stat` follows the symlink and executes the target normally. If it is a broken/dangling symlink, `os.Stat` returns `fs.ErrNotExist`; to help diagnose misconfigured repos, `os.Lstat` is checked when `os.Stat` returns `fs.ErrNotExist`—if a dangling symlink exists at `.git-drev-info-hook`, `info` fails with `errcode.ErrRuntime` (exit code `1`, `[git-drev] Error: info hook ".git-drev-info-hook" is a broken symlink`) rather than silently claiming no hook was found.
   - **Empty hook file (`0` bytes):** Treated as a valid no-op hook; executes cleanly, emits nothing to `stdout`, and exits `0`.
