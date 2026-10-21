@@ -176,12 +176,17 @@ Add `-a` (`--all`) to correlate all remote UUID directories against local Git hi
 git drev usage -a
 ```
 Output:
-```
-Total size on remote is 8.1G (/srv/drev/my-project)
+```text
+Summary:
+  Remote storage:    storage-server:/srv/drev/my-project
+  Total space used:  8.1G
+  Revisions found:   3
 
-UUID                                  Size  Created     Commit      Branch/Tag    Message
-4a123f89-8d7b-4b10-8f6a-49321ef19b12  4.2G  2026-10-19  a7b8c9d     release/2.0   {"uuid":"4a123f89-8d7b-4b10-8f6a-49321ef19b12","seq":"200"}
-9f8e7d6c-5b4a-3a21-10fe-dcba98765432  120M  2026-10-18  1f2e3d4     main, v1.0.1  {"uuid":"9f8e7d6c-5b4a-3a21-10fe-dcba98765432","seq":"100"}
-01234567-89ab-cdef-0123-456789abcdef  3.8G  2026-10-15  [orphaned]  -             -
+Revisions breakdown:
+UUID                                      Size  Created              Commit      Branch/Tag            Message
+------------------------------------  --------  -------------------  ----------  --------------------  ----------------------
+4a123f89-8d7b-4b10-8f6a-49321ef19b12      4.2G  2026-10-19 14:22:10  a7b8c9d     release/2.0           seq: 200
+9f8e7d6c-5b4a-3a21-10fe-dcba98765432      120M  2026-10-18 09:15:00  1f2e3d4     main, v1.0.1          seq: 100
+01234567-89ab-cdef-0123-456789abcdef      3.8G  2026-10-15 18:04:12  [orphaned]  -                     -
 ```
 *(See [Chapter 5: Storage architecture & retention](05-storage-and-retention.md) for automated cleanup of orphaned revisions).*

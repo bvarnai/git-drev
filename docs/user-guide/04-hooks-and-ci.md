@@ -24,7 +24,7 @@ When executing a hook, `git-drev` sanitizes the environment (`LC_ALL=C`, `LANG=C
 | `GIT_DREV_VERSION` | Semantic version of the running `git-drev` binary | `1.0.0` |
 | `GIT_DREV_UUID` | Active revision UUID | `4a123f89-8d7b-4b10-8f6a-49321ef19b12` |
 | `GIT_DREV_SEQ` | Monotonic revision sequence number on the active branch | `1729348200` |
-| `GIT_DREV_BRANCH` | Current branch name (or empty if detached in `info`) | `main` |
+| `GIT_DREV_BRANCH` | Current branch name (or `HEAD` if detached in `info`) | `main` |
 | `GIT_DREV_WORK_DIR` | Absolute path to the configured working directory | `/workspace/repo/data` |
 | `GIT_DREV_ROOT` | Absolute path to the Git repository root | `/workspace/repo` |
 
@@ -47,16 +47,15 @@ When executing a hook, `git-drev` sanitizes the environment (`LC_ALL=C`, `LANG=C
 ## 4. Hook examples
 
 ### Example 1: Checksum manifest generation (`.git-drev-put-hook`)
-Generate a `SHA256SUMS` manifest inside `workdir/` before recording the revision:
+Generate a tracked `SHA256SUMS` manifest of `workdir/` in the repository root so it is committed alongside the revision metadata:
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
 echo "[hook] Generating sha256 checksums for revision ${GIT_DREV_UUID}..."
-cd "${GIT_DREV_WORK_DIR}"
-sha256sum $(find . -type f ! -name "SHA256SUMS") > SHA256SUMS
-echo "[hook] Checksums generated successfully."
+(cd "${GIT_DREV_WORK_DIR}" && find . -type f -print0 | sort -z | xargs -0 sha256sum) > "${GIT_DREV_ROOT}/SHA256SUMS"
+echo "[hook] Checksums written to SHA256SUMS."
 ```
 
 ### Example 2: Correlating Jenkins CI build info (`.git-drev-put-hook`)

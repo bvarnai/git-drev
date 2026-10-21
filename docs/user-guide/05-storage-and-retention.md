@@ -95,28 +95,36 @@ To check storage consumption, run:
 ```bash
 git drev usage
 ```
-This queries the remote host via `ssh` and prints the total disk space utilized by `<remote.path>`:
-```
-Total size on remote is 8.1G (/srv/drev/my-project)
+This queries the remote host via `ssh` and prints the summary of disk space utilized by `<remote.path>`:
+```text
+Summary:
+  Remote storage:    storage-server:/srv/drev/my-project
+  Total space used:  8.1G
+  Revisions found:   3
 ```
 
-### Correlating active vs. orphaned revisions (`-v`)
+### Correlating active vs. orphaned revisions (`-a`)
 When developers delete old Git branches, drop older concurrent builds, or delete tags, some remote UUID directories may no longer be referenced by any Git commit in repository history. These are **orphaned revisions**.
 
-Running `git drev usage -v` scans your Git commit history (`git log --all`) and correlates every known UUID against directories on the remote host:
+Running `git drev usage -a` (`--all`) scans your Git commit history (`git log --all`) and correlates every known UUID against directories on the remote host:
 
 ```bash
-git drev usage -v
+git drev usage -a
 ```
 
 Example output:
-```
-Total size on remote is 8.1G (/srv/drev/my-project)
+```text
+Summary:
+  Remote storage:    storage-server:/srv/drev/my-project
+  Total space used:  8.1G
+  Revisions found:   3
 
-UUID                                  Size  Created     Commit      Branch/Tag    Message
-4a123f89-8d7b-4b10-8f6a-49321ef19b12  4.2G  2026-10-19  a7b8c9d     release/1.0   {"uuid":"4a123f89-8d7b-4b10-8f6a-49321ef19b12","seq":"200"}
-9f8e7d6c-5b4a-3a21-10fe-dcba98765432  120M  2026-10-18  1f2e3d4     main, v1.0.1  {"uuid":"9f8e7d6c-5b4a-3a21-10fe-dcba98765432","seq":"100"}
-01234567-89ab-cdef-0123-456789abcdef  3.8G  2026-10-15  [orphaned]  -             -
+Revisions breakdown:
+UUID                                      Size  Created              Commit      Branch/Tag            Message
+------------------------------------  --------  -------------------  ----------  --------------------  ----------------------
+4a123f89-8d7b-4b10-8f6a-49321ef19b12      4.2G  2026-10-19 14:22:10  a7b8c9d     release/1.0           seq: 200
+9f8e7d6c-5b4a-3a21-10fe-dcba98765432      120M  2026-10-18 09:15:00  1f2e3d4     main, v1.0.1          seq: 100
+01234567-89ab-cdef-0123-456789abcdef      3.8G  2026-10-15 18:04:12  [orphaned]  -                     -
 ```
 
 ---
@@ -132,7 +140,7 @@ The script inspects a bare clone of your Git metadata repository on the storage 
 1. **Last $N$ commits per open branch (`--commits`, default: `5`):** Always retains the latest $N$ commits on every active branch (`refs/heads/*` and `refs/remotes/*`), guaranteeing that even dormant branches keep their recent snapshots and `cp -al` baselines.
 2. **Sliding time window (`--days`, default: `30`):** Retains all commits authored within the last $M$ days on any active branch.
 3. **Tagged releases:** Never deletes revision directories referenced by any Git tag (both lightweight and annotated tags). Only the tagged commits themselves are pinned (`git rev-list --no-walk --tags`), allowing older untagged builds before a release tag to age out normally.
-4. **Branch marker baselines:** If a newly created branch (`git drev create`) only has an initial marker commit (`"msg":"created from <parent_uuid>"`), the script protects `<parent_uuid>` so the branch's server-side baseline is never deleted before its first `git drev put`.
+4. **Branch marker baselines:** If a newly created branch (`git drev create`) only has an initial marker commit (`{"uuid":"<parent_uuid>","marker":"true"}`), the script protects `<parent_uuid>` so the branch's server-side baseline is never deleted before its first `git drev put`.
 5. **Deleted branches & orphans:** Once a branch is deleted in Git, its commits are automatically dropped from the keep list and purged on the next cleanup run (unless retained by another active branch or tag).
 
 ### CLI usage
@@ -214,6 +222,7 @@ Then add a nightly job to `crontab -e`:
 To measure end-to-end transfer speed and server-side storage deduplication on real software distributions, we benchmarked **5 consecutive daily [Eclipse SDK integration builds (`I-builds`)](https://download.eclipse.org/eclipse/downloads/)** (`linux-gtk-x86_64`, `I20261015-2300` through `I20261019-2300`):
 - Each build archive is **273.0 MiB** compressed (`.tar.gz`) and unpacks to **302.7 MiB** (**306M** on disk across **1,368 files**, mostly OSGi `.jar` bundles and native libraries).
 - Between consecutive daily builds, **~81% of files (1,091–1,124 files, ~262 MiB)** are byte-for-byte identical, while only **244–277 files (19–56 MiB)** actually change.
+- **Test environment:** Linux `x86_64` client and remote storage server connected over a 1 Gbps LAN with `rsync -c` (`--checksum`) enabled.
 
 ### Headline comparison (5 daily builds)
 
@@ -236,14 +245,14 @@ To measure end-to-end transfer speed and server-side storage deduplication on re
 | `I20261019-2300` *(Delta)* | `302.7 MiB` (1,368) | `12.74s` + `0.97s` = **`13.71s`** | `2.71s` (`56.3 MiB`, 277 files) | **`2.43s`** (`56.2 MiB`, 277 files) | **5.6x faster** |
 | **Total / Cumulative** | **`1,513.4 MiB`** (6,840) | **`123.75s`** (`1,364.9 MiB` `.tar.gz`) | **`15.47s`** (`443.5 MiB` total sent) | **`13.61s`** (`443.4 MiB` total received) | **9.1x faster** |
 
-### Remote storage deduplication (`git drev usage -v`)
+### Remote storage deduplication (`git drev usage -a`)
 
 Even though all 5 revisions are stored as full, unpacked **306M** directory trees on the remote SSH server, `cp -al` hardlink cloning deduplicates unchanged files across revisions so the entire 5-build history consumes only **483M** on disk:
 
 ```text
-$ git drev usage -v
+$ git drev usage -a
 Summary:
-  Remote storage:    drs:/volume1/storage_drs/data/git-drs-benchmark
+  Remote storage:    drs:/volume1/storage_drs/data/git-drev-benchmark
   Total space used:  483M
   Revisions found:   5
 
