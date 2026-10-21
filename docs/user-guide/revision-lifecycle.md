@@ -74,7 +74,7 @@ git drev put -s "${BUILD_NUMBER}"
    - Runs `rsync` from your local `workdir` (or `<source_directory>`) to the remote `<path>/<new_uuid>/` directory.
    - Only new or modified files and byte ranges are transmitted over the network. Unmodified files remain hardlinked.
 4. **Project hook execution:**
-   - If `.git-drev-put-hook` exists in the repository root, it runs with `GIT_DREV_*` environment variables injected (see [Chapter 4](04-hooks-and-ci.md)).
+   - If `.git-drev-put-hook` exists in the repository root, it runs with `GIT_DREV_*` environment variables injected (see [Chapter 4](hooks-and-ci.md)).
 5. **Transactional commit & push:**
    - Stages any metadata files modified in the repository root (`git add --all`) and records the revision commit in Git.
    - Pushes to `origin` using `--force-with-lease`.
@@ -189,4 +189,4 @@ UUID                                      Size  Created              Commit     
 9f8e7d6c-5b4a-3a21-10fe-dcba98765432      120M  2026-10-18 09:15:00  1f2e3d4     main, v1.0.1          seq: 100
 01234567-89ab-cdef-0123-456789abcdef      3.8G  2026-10-15 18:04:12  [orphaned]  -                     -
 ```
-*(See [Chapter 5: Storage architecture & retention](05-storage-and-retention.md) for automated cleanup of orphaned revisions).*
+*(See [Chapter 5: Storage architecture & retention](storage-and-retention.md) for automated cleanup of orphaned revisions).*

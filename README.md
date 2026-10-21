@@ -138,7 +138,7 @@ Across **5 consecutive daily [Eclipse SDK integration builds (`I-builds`)](https
 | **Server disk space for 5 unpacked builds** | `1,530 MB` (`5 × 306 MB` unpacked) | **`483 MB`** (`cp -al` hardlinked storage) | **68.4% less storage (`3.17x` dedup)** |
 | **Server disk space vs. 5 `.tar.gz` archives** | `1,365 MB` (`5 × 273 MB` compressed) | **`483 MB`** (immediately usable directories) | **65.0% less storage than `.tar.gz`** |
 
-See [Chapter 5: Storage architecture & retention](docs/user-guide/05-storage-and-retention.md#6-real-world-benchmark-eclipse-sdk-builds) for the full per-build breakdown and `git drev usage -a` analysis.
+See [Chapter 5: Storage architecture & retention](docs/user-guide/storage-and-retention.md#6-real-world-benchmark-eclipse-sdk-builds) for the full per-build breakdown and `git drev usage -a` analysis.
 
 ---
 
@@ -211,13 +211,13 @@ git drev config
 
 For tutorials, repository layout patterns, CI pipeline templates, and command references, see the User Guide:
 
-- [Chapter 1: The git-drev philosophy](docs/user-guide/01-philosophy.md)
-- [Chapter 2: Getting started](docs/user-guide/02-getting-started.md)
-- [Chapter 3: The revision lifecycle](docs/user-guide/03-revision-lifecycle.md)
-- [Chapter 4: Project hooks & CI/CD automation](docs/user-guide/04-hooks-and-ci.md)
-- [Chapter 5: Storage architecture & retention](docs/user-guide/05-storage-and-retention.md)
-- [Chapter 6: Complete command reference](docs/user-guide/06-command-reference.md)
-- [Chapter 7: Troubleshooting & FAQ](docs/user-guide/07-troubleshooting-faq.md)
+- [Chapter 1: The git-drev philosophy](docs/user-guide/philosophy.md)
+- [Chapter 2: Getting started](docs/user-guide/getting-started.md)
+- [Chapter 3: The revision lifecycle](docs/user-guide/revision-lifecycle.md)
+- [Chapter 4: Project hooks & CI/CD automation](docs/user-guide/hooks-and-ci.md)
+- [Chapter 5: Storage architecture & retention](docs/user-guide/storage-and-retention.md)
+- [Chapter 6: Complete command reference](docs/user-guide/command-reference.md)
+- [Chapter 7: Troubleshooting & FAQ](docs/user-guide/troubleshooting-faq.md)
 
 Ready-to-use AI coding assistant integrations are also included in [`templates/rules/git-drev.md`](templates/rules/git-drev.md) and [`templates/skills/git-drev/SKILL.md`](templates/skills/git-drev/SKILL.md).
 
