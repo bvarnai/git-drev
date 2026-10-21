@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bvarnai/git-drev/internal/command"
 	"github.com/bvarnai/git-drev/internal/domain"
 	"github.com/bvarnai/git-drev/internal/errcode"
 	"github.com/bvarnai/git-drev/internal/transport"
@@ -106,7 +107,7 @@ func (c *Client) QueryUsage(ctx context.Context, host, basePath string, opts ...
 			return "", nil, errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "operation interrupted")
 		}
 
-		var cmdErr *transport.CommandError
+		var cmdErr *command.Error
 		errStr := runErr.Error()
 		exitCode := -1
 		if errors.As(runErr, &cmdErr) {

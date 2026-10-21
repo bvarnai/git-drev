@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/bvarnai/git-drev/internal/cli"
+	"github.com/bvarnai/git-drev/internal/command"
 	"github.com/bvarnai/git-drev/internal/errcode"
-	"github.com/bvarnai/git-drev/internal/git"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -54,7 +54,7 @@ func TestNameCommand_UnitTable(t *testing.T) {
 			args: []string{"name"},
 			mockResponses: map[string]mockGitResponse{
 				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n/repo\n"},
-				"symbolic-ref --quiet --short HEAD":                             {err: &git.CommandError{ExitCode: 1}},
+				"symbolic-ref --quiet --short HEAD":                             {err: &command.Error{ExitCode: 1, Category: errcode.ErrGitExec}},
 			},
 			expectedCode: errcode.ExitSuccess,
 			expectStdout: cli.DetachedHeadDisplay + "\n",

@@ -1,10 +1,7 @@
 package transport_test
 
 import (
-	"context"
-	"errors"
 	"testing"
-	"time"
 
 	"github.com/bvarnai/git-drev/internal/errcode"
 	"github.com/bvarnai/git-drev/internal/transport"
@@ -163,42 +160,4 @@ func TestBuildRsyncArgs(t *testing.T) {
 		}
 		assert.Equal(t, expected, args)
 	})
-}
-
-func TestCommandError(t *testing.T) {
-	t.Parallel()
-
-	cmdErr := &transport.CommandError{
-		Command:  "ssh",
-		Args:     []string{"-T", "host1", "test -d '/path'"},
-		ExitCode: 1,
-		Stderr:   "directory not found",
-	}
-
-	assert.Contains(t, cmdErr.Error(), "ssh -T host1 test -d '/path' failed (exit 1): directory not found")
-	assert.True(t, errors.Is(cmdErr, errcode.ErrTransport))
-
-	code, ok := transport.ExitCodeOf(cmdErr)
-	assert.True(t, ok)
-	assert.Equal(t, 1, code)
-
-	otherErr := errors.New("regular error")
-	_, ok = transport.ExitCodeOf(otherErr)
-	assert.False(t, ok)
-}
-
-func TestNewCommandAndNewCommandError(t *testing.T) {
-	t.Parallel()
-
-	cmd := transport.NewCommand(context.Background(), "ssh", "-T", "myhost", "echo hello")
-	assert.Equal(t, []string{"ssh", "-T", "myhost", "echo hello"}, cmd.Args)
-	assert.NotNil(t, cmd.Cancel)
-	assert.Equal(t, 3*time.Second, cmd.WaitDelay)
-
-	err := transport.NewCommandError(cmd, nil, "out", "err")
-	assert.Equal(t, "ssh", err.Command)
-	assert.Equal(t, []string{"-T", "myhost", "echo hello"}, err.Args)
-	assert.Equal(t, -1, err.ExitCode)
-	assert.Equal(t, "out", err.Stdout)
-	assert.Equal(t, "err", err.Stderr)
 }

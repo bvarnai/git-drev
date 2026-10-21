@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/bvarnai/git-drev/internal/cli"
+	"github.com/bvarnai/git-drev/internal/command"
 	"github.com/bvarnai/git-drev/internal/errcode"
 	"github.com/bvarnai/git-drev/internal/git"
 	"github.com/bvarnai/git-drev/internal/storage"
@@ -51,7 +52,7 @@ remote:
 			args: []string{"get", "-l"},
 			mockGit: map[string]mockGitResponse{
 				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
-				"symbolic-ref --quiet --short HEAD":                             {err: &git.CommandError{ExitCode: 1}},
+				"symbolic-ref --quiet --short HEAD":                             {err: &command.Error{ExitCode: 1, Category: errcode.ErrGitExec}},
 			},
 			expectedCode: errcode.ExitGitState,
 			errSubstr:    "Cannot update detached HEAD to latest",

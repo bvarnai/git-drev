@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/bvarnai/git-drev/internal/command"
 	"github.com/bvarnai/git-drev/internal/domain"
 	"github.com/bvarnai/git-drev/internal/errcode"
 	"github.com/bvarnai/git-drev/internal/transport"
@@ -75,11 +76,11 @@ func (c *Client) HasRevision(ctx context.Context, host, basePath, uuid string) (
 		return false, errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "operation interrupted")
 	}
 
-	if code, ok := transport.ExitCodeOf(err); ok && code == 1 {
+	if code, ok := command.ExitCodeOf(err); ok && code == 1 {
 		return false, nil
 	}
 
-	var cmdErr *transport.CommandError
+	var cmdErr *command.Error
 	errMsg := err.Error()
 	if errors.As(err, &cmdErr) && strings.TrimSpace(cmdErr.Stderr) != "" {
 		errMsg = strings.TrimSpace(cmdErr.Stderr)
@@ -106,7 +107,7 @@ func (c *Client) CloneBaseline(ctx context.Context, host, basePath, srcUUID, dst
 		return errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "operation interrupted")
 	}
 
-	var cmdErr *transport.CommandError
+	var cmdErr *command.Error
 	errMsg := err.Error()
 	if errors.As(err, &cmdErr) && strings.TrimSpace(cmdErr.Stderr) != "" {
 		errMsg = strings.TrimSpace(cmdErr.Stderr)
@@ -131,7 +132,7 @@ func (c *Client) RemoveRevision(ctx context.Context, host, basePath, uuid string
 		return errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "operation interrupted")
 	}
 
-	var cmdErr *transport.CommandError
+	var cmdErr *command.Error
 	errMsg := err.Error()
 	if errors.As(err, &cmdErr) && strings.TrimSpace(cmdErr.Stderr) != "" {
 		errMsg = strings.TrimSpace(cmdErr.Stderr)

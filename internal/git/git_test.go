@@ -8,16 +8,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bvarnai/git-drev/internal/command"
 	"github.com/bvarnai/git-drev/internal/domain"
 	"github.com/bvarnai/git-drev/internal/errcode"
 	"github.com/bvarnai/git-drev/internal/git"
 	"github.com/bvarnai/git-drev/test/integration"
 )
 
-func TestBuildSanitizedEnv(t *testing.T) {
+func TestSanitizedEnv(t *testing.T) {
 	t.Parallel()
 
-	env := git.BuildSanitizedEnv([]string{
+	env := command.SanitizedEnv([]string{
 		"PATH=/usr/bin",
 		"LC_ALL=hu_HU.UTF-8",
 		"LANG=de_DE.UTF-8",

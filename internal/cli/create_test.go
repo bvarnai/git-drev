@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/bvarnai/git-drev/internal/cli"
+	"github.com/bvarnai/git-drev/internal/command"
 	"github.com/bvarnai/git-drev/internal/errcode"
 	"github.com/bvarnai/git-drev/internal/git"
 	"github.com/stretchr/testify/assert"
@@ -80,7 +81,7 @@ remote:
 				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix":  {out: "true\n" + tempDir + "\n"},
 				"check-ref-format refs/heads/feature/remote":                     {out: ""},
 				"config --local --get-all remote.origin.fetch":                   {out: git.WildcardFetchRefspec},
-				"show-ref --verify --quiet refs/heads/feature/remote":            {err: &git.CommandError{ExitCode: 1}},
+				"show-ref --verify --quiet refs/heads/feature/remote":            {err: &command.Error{ExitCode: 1, Category: errcode.ErrGitExec}},
 				"ls-remote --exit-code --heads origin refs/heads/feature/remote": {out: "abcdef refs/heads/feature/remote"},
 				"fetch --all --prune":   {out: ""},
 				"switch feature/remote": {out: "Switched to a new branch 'feature/remote'"},
@@ -97,8 +98,8 @@ remote:
 				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix":                           {out: "true\n" + tempDir + "\n"},
 				"check-ref-format refs/heads/feature/brand-new":                                           {out: ""},
 				"config --local --get-all remote.origin.fetch":                                            {out: git.WildcardFetchRefspec},
-				"show-ref --verify --quiet refs/heads/feature/brand-new":                                  {err: &git.CommandError{ExitCode: 1}},
-				"ls-remote --exit-code --heads origin refs/heads/feature/brand-new":                       {err: &git.CommandError{ExitCode: 2}},
+				"show-ref --verify --quiet refs/heads/feature/brand-new":                                  {err: &command.Error{ExitCode: 1, Category: errcode.ErrGitExec}},
+				"ls-remote --exit-code --heads origin refs/heads/feature/brand-new":                       {err: &command.Error{ExitCode: 2, Category: errcode.ErrGitExec}},
 				"log -n 1 --format=%s HEAD --":                                                            {out: `{"uuid":"550e8400-e29b-41d4-a716-446655440000","seq":"1"}`},
 				"symbolic-ref --quiet --short HEAD":                                                       {out: "main"},
 				"rev-parse --verify --quiet HEAD^{commit}":                                                {out: "1111111111111111111111111111111111111111"},
@@ -120,8 +121,8 @@ remote:
 				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix":                           {out: "true\n" + tempDir + "\n"},
 				"check-ref-format refs/heads/feature/fail-push":                                           {out: ""},
 				"config --local --get-all remote.origin.fetch":                                            {out: git.WildcardFetchRefspec},
-				"show-ref --verify --quiet refs/heads/feature/fail-push":                                  {err: &git.CommandError{ExitCode: 1}},
-				"ls-remote --exit-code --heads origin refs/heads/feature/fail-push":                       {err: &git.CommandError{ExitCode: 2}},
+				"show-ref --verify --quiet refs/heads/feature/fail-push":                                  {err: &command.Error{ExitCode: 1, Category: errcode.ErrGitExec}},
+				"ls-remote --exit-code --heads origin refs/heads/feature/fail-push":                       {err: &command.Error{ExitCode: 2, Category: errcode.ErrGitExec}},
 				"log -n 1 --format=%s HEAD --":                                                            {out: `{"uuid":"550e8400-e29b-41d4-a716-446655440000","seq":"1"}`},
 				"symbolic-ref --quiet --short HEAD":                                                       {out: "main"},
 				"rev-parse --verify --quiet HEAD^{commit}":                                                {out: "1111111111111111111111111111111111111111"},

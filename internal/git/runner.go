@@ -27,57 +27,6 @@ type Runner interface {
 	RunStream(ctx context.Context, dir string, stdout, stderr io.Writer, extraEnv []string, args ...string) error
 }
 
-// CommandError captures the exit code and output streams of a failed Git subprocess.
-type CommandError struct {
-	Args     []string
-	ExitCode int
-	Stdout   string
-	Stderr   string
-	Cause    error
-}
-
-// Error formats the failed git invocation and its combined output.
-func (e *CommandError) Error() string {
-	cmd := "git " + strings.Join(e.Args, " ")
-	out := e.CombinedOutput()
-	if out != "" {
-		return cmd + " failed (exit " + strings.TrimSpace(command.ExitCodeString(e.ExitCode)) + "): " + out
-	}
-	return cmd + " failed (exit " + command.ExitCodeString(e.ExitCode) + ")"
-}
-
-// Unwrap allows errors.Is(err, errcode.ErrGitExec) to match CommandError by default.
-func (e *CommandError) Unwrap() error {
-	return errcode.ErrGitExec
-}
-
-// CombinedOutput returns trimmed stderr if present, or trimmed stdout, or both.
-func (e *CommandError) CombinedOutput() string {
-	s := strings.TrimSpace(e.Stderr)
-	o := strings.TrimSpace(e.Stdout)
-	if s != "" && o != "" {
-		return o + "\n" + s
-	}
-	if s != "" {
-		return s
-	}
-	return o
-}
-
-// ExitCodeOf extracts the process exit code from err if it wraps a *CommandError or *command.Error.
-func ExitCodeOf(err error) (int, bool) {
-	var gitErr *CommandError
-	if errors.As(err, &gitErr) {
-		return gitErr.ExitCode, true
-	}
-	return command.ExitCodeOf(err)
-}
-
-// BuildSanitizedEnv constructs a child process environment with mandatory overrides.
-func BuildSanitizedEnv(baseEnv []string, extraEnv ...[]string) []string {
-	return command.SanitizedEnv(baseEnv, extraEnv...)
-}
-
 // ExecRunner implements Runner using os/exec with LC_ALL=C and non-interactive safeguards.
 type ExecRunner struct {
 	BaseEnv    []string
@@ -115,7 +64,7 @@ func (r *ExecRunner) RunWithEnv(ctx context.Context, dir string, extraEnv []stri
 	err := r.RunStream(ctx, dir, &stdoutBuf, &stderrBuf, extraEnv, args...)
 	out := strings.TrimRight(stdoutBuf.String(), "\r\n")
 	if err != nil {
-		var cmdErr *CommandError
+		var cmdErr *command.Error
 		if errors.As(err, &cmdErr) {
 			cmdErr.Stdout = stdoutBuf.String()
 			cmdErr.Stderr = stderrBuf.String()
@@ -155,14 +104,7 @@ func (r *ExecRunner) RunStream(ctx context.Context, dir string, stdout, stderr i
 		}
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) {
-			baseErr := command.NewError(cmd, exitErr, "", "", errcode.ErrGitExec)
-			return &CommandError{
-				Args:     baseErr.Args,
-				ExitCode: baseErr.ExitCode,
-				Stdout:   baseErr.Stdout,
-				Stderr:   baseErr.Stderr,
-				Cause:    runErr,
-			}
+			return command.NewError(cmd, exitErr, "", "", errcode.ErrGitExec)
 		}
 		return errcode.WrapError(errcode.ErrTransport, runErr, "failed to execute %s", binName)
 	}

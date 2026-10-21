@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/bvarnai/git-drev/internal/checks"
+	"github.com/bvarnai/git-drev/internal/command"
 	"github.com/bvarnai/git-drev/internal/domain"
 	"github.com/bvarnai/git-drev/internal/errcode"
 	"github.com/bvarnai/git-drev/internal/git"
@@ -88,7 +89,7 @@ func TestAttachedBranch(t *testing.T) {
 	t.Run("detached HEAD", func(t *testing.T) {
 		runner := &mockRunner{
 			runFn: func(ctx context.Context, dir string, args ...string) (string, error) {
-				return "", &git.CommandError{ExitCode: 1}
+				return "", &command.Error{ExitCode: 1, Category: errcode.ErrGitExec}
 			},
 		}
 		insp := git.NewInspector(runner)

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/bvarnai/git-drev/internal/cli"
+	"github.com/bvarnai/git-drev/internal/command"
 	"github.com/bvarnai/git-drev/internal/errcode"
 	"github.com/bvarnai/git-drev/internal/git"
 	"github.com/bvarnai/git-drev/internal/storage"
@@ -55,7 +56,7 @@ remote:
 			args: []string{"put"},
 			mockGit: map[string]mockGitResponse{
 				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
-				"symbolic-ref --quiet --short HEAD":                             {err: &git.CommandError{ExitCode: 1}},
+				"symbolic-ref --quiet --short HEAD":                             {err: &command.Error{ExitCode: 1, Category: errcode.ErrGitExec}},
 			},
 			expectedCode: errcode.ExitGitState,
 			errSubstr:    "Detached HEAD state detected, aborting",
@@ -233,7 +234,7 @@ remote:
 				"log -n 1 --format=%s HEAD --":                                  {out: `{"uuid":"11111111-1111-4111-8111-111111111111","seq":"40"}`},
 				"add --all":                                                     {out: ""},
 				"commit --allow-empty -m *":                                     {out: "[main a1b2c3d] revision"},
-				"push --force-with-lease origin refs/heads/main":                {err: &git.CommandError{Stderr: "stale info", ExitCode: 1}},
+				"push --force-with-lease origin refs/heads/main":                {err: &command.Error{Stderr: "stale info", ExitCode: 1, Category: errcode.ErrGitExec}},
 				"config --local --get-all remote.origin.fetch":                  {out: git.WildcardFetchRefspec},
 				"fetch --all --prune":                                           {out: ""},
 				"log -n 1 --format=%s refs/remotes/origin/main --":              {out: `{"uuid":"22222222-2222-4222-8222-222222222222","seq":"80"}`},
