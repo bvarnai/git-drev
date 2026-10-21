@@ -47,11 +47,11 @@ jobs:
             --pattern "*.sha256" \
             --dir dist_hashes
 
-          X64_HASH_FILE=$(ls dist_hashes/*windows_amd64.zip.sha256 2>/dev/null || true)
-          ARM64_HASH_FILE=$(ls dist_hashes/*windows_arm64.zip.sha256 2>/dev/null || true)
+          X64_HASH_FILE="dist_hashes/git-drev_${TAG_NAME}_windows_amd64.zip.sha256"
+          ARM64_HASH_FILE="dist_hashes/git-drev_${TAG_NAME}_windows_arm64.zip.sha256"
 
-          if [[ -z "$X64_HASH_FILE" ]]; then
-            echo "Error: windows_amd64 sha256 file not found in downloaded release assets."
+          if [[ ! -f "$X64_HASH_FILE" ]]; then
+            echo "Error: $X64_HASH_FILE not found in downloaded release assets."
             exit 1
           fi
 
@@ -59,7 +59,7 @@ jobs:
           echo "Extracted x64 hash: $X64_HASH"
 
           ARM64_HASH=""
-          if [[ -n "$ARM64_HASH_FILE" ]]; then
+          if [[ -f "$ARM64_HASH_FILE" ]]; then
             ARM64_HASH=$(awk '{print $1}' "$ARM64_HASH_FILE")
             echo "Extracted arm64 hash: $ARM64_HASH"
           fi

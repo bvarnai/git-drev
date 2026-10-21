@@ -7,10 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-21
+
 ### Added
 - Busy-wait terminal spinner, streaming SSH progress feedback, and fast `usage` summary mode (`#10`, `#11`).
 - Server-side revision retention script (`scripts/cleanup.sh`) with tag pinning, parent baseline marker protection, and cron setup guide (`#25`, `#26`).
 - Structured operational debug logging (`Debug` / `Debugf`) on `stderr` when `-v` / `--verbose` is passed (`#29`, `#30`).
+- Cross-platform CI build and test matrix across `ubuntu-latest`, `macos-latest`, and `windows-latest` (`#33`, `#34`).
+- Stable tagless release archive aliases (`git-drev_<os>_<arch>.tar.gz` / `.zip`), PR template, and `CHANGELOG.md` (`#31`, `#32`).
 - Real-world Eclipse SDK `I-builds` benchmark report in `README.md` and User Guide Chapter 5 (`#23`, `#24`).
 - AI coding assistant rule and skill templates (`templates/rules/git-drev.md`, `templates/skills/git-drev/SKILL.md`).
 
@@ -31,3 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Server-side hardlink baseline cloning (`cp -al --`) and incremental `rsync` transfers over OpenSSH.
 - Sequence-aware optimistic concurrency control loop on `git drev put` using `--force-with-lease`.
 - Project lifecycle hooks (`.git-drev-put-hook`, `.git-drev-info-hook`) with timeout enforcement (`GIT_DREV_HOOK_TIMEOUT`).
+
+[Unreleased]: https://github.com/bvarnai/git-drev/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/bvarnai/git-drev/compare/v0.0.1...v0.1.0
+[0.0.1]: https://github.com/bvarnai/git-drev/releases/tag/v0.0.1
