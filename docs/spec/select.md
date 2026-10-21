@@ -172,27 +172,7 @@ func RunSelect(
 | `git` binary missing from `$PATH` | `errcode.ErrTransport` | `7` | `[git-drev] Error: Required binary 'git' not found in $PATH` |
 | Context canceled via `SIGINT` or `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[git-drev] Error: Operation interrupted` |
 
-## 7. Legacy Modernization & Edge Cases
-- **Fixed legacy quirks:**
-  1. **Shell word-splitting & glob injection via `eval set -- "${params}"` (`legacy/select.sh:19-42`):**
-     - *Legacy flaw:* Positional arguments were concatenated into `params="${params} $1"` and evaluated via `eval set -- "${params}"`, causing shell injection or word splitting on branch names or arguments containing spaces, quotes, or shell metacharacters, and silently ignoring extra positional arguments (`$2`, `$3`, ...).
-     - *Modernized behavior:* Slice-based argument handling preserves exact strings without shell evaluation and strictly rejects `len(args) > 1` with `errcode.ErrUsage` (exit code `2`).
-  2. **Destructive `drs::common::check_remote_refs` (`legacy/select.sh:16`, `legacy/common.sh:266-294`):**
-     - *Legacy flaw:* Unset all `remote.origin.fetch` entries in `.git/config` and ran `git ls-remote` over the network per refspec before re-adding them; a network failure left `.git/config` corrupted without fetch refspecs.
-     - *Modernized behavior:* `EnsureRemoteFetchConfig` checks local config read-only and idempotently adds `+refs/heads/*:refs/remotes/origin/*` if absent; remote pruning is handled atomically by `git fetch --all --prune`.
-  3. **Pre-fetch UUID lookup ordering bug (`legacy/select.sh:50-73`):**
-     - *Legacy flaw:* `legacy/select.sh` searched local `git log --all` for the target UUID *before* calling `drs::common::fetch_and_checkout` (`git fetch --all`). If a CI job had just pushed a new revision commit to `origin`, `select <uuid>` failed with `No commit was found with uuid` because `origin` had not been fetched yet—even though `select.sh` would have fetched immediately afterward on line 73.
-     - *Modernized behavior:* `FetchAll` (`git fetch --all --prune`) runs *before* `FindCommitByUUID`, guaranteeing that newly pushed remote revision commits are present locally when resolving `<uuid>`.
-  4. **Redundant `git log` calls, dead code, and regex substring matching (`legacy/select.sh:50-62`):**
-     - *Legacy flaw:* `select.sh` ran `git log --all --format=%H --grep="$1"`, spawned a separate `git log --format=%B -n 1 "$commit"` subprocess per candidate commit inside a loop, checked substring `[[ ! "$commit_message" =~ "marker" ]]`, and then executed a dead-code line `commit=$(git log --all --format=%H --grep="$1" -n 1)` on line 62 whose result was never read. Furthermore, `DRS_UUID_REGEXP` matched arbitrary alphanumeric `[A-Z0-9a-z]` characters rather than valid hexadecimal UUID digits `[0-9a-fA-F]`.
-     - *Modernized behavior:* Restricts UUID recognition to valid RFC 4122 hexadecimal digits (`[0-9a-fA-F]`), executes a single streaming `git log --all -z -F -i --grep=<uuid> --format=%H%x00%s` command, parses each subject with `encoding/json` into `domain.RevisionMeta`, and verifies `strings.EqualFold(meta.UUID, targetUUID) && !meta.IsMarker()`.
-  5. **Operational logs written to `stdout` (`legacy/select.sh:48,52,67`):**
-     - *Legacy flaw:* `drs::common::log` wrote `[drs] Selecting ...` and `[drs] Found commit ...` to `stdout`.
-     - *Modernized behavior:* All `[git-drev]` operational logs are emitted to `stderr` (and suppressed when `--quiet` is active), keeping `stdout` completely clean.
-  6. **Subdirectory invocation failure (`legacy/common.sh:172-178`):**
-     - *Legacy flaw:* Checked `[[ ! -f "drs.json" ]]` relative to the caller's `PWD`, failing when invoked from a subdirectory.
-     - *Modernized behavior:* Resolves `RepoRoot` via `git rev-parse --show-toplevel` first and loads `.git-drev.yaml` from `RepoRoot`.
-
+## 7. Edge Cases & Boundary Conditions
 - **Boundary conditions:**
   - **Braced or uppercase UUIDs:** If the user passes `{C1CA82B1-7F34-4F4C-9A76-05E3297B2A23}` or `C1CA82B1-7F34-4F4C-9A76-05E3297B2A23`, `select` strips optional `{}` braces and performs a case-insensitive comparison (`strings.EqualFold`) against `RevisionMeta.UUID` while logging the user's input string in status messages.
   - **Marker commits sharing a parent's UUID:** When `git-drev create <new-branch>` creates a branch from an existing branch whose latest commit has UUID `U`, the new branch's initial marker commit has `{"uuid":"U","marker":"true"}`. Because `FindCommitByUUID` enforces `!meta.IsMarker()`, `git-drev select U` always resolves to the actual revision commit that produced `U`, never the child branch's marker commit.

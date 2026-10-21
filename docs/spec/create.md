@@ -141,8 +141,7 @@ func RunCreate(
    - **Transactional rollback on new-branch creation failure:**
      - Before step 2.5 (`git checkout -b <branch>`), `RunCreate` records the caller's starting ref (`origBranch, detached, _ := gitRunner.CurrentBranch(ctx)` and `origHeadHash` via `git rev-parse --verify -q HEAD`).
      - If step 2.6 (`git commit --allow-empty`) or step 2.7 (`git push`) fails or is interrupted via `ctx.Done()` after `refs/heads/<branch>` has been created locally:
-       - A deferred rollback handler (executing with a short detached cleanup context `context.WithTimeout(context.Background(), 5*time.Second)`) restores the original `HEAD` (`git checkout <origBranch>` or `git -c advice.detachedHead=false checkout <origHeadHash>`) and deletes the unpushed local branch (`git branch -D <branch>`).
-       - Why: In the legacy `create.sh`, if `git commit` (e.g., missing `user.name`/`user.email`) or `git push` (e.g., network failure) failed after `git checkout -b <branch>`, the repository was left stranded on a local-only branch. A subsequent re-run of `git-drev create <branch>` saw the local branch in `refs/heads/<branch>`, entered the "Branch found (local)" path, skipped the `git push`, and silently exited `0` without ever publishing the branch to `origin`! Rolling back the unpushed local branch preserves idempotency on retry.
+       - A deferred rollback handler (executing with a short detached cleanup context `context.WithTimeout(context.Background(), 5*time.Second)`) restores the original `HEAD` (`git checkout <origBranch>` or `git -c advice.detachedHead=false checkout <origHeadHash>`) and deletes the unpushed local branch (`git branch -D <branch>`), preserving idempotency on retry.
 
 ## 5. Side Effects, Git Plumbing & I/O Contract
 
@@ -210,35 +209,13 @@ func RunCreate(
 | `git push` fails (auth error, remote hook rejection, or stale ref race) | `errcode.ErrGitExec` | `5` | `[git-drev] Error: Push failed (git push --set-upstream origin <branch> --force-with-lease)` |
 | Context canceled via `SIGINT` / `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[git-drev] Error: Operation interrupted` |
 
-## 7. Legacy Modernization & Edge Cases
-- **Fixed legacy quirks:**
-  1. **`eval set -- "${params}"` Shell Injection (`create.sh:35,42`):**
-     - *Legacy flaw:* `create.sh` accumulated positional arguments in a string and evaluated `eval set -- "${params}"`. Passing a branch argument containing spaces, quotes, globs, or `$(...)` executed arbitrary shell commands or split arguments before Git ever saw them.
-     - *Resolution:* Arguments are parsed directly from `os.Args` string slices and validated via `git check-ref-format --branch <branch>` before any Git command is invoked.
-  2. **Ambiguous `git for-each-ref` & `git ls-remote` Matching (`create.sh:60,74`):**
-     - *Legacy flaw:*
-       - `git for-each-ref --format='%(refname:short)' refs/heads/"${branch}"` treated `${branch}` as a prefix/glob pattern! If a branch `feature/a` existed and the user ran `create feature`, `git for-each-ref refs/heads/feature` matched `refs/heads/feature/a` and falsely reported that branch `feature` already existed locally, causing `git checkout feature` to fail or behave unexpectedly.
-       - `git ls-remote origin "${branch}"` matched tags (`refs/tags/<branch>`), pull request refs, or partial ref suffixes in addition to heads, and relied on capturing output before checking `$?` after `local` declaration.
-     - *Resolution:* Use exact ref verification: `git show-ref --verify --quiet refs/heads/<branch>` for local branches and `git ls-remote --exit-code --heads origin refs/heads/<branch>` for remote branches.
-  3. **External `jq` Dependency & Loose UUID Regex (`create.sh:99-102`, `common.sh:9`):**
-     - *Legacy flaw:* `create.sh` spawned `jq -r '.uuid' <<< "${commit}"` and validated against `DRS_UUID_REGEXP='^\{?[A-Z0-9a-z]{8}-...'` (which accepted non-hex letters `G-Z` and optional curly braces `{}`).
-     - *Resolution:* Unmarshal the `HEAD` commit subject in-process via Go's `encoding/json` into `domain.RevisionMeta`, validate against strict RFC 4122 hex (`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`), and normalize to lowercase.
-  4. **Destructive `drs::common::check_remote_refs` (`create.sh:54`, `common.sh:266-294`):**
-     - *Legacy flaw:* Unset `remote.origin.fetch` and looped over network calls before running `create`.
-     - *Resolution:* Replaced by `gitRunner.EnsureRemoteFetchConfig(ctx)` as specified in Section 7.2 of `docs/spec/global.md`.
-  5. **Partial Local Branch Stranding on Commit/Push Failure (`create.sh:92-125`):**
-     - *Legacy flaw:* If `git commit --allow-empty` or `git push` failed after `git checkout -b "${branch}"`, the unpushed local branch remained checked out. Re-running `create "${branch}"` saw the local branch, entered the local-branch path (`fetch_and_checkout`), and exited `0` without ever pushing the branch to `origin`.
-     - *Resolution:* If committing the marker or pushing to `origin` fails after `git checkout -b`, `RunCreate` rolls back to the original `HEAD` and deletes the unpushed local branch (`git branch -D <branch>`).
-  6. **Operational Logs on `stdout` & Typo Fix (`create.sh:104`):**
-     - *Legacy flaw:* `drs::common::log` wrote operational messages to `stdout`, and line 104 logged `"Commiting empty revision marker"` (misspelled).
-     - *Resolution:* All operational logs are emitted to `stderr` with `[git-drev]` prefix, and spelling is standardized to `"Committing empty revision marker"` (while keeping the structure human-friendly).
-
+## 7. Edge Cases & Boundary Conditions
 - **Boundary conditions:**
   - **Subdirectory invocation (`GIT_PREFIX`):** Running `git-drev create <branch>` from `<repo-root>/data/subdir` locates `<repo-root>/.git-drev.yaml` via `RepoRoot` resolution rather than failing with `"No configuration file found"`.
   - **Detached `HEAD` state:** Running `git-drev create hotfix/v1` while in detached `HEAD` (e.g., after `git-drev select <uuid>`) succeeds: `git checkout -b hotfix/v1` branches directly from the detached commit and copies its `uuid` into the new branch's marker commit `{"uuid":"<uuid>","marker":"true"}`.
   - **Initial commit / non-revision `HEAD`:** When `HEAD` is the initial repository setup commit (e.g., `"Add initial drev configuration"`) or an unborn branch with no commits, `HeadCommitMeta` fails JSON/UUID validation and safely falls back to `{"uuid":"00000000-0000-0000-0000-000000000000","marker":"true"}`.
   - **Branch off another empty marker branch:** When creating branch `B` while `HEAD` is on branch `A`'s marker commit (`{"uuid":"<uuid-or-zero>","marker":"true"}`), `HeadCommitMeta` extracts `meta.UUID` (preserving either the ancestor's real UUID or `domain.ZeroUUID`) and writes `{"uuid":"<uuid-or-zero>","marker":"true"}` on branch `B`.
-  - **Hierarchical branch names (`feature/foo`):** Creating `feature` when `refs/heads/feature/foo` exists (no `refs/heads/feature`) accurately detects that `refs/heads/feature` does not exist locally (fixing the legacy `git for-each-ref` prefix bug). Conversely, attempting to create `feature/sub` when `refs/heads/feature` already exists as a file ref fails cleanly at `git checkout -b` with `ErrGitExec` (exit code `5`).
+  - **Hierarchical branch names (`feature/foo`):** Creating `feature` when `refs/heads/feature/foo` exists (no `refs/heads/feature`) accurately detects that `refs/heads/feature` does not exist locally. Conversely, attempting to create `feature/sub` when `refs/heads/feature` already exists as a file ref fails cleanly at `git checkout -b` with `ErrGitExec` (exit code `5`).
   - **Symlinks, empty directories, and submodules:** Because `create` only creates an `--allow-empty` metadata commit and does not stage working tree files or invoke `rsync`, untracked files, symlinks, empty directories, and submodules in the working tree remain untouched.
 
 ## 8. Black-Box Verification Scenarios

@@ -17,13 +17,13 @@
   - **Cardinality:** Exact `0` positional arguments.
   - **Path resolution behavior:** Not applicable (`name` takes no path arguments). The command may be invoked from the worktree root or any subdirectory within the working tree (`GIT_PREFIX` is normalized per Section 2 of `docs/spec/global.md`).
   - **Validation rules:**
-    - Passing any positional argument (except when handled by the root `help` command dispatcher) is rejected as a CLI usage violation (`ErrUsage`, exit code `2`), replacing the legacy behavior where `drs::common::no_args` printed an informational notice to `stdout` and exited `0`.
+    - Passing any positional argument (except when handled by the root `help` command dispatcher) is rejected as a CLI usage violation (`ErrUsage`, exit code `2`).
     - Passing any unknown flag or mutually exclusive global flags (`--verbose` and `--quiet`) fails immediately with `ErrUsage` (exit code `2`).
 
 - **Preconditions & state assertions:**
   1. **Non-bare Git working tree:** Must be executed inside a valid, non-bare Git working tree (`git rev-parse --is-inside-work-tree` == `"true"`). Executing outside a Git repository, inside a bare repository, or directly inside the `.git/` directory fails with `ErrNotRepository` (exit code `3`).
   2. **Configuration file independence:** Unlike commands that interact with remote storage (`get`, `put`, `usage`, `select`), `name` is a purely local Git inspection command and **does not** require `.git-drev.yaml` to exist or be valid.
-  3. **Unborn branch compatibility:** Must succeed on newly initialized repositories with an unborn `HEAD` (where `HEAD` is a symbolic ref pointing to `refs/heads/<branch>` before the initial commit exists), whereas legacy `git rev-parse --abbrev-ref HEAD` failed with `fatal: ambiguous argument 'HEAD': unknown revision or path not in the working tree`.
+  3. **Unborn branch compatibility:** Must succeed on newly initialized repositories with an unborn `HEAD` (where `HEAD` is a symbolic ref pointing to `refs/heads/<branch>` before the initial commit exists).
 
 ## 3. Subcommand Domain Models & Signatures
 ```go
@@ -118,23 +118,7 @@ func RunName(ctx context.Context, insp *git.Inspector, logger *term.Logger, stdo
 | Standard output write failure (e.g., closed stdout / `EPIPE`) | `errcode.ErrRuntime` | `1` | `[git-drev] Error: Failed to write output: <io error>` |
 | Execution canceled via `SIGINT` or `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[git-drev] Error: Operation interrupted` |
 
-## 7. Legacy Modernization & Edge Cases
-- **Fixed legacy quirks:**
-  1. **Fragile `git rev-parse --abbrev-ref HEAD` Resolution (`legacy/name.sh:21`):**
-     - *Legacy flaw:* `name.sh` ran `branch=$(git rev-parse --abbrev-ref HEAD)` and checked `if [[ "$branch" = "HEAD" ]]`. This had two failure modes:
-       1. In a newly initialized repository (`git init`) prior to the first commit, `git rev-parse --abbrev-ref HEAD` failed with `fatal: ambiguous argument 'HEAD': unknown revision or path not in the working tree`, printing raw Git fatal output to `stderr` and then printing an empty line `""` to `stdout` with exit code `0` because `set -e` was not enabled and the exit status of `$(...)` was ignored!
-       2. Ambiguous ref names or bare `HEAD` strings could not be cleanly distinguished from detached state via exit code.
-     - *Modernized Go behavior:* Uses `git symbolic-ref --quiet --short HEAD` (as mandated by Section 4 of `docs/spec/global.md`), which inspects `.git/HEAD` directly, succeeds even on unborn branches, and deterministically signals detached `HEAD` via exit code `1`.
-  2. **Silent Ignored Positional Arguments & `eval set -- "${params}"` Injection (`legacy/common.sh:211-243`):**
-     - *Legacy flaw:* `drs::common::no_args` concatenated positional arguments into `params="${params} $1"` and ran `eval set -- "${params}"` (exposing shell injection / glob expansion if arguments contained metacharacters), and when extra arguments were passed, it logged `[drs] This command takes no argument(s), please check your input` to `stdout` and **continued execution with exit code `0`**, polluting `stdout` with two lines (the warning message followed by the branch name).
-     - *Modernized Go behavior:* Rejects any positional arguments immediately before executing domain logic, writing the error to `stderr` and returning exit code `2` (`ErrUsage`).
-  3. **Bare Repository / `.git` Directory False Positives (`legacy/common.sh:73`):**
-     - *Legacy flaw:* `drs::common::read_repository` only checked `git rev-parse --git-dir`, which succeeded inside bare repositories or when `PWD` was inside `.git/`, where workspace-oriented commands should not operate.
-     - *Modernized Go behavior:* Verifies `git rev-parse --is-inside-work-tree` == `"true"`, returning `ErrNotRepository` (exit code `3`) otherwise.
-  4. **Legacy `help` Positional Argument Returning Exit Code `1` (`legacy/common.sh:219-220, 253-257`):**
-     - *Legacy flaw:* Running `git drs-name help` printed a 2-line message to `stdout`/`stderr` and exited with code `1`.
-     - *Modernized Go behavior:* Standard `-h` / `--help` flags and `git-drev help name` print comprehensive usage documentation to `stdout` and exit `0`.
-
+## 7. Edge Cases & Boundary Conditions
 - **Boundary conditions:**
   - **Subdirectory invocation (`GIT_PREFIX`):** Invoking `git-drev name` from a nested subdirectory (e.g., `data/subdir/nested`) resolves the enclosing worktree's `HEAD` and outputs the branch name identically to invoking from `RepoRoot`.
   - **Hierarchical branch names & special characters:** Branches containing slashes or special characters valid in `git-check-ref-format(1)` (e.g., `feature/JIRA-123_build+test`, `release/v2.0.0-rc.1`) are emitted verbatim via `git symbolic-ref --quiet --short HEAD` without stripping path segments under `refs/heads/`.

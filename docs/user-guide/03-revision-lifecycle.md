@@ -59,19 +59,11 @@ make build-all-artifacts
 # Publish the revision (defaults sequence to current Unix epoch seconds)
 git drev put
 
-# Or pass an explicit monotonic CI build number and print rsync transfer stats
-git drev put -s "${BUILD_NUMBER}" --stats
+# Or pass an explicit monotonic CI build number
+git drev put -s "${BUILD_NUMBER}"
 ```
 
 ### The 5-stage publishing flow
-
-```mermaid
-flowchart TD
-    A["Stage 1: Preflight Assertions<br/>(Inside worktree, attached branch, no index.lock, remote configured)"] --> B["Stage 2: Server-Side Baseline Clone<br/>(ssh storage-server 'cp -al -- <parent_uuid> <new_uuid>')"]
-    B --> C["Stage 3: Rsync Delta Upload<br/>(rsync workdir/ -> storage-server:<path>/<new_uuid>/)"]
-    C --> D["Stage 4: Post-Put Hook<br/>(.git-drev-put-hook execution)"]
-    D --> E["Stage 5: Transactional Git Commit & Leased Push<br/>(git commit & git push --force-with-lease)"]
-```
 
 1. **Preflight assertions:** Verifies that `HEAD` is attached to a valid branch, no `.git/index.lock` exists, and `remote.host` / `remote.path` are configured.
 2. **Server-side hardlink clone:**
@@ -132,8 +124,8 @@ git drev get
 # Update the current branch from origin AND download the latest snapshot in one step
 git drev get --latest
 
-# Download into a custom directory with rsync transfer statistics
-git drev get --stats ./custom-output
+# Download into a custom directory
+git drev get ./custom-output
 ```
 
 ---

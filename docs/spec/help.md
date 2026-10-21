@@ -6,7 +6,7 @@
   - Subcommand help flag: `git drev <subcommand> --help`, `git-drev <subcommand> -h`
   - Git plugin help positional: `git drev help [<subcommand>]`, `git-drev help [<subcommand>]`
 - **Target Go package:** `internal/cli` (`root.go`)
-- **Summary:** Prints command usage, description, available flags, and registered subcommands to `stdout` and exits `0`. Replaces the legacy behavior where positional `help` wrote to `stderr` and exited with failure (`1`).
+- **Summary:** Prints command usage, description, available flags, and registered subcommands to `stdout` and exits `0`.
 
 ## 2. Arguments, Flags & Routing
 - **Positional arguments (`help` command):**
