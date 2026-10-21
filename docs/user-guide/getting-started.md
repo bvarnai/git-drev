@@ -112,7 +112,7 @@ ssh -T storage-server "mkdir -p /srv/drev && rsync --version"
 
 ## 4. Initializing a metadata repository
 
-As covered in [Chapter 1](01-philosophy.md#repository-topology-dedicated-repo-vs-git-submodule), `git-drev` operates in a dedicated metadata repository (which can be used standalone or mounted as a Git submodule).
+As covered in [Chapter 1](philosophy.md#repository-topology-dedicated-repo-vs-git-submodule), `git-drev` operates in a dedicated metadata repository (which can be used standalone or mounted as a Git submodule).
 
 ### Step 1: Create a metadata repository and add a Git remote
 ```bash

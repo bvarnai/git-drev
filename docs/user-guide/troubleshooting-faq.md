@@ -125,7 +125,7 @@ Multiple builders pushed a revision to the same branch at almost the exact same 
 ---
 
 ### Should I run `git-drev` inside my main source-code repository?
-No. `git-drev` creates commits whose subjects are JSON strings (`{"uuid":"...","seq":"..."}`) and uses `git reset --hard` and `git rebase -X theirs` to synchronize branches. Always run `git-drev` in a **dedicated metadata repository** (either standalone or mounted as a Git submodule inside your main source tree). See [Chapter 1: Repository topology](01-philosophy.md#repository-topology-dedicated-repo-vs-git-submodule).
+No. `git-drev` creates commits whose subjects are JSON strings (`{"uuid":"...","seq":"..."}`) and uses `git reset --hard` and `git rebase -X theirs` to synchronize branches. Always run `git-drev` in a **dedicated metadata repository** (either standalone or mounted as a Git submodule inside your main source tree). See [Chapter 1: Repository topology](philosophy.md#repository-topology-dedicated-repo-vs-git-submodule).
 
 ---
 
@@ -147,4 +147,4 @@ To inspect snapshots that are no longer referenced by any Git commit, run:
 ```bash
 git drev usage -a
 ```
-To prune unreferenced or expired snapshots, use the retention cleanup script in [Chapter 5: Storage architecture & retention](05-storage-and-retention.md).
+To prune unreferenced or expired snapshots, use the retention cleanup script in [Chapter 5: Storage architecture & retention](storage-and-retention.md).
