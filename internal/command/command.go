@@ -47,8 +47,8 @@ func SanitizedEnv(baseEnv []string, extraEnv ...[]string) []string {
 	overrides := make(map[string]struct{}, 8)
 	for _, extra := range extraEnv {
 		for _, entry := range extra {
-			if k, _, ok := strings.Cut(entry, "="); ok {
-				overrides[k] = struct{}{}
+			if k, _, ok := strings.Cut(entry, "="); ok && k != "" {
+				overrides[strings.ToUpper(k)] = struct{}{}
 			}
 		}
 	}
@@ -56,10 +56,10 @@ func SanitizedEnv(baseEnv []string, extraEnv ...[]string) []string {
 	filtered := make([]string, 0, len(baseEnv)+len(overrides)+4)
 	for _, entry := range baseEnv {
 		k, _, ok := strings.Cut(entry, "=")
-		if !ok {
+		if !ok || k == "" {
 			continue
 		}
-		if _, overridden := overrides[k]; overridden {
+		if _, overridden := overrides[strings.ToUpper(k)]; overridden {
 			continue
 		}
 		if isMandatoryOverride(k) {
@@ -71,7 +71,7 @@ func SanitizedEnv(baseEnv []string, extraEnv ...[]string) []string {
 	for _, extra := range extraEnv {
 		for _, entry := range extra {
 			k, _, ok := strings.Cut(entry, "=")
-			if !ok || isMandatoryOverride(k) {
+			if !ok || k == "" || isMandatoryOverride(k) {
 				continue
 			}
 			filtered = append(filtered, entry)
@@ -87,7 +87,7 @@ func SanitizedEnv(baseEnv []string, extraEnv ...[]string) []string {
 }
 
 func isMandatoryOverride(key string) bool {
-	switch key {
+	switch strings.ToUpper(key) {
 	case "LC_ALL", "LANG", "GIT_TERMINAL_PROMPT", "GIT_ADVICE":
 		return true
 	default:

@@ -173,6 +173,7 @@ func (r *ExecRunner) Run(ctx context.Context, req RunRequest) error {
 	} else {
 		cmd.Stderr = os.Stderr
 	}
+	cmd.Stdin = nil
 
 	// Working directory
 	if req.WorkDir != "" {
@@ -189,6 +190,8 @@ func (r *ExecRunner) Run(ctx context.Context, req RunRequest) error {
 		return nil
 	}
 
+	// If context expired or was canceled, waitErr may be exec.ErrWaitDelay when
+	// orphaned grandchildren still hold stdout/stderr pipes after WaitDelay.
 	if hookCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
 		return errcode.NewError(errcode.ErrRuntime, "%s hook %q timed out after %v", req.Kind, hookBase, timeout)
 	}
