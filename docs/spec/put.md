@@ -1,294 +1,84 @@
-# Subcommand Technical Specification: `git-drev put`
+# Spec: git-drev put
 
-## 1. Subcommand Overview & CLI Contract
-- **Invocation signatures:**
-  - Via Git plugin: `git drev put [flags] [<source_directory>]`
-  - Direct binary: `git-drev put [flags] [<source_directory>]`
-- **Target Go package:** `internal/cli` (`internal/cli/put.go`)
-- **Summary:** Uploads the contents of a local source directory (or the configured `workdir`) to a newly generated UUID directory on the remote storage host—cloning the current `HEAD` revision on the remote server as a copy-on-write/delta baseline when available—executes the optional `.git-drev-put-hook` script, commits the new revision metadata (`{"uuid":"...","seq":"..."}`) to the active branch, and publishes it to `origin` using an optimistic concurrency control loop with sequence-based conflict resolution.
+## 1. Command Signature
+- **Usage:** `git-drev put [flags] [<source_directory>]`
+- **Arguments:**
+  - `[<source_directory>]` *(optional)*: Local directory to upload. Defaults to repository `workdir` (e.g. `data`).
+- **Flags:**
+  - `-s`, `--sequence <uint64>`: Explicit sequence number for concurrent ordering. Defaults to Unix timestamp seconds (`time.Now().Unix()`).
+  - `--no-sequence-check`: Disable sequence comparison during stale-push resolution, forcing a rebase onto `origin/<branch>`.
+  - `--stats`: Instruct `rsync` to print transfer statistics.
+  - Standard global flags: `--help` (`-h`), `--version`, `--verbose` (`-v`), `--quiet` (`-q`), `--no-color`.
 
-## 2. Arguments, Flags & Preconditions
-- **Subcommand-specific flags:**
-  | Flag | Short | Go Type | Default | Required | Description |
-  | :--- | :--- | :--- | :--- | :--- | :--- |
-  | `--stats` | — | `bool` | `false` | No | Append `--stats` to the `rsync` invocation to print file-transfer statistics. |
-  | `--sequence` | `-s` | `string` (parsed as `uint64`) | `""` (resolved at runtime to Unix epoch seconds `uint64(time.Now().Unix())`) | No | Explicit monotonically increasing sequence number (`uint64` decimal string) used to order concurrent uploads and discard outdated revisions. |
-  | `--no-sequence-check` | — | `bool` | `false` | No | Disable sequence number comparison during stale-push resolution, forcing the local revision to be rebased onto `origin/<branch>` regardless of remote sequence age. |
+## 2. Prerequisites & Environment
+- **Required host binaries:** `git` (>= 2.25.0), `ssh`, `rsync` (>= 3.1.0).
+- **Environment variables read:** `GIT_DIR`, `GIT_WORK_TREE`, `GIT_PREFIX`, `GIT_DREV_CONFIG`, `GIT_DREV_SSH_COMMAND`, `GIT_DREV_HOOK_TIMEOUT` (default `5m`), `NO_COLOR`, `GIT_DREV_COLOR`.
+- **Environment variables injected into hook:** `GIT_DREV_VERSION`, `GIT_DREV_UUID`, `GIT_DREV_SEQ`, `GIT_DREV_BRANCH`, `GIT_DREV_WORK_DIR`, `GIT_DREV_ROOT`.
+- **Working directory requirements (GIT_PREFIX behavior):** Can be invoked from any repository subdirectory; operations are executed relative to repository root (`git rev-parse --show-toplevel`). Explicit `<source_directory>` is resolved relative to invocation `PWD`.
+- **Git state assertions:**
+  - Must be inside a valid, non-bare Git working tree (`git rev-parse --is-inside-work-tree` == `true`).
+  - Valid configuration resolved across the 3-tier cascade (`~/.config/git-drev/config.yaml`, `$GIT_DREV_CONFIG`, `.git-drev.yaml`).
+  - `HEAD` must be attached to an active branch (`git symbolic-ref --quiet --short HEAD`). Detached HEAD fails immediately with Exit Code `4`.
+  - Git index must not be locked (`.git/index.lock` must not exist).
 
-  *(Note: Global flags `--verbose` / `-v`, `--quiet` / `-q`, `--no-color`, `--version`, and `--help` / `-h` are inherited from `docs/spec/global.md` Section 1.)*
+## 3. Core Execution Flow
+1. **Context & Argument Verification:**
+   - Verify argument count is 0 or 1.
+   - Parse `--sequence` if provided as `uint64`. Defaults to current epoch seconds.
+   - Resolve source directory and assert it exists on local filesystem (`os.Stat(sourceDir).IsDir()`).
+   - Assert `HEAD` is attached to a branch.
+2. **UUID Generation:**
+   - Generate cryptographically random RFC 4122 v4 UUID (`crypto/rand`).
+   - Log `[git-drev] Directory revision uuid is '<uuid>'`.
+3. **Remote Baseline Cloning (Copy-on-Write Optimization):**
+   - Inspect parent revision UUID on `HEAD`.
+   - If a valid non-zero parent UUID exists:
+     - Execute remote hardlink clone via SSH: `cp -al -- <remote.path>/<parent_uuid> <remote.path>/<uuid>`.
+     - If baseline clone succeeds, log `[git-drev] Baseline revision uuid is '<parent_uuid>'`.
+     - If baseline missing or purged: fallback to full copy and log `[git-drev] Unable to use previous revision, doing a full copy`.
+   - If unborn branch or marker commit: skip baseline clone and log `[git-drev] Unable to use previous revision, doing a full copy`.
+4. **Rsync Delta Upload:**
+   - Log `[git-drev] Putting directory revision to remote host (this might take a while)`.
+   - Run `rsync -a --delete-during [flags] -e "ssh -T" <source_directory>/ <host>:<remote.path>/<uuid>/`.
+   - Only new or modified files are transmitted over the wire.
+5. **Hook Execution (`.git-drev-put-hook`):**
+   - If `.git-drev-put-hook` exists in repository root, execute with injected `GIT_DREV_*` environment variables and positional args.
+   - If hook fails or times out, fail with Exit Code `1`.
+6. **Commit Revision Metadata:**
+   - Log `[git-drev] Staging revision metadata` and stage changed files: `git add --all`.
+   - Log `[git-drev] Committing revision metadata`.
+   - Record metadata commit: `git commit --allow-empty -m '{"uuid":"<uuid>","seq":"<sequence>"}'`.
+7. **Publish with Optimistic Concurrency Control (OCC):**
+   - Push commit to remote: `git push --force-with-lease origin refs/heads/<branch>`.
+   - If push succeeds: proceed to completion.
+   - If push rejected due to stale reference (concurrent push):
+     - Log `[git-drev] Stale info detected, trying to resolve`.
+     - Fetch remote updates: `git fetch --all --prune`.
+     - **Sequence Check:** If remote commit has strictly higher sequence (`remoteSeq > localSeq`) and `--no-sequence-check` is not set:
+       - Log `[git-drev] Newer revision found, dropping older (hard reset)`.
+       - Log `[git-drev] Hint: This is usually ok, you want to see the latest revision`.
+       - Hard reset branch to upstream (`git reset --hard refs/remotes/origin/<branch> --`) and exit cleanly with Exit Code `0`.
+     - **Rebase:** Otherwise, rebase local commit onto upstream: `git rebase --strategy-option=theirs refs/remotes/origin/<branch>`.
+     - Retry `PushForceWithLease` (up to 5 attempts).
+8. **Completion:**
+   - Log elapsed time summary (`[git-drev] Took X min Y sec`) to `stderr` and exit cleanly with Exit Code `0`.
 
-- **Positional arguments:**
-  - `[<source_directory>]` (**Optional**, cardinality `0..1`):
-    - Rejects invocations with more than 1 positional argument with `errcode.ErrUsage` (exit code `2`).
-    - **When provided:** Resolved relative to `CallerDir` (`filepath.Join(RepoRoot, Prefix)`—the caller's working directory at invocation time, honoring `GIT_PREFIX`) before changing the process working directory to `RepoRoot`.
-    - **When omitted:** Defaults to `filepath.Join(RepoRoot, cfg.WorkDir)` (where `cfg.WorkDir` defaults to `"data"` if unset in the 3-tier YAML configuration).
-    - **Validation rules:**
-      1. The resolved path MUST exist on the local filesystem (`os.Stat`); if missing, fail immediately with `errcode.ErrUsage` (exit code `2`).
-      2. The resolved path MUST be a directory (`info.IsDir() == true`, following symlinks at the top-level path via `os.Stat`); if it is a regular file, fail with `errcode.ErrUsage` (exit code `2`).
-      3. Must not point to `.git` or a path inside `.git/`.
-
-- **Preconditions & state assertions:**
-  1. **Non-bare Git working tree:** Must be invoked inside a valid Git working tree (`git rev-parse --is-inside-work-tree == true`). Bare repositories or invocations inside `.git/` fail with `errcode.ErrNotRepository` (exit code `3`).
-  2. **Configuration validity:** The 3-tier YAML configuration (`config.Load(RepoRoot)`) must parse as valid YAML and yield validated `remote.host`, `remote.path`, and `workdir` values (`errcode.ErrConfig`, exit code `3`).
-  3. **Attached `HEAD` on a named branch:** `HEAD` MUST be a symbolic reference (`git symbolic-ref --quiet --short HEAD`). If `HEAD` is detached, abort before any remote or local mutation with `errcode.ErrDetachedHead` (exit code `4`) and emit `[git-drev] Hint: Use "git-drev select <branch>" to select a branch first.`
-  4. **Git index unlocked:** Verify `<git-dir>/index.lock` does not exist before starting the upload or staging changes; if present, fail with `errcode.ErrGitState` (exit code `4`).
-  5. **Remote fetch refspec configuration:** Ensure `remote.origin.fetch` includes `+refs/heads/*:refs/remotes/origin/*` via `ops.EnsureRemoteFetchConfig` (non-destructively adding the refspec if missing).
-
-## 3. Subcommand Domain Models & Signatures
-```go
-package cli
-
-import (
-	"context"
-	"time"
-
-	"github.com/bvarnai/git-drev/internal/domain"
-	"github.com/bvarnai/git-drev/internal/git"
-	"github.com/bvarnai/git-drev/internal/hook"
-	"github.com/bvarnai/git-drev/internal/term"
-	"github.com/bvarnai/git-drev/internal/transport"
-)
-
-// MaxPushRetries bounds the optimistic concurrency retry loop when concurrent
-// producers push to the same branch.
-const MaxPushRetries = 5
-
-// PutOptions encapsulates validated CLI flags and resolved paths for `git-drev put`.
-type PutOptions struct {
-	// SourceDir is the canonical absolute path to the local directory to upload.
-	SourceDir string
-	// RawArgs holds the positional arguments passed after flags (forwarded to .git-drev-put-hook).
-	RawArgs []string
-	// Sequence is the validated uint64 sequence number (explicit or epoch default).
-	Sequence uint64
-	// SequenceCheck controls whether older sequence revisions are dropped on stale push.
-	SequenceCheck bool
-	// Stats enables rsync --stats output.
-	Stats bool
-	// Verbose enables verbose logging and rsync -v --itemize-changes.
-	Verbose bool
-	// Quiet suppresses informational progress logs and sets rsync --quiet.
-	Quiet bool
-}
-
-// PutResult captures the outcome of a `put` execution for testing and telemetry.
-type PutResult struct {
-	// UUID is the newly generated RFC 4122 v4 UUID for this revision.
-	UUID string
-	// Sequence is the decimal string representation of the revision sequence.
-	Sequence string
-	// Branch is the active local branch name to which the revision was published.
-	Branch string
-	// BaselineUUID is the previous revision UUID cloned on the remote host, or "" if a full copy occurred.
-	BaselineUUID string
-	// DroppedOlder reports true if a concurrent remote revision had a strictly greater sequence
-	// and the local commit was discarded via hard reset to origin/<branch>.
-	DroppedOlder bool
-	// PushAttempts records the number of `git push --force-with-lease` invocations performed.
-	PushAttempts int
-	// Elapsed is the total wall-clock execution duration.
-	Elapsed time.Duration
-}
-
-// PutEnv groups external dependencies injected into RunPut for pure unit testing.
-type PutEnv struct {
-	Config  domain.ProjectConfig
-	Insp    *git.Inspector
-	Ops     *git.Operations
-	Storage storage.Manager
-	Hook    hook.Runner
-	Logger  *term.Logger
-	UUIDGen func() (string, error)
-	Now     func() time.Time
-}
-
-// RunPut executes the domain logic of `git-drev put`.
-func RunPut(ctx context.Context, env PutEnv, opts PutOptions) (*PutResult, error)
-```
-
-## 4. Execution Flow (Step-by-Step Domain Logic)
-
-### 1. Input Normalization & Validation
-1. **Flag validation:**
-   - Reject mutually exclusive global flags `--verbose` and `--quiet` with `errcode.ErrUsage` (exit code `2`).
-   - If `--sequence` (`-s`) is provided, parse it via `strconv.ParseUint(rawSeq, 10, 64)`. If empty or non-numeric (e.g., negative, floating-point, overflow, or non-ASCII digits), fail immediately with `errcode.ErrUsage` (exit code `2`).
-   - If `--sequence` is omitted, set `opts.Sequence = uint64(env.Now().Unix())`.
-   - Set `opts.SequenceCheck = !noSequenceCheckFlag`.
-2. **Repository & path canonicalization:**
-   - Query `RepoRoot` and `Prefix` via `env.Insp.RepoRoot(ctx, dir)`.
-   - Compute `CallerDir = filepath.Join(RepoRoot, Prefix)`.
-   - Load and validate `cfg` via `config.Load(RepoRoot)` (3-tier YAML cascade).
-   - Resolve `opts.SourceDir`:
-     - If positional argument `<source_directory>` is present: if `filepath.IsAbs(arg)`, use `filepath.Clean(arg)`; otherwise `filepath.Join(CallerDir, arg)`.
-     - If omitted: `filepath.Join(RepoRoot, cfg.WorkDir)`.
-   - Verify `opts.SourceDir` exists and is a directory via `os.Stat(opts.SourceDir)`.
-   - Change the process working directory to `RepoRoot` (`os.Chdir(RepoRoot)`) so all subsequent Git operations and hooks execute deterministically from the worktree root.
-3. **Precondition assertions:**
-   - Call `env.Insp.CurrentBranch(ctx, RepoRoot)` (`git symbolic-ref --quiet --short HEAD`). If `detached == true`, return `errcode.ErrDetachedHead` (exit code `4`).
-   - Call `env.Ops.EnsureRemoteFetchConfig(ctx, RepoRoot)` to ensure `+refs/heads/*:refs/remotes/origin/*` is configured.
-
-### 2. Core Algorithm
-1. **Generate revision identity:**
-   - Generate a lowercase RFC 4122 UUID v4 via `env.UUIDGen()` (backed by `crypto/rand.Read`).
-   - Log `[git-drev] Directory revision uuid is '<uuid>'` to `stderr`.
-   - Format commit metadata payload using `encoding/json`: `{"uuid":"<uuid>","seq":"<sequence>"}` (`domain.RevisionMeta{UUID: uuid, Seq: strconv.FormatUint(opts.Sequence, 10)}`).
-2. **Remote baseline cloning (server-side delta optimization):**
-   - Log `[git-drev] Trying to use previous revision as baseline (this might take a while)` to `stderr`.
-   - Query the current `HEAD` commit subject via `env.Insp.HeadCommitMeta(ctx, RepoRoot)` (`git log -n 1 --format=%s HEAD --`).
-   - If `HEAD` exists, its subject parses as valid `domain.RevisionMeta`, `meta.UUID` matches RFC 4122 hex format, and `meta.UUID != domain.ZeroUUID`:
-     - Register a deferred rollback flag `remoteStagingCreated = true` so that if `put` fails or is interrupted before the commit is pushed, a best-effort remote cleanup can remove `<remote.path>/<uuid>` if needed (or leave cleanup on interruption).
-     - Invoke `env.Storage.CloneBaseline(ctx, cfg.Remote.Host, cfg.Remote.Path, meta.UUID, uuid)`.
-     - If `CloneBaseline` succeeds, set `result.BaselineUUID = meta.UUID` and log `[git-drev] Baseline revision uuid is '<last_uuid>'`.
-     - If `CloneBaseline` returns an error (e.g., previous revision was purged on the server or `HEAD` was an initial commit without a remote directory), treat it as a non-fatal fallback and log `[git-drev] Unable to use previous revision, doing a full copy`.
-   - Otherwise (unparseable `HEAD`, empty repository, or `meta.UUID == domain.ZeroUUID`), skip SSH `cp` and log `[git-drev] Unable to use previous revision, doing a full copy`.
-3. **Upload directory payload via `rsync`:**
-   - Log `[git-drev] Putting directory revision to remote host (this might take a while)` to `stderr`.
-   - Construct `storage.TransferRequest`:
-     - `Host`: `cfg.Remote.Host`
-     - `BasePath`: `cfg.Remote.Path`
-     - `UUID`: `uuid`
-     - `LocalDir`: `opts.SourceDir`
-     - `Verbose`: `opts.Verbose`
-     - `Quiet`: `opts.Quiet`
-     - `Stats`: `opts.Stats`
-     - `UserOptions`: `cfg.Remote.Rsync.Put`
-   - Invoke `env.Remote.Upload(ctx, syncReq)`. If `Upload` fails, return `errcode.ErrTransport` (exit code `7`).
-4. **Execute `.git-drev-put-hook` (if present):**
-   - Check if `<RepoRoot>/.git-drev-put-hook` exists and is a regular file (`os.Stat`).
-   - If present, execute via `env.Hook.Run(ctx, hookReq)` with `GIT_DREV_UUID=<uuid>`, `GIT_DREV_SEQ=<seq>`, `GIT_DREV_BRANCH=<branch>`, `GIT_DREV_WORK_DIR=<abs-workdir>`, `GIT_DREV_ROOT=<RepoRoot>`, and positional arguments `opts.RawArgs`, enforcing `GIT_DREV_HOOK_TIMEOUT` (default `5m`).
-   - If the hook exits non-zero or times out, return `errcode.ErrRuntime` (exit code `1`).
-5. **Stage and commit revision metadata:**
-   - Log `[git-drev] Staging revision metadata` to `stderr`.
-   - Invoke `env.Ops.StageAll(ctx, RepoRoot)` (`git add --all`). On failure, return `errcode.ErrGitExec` (exit code `5`).
-   - Log `[git-drev] Committing revision metadata` to `stderr`.
-   - Invoke `env.Ops.CommitAllowEmpty(ctx, RepoRoot, commitJSON)` (`git commit --allow-empty -m <json>`). On failure, return `errcode.ErrGitExec` (exit code `5`).
-6. **Publish metadata commit with optimistic concurrency control:**
-   - Log `[git-drev] Pushing revision metadata` to `stderr`.
-   - Execute a bounded retry loop (`attempt = 1; attempt <= MaxPushRetries; attempt++`):
-     1. Invoke `stale, pushOutput, err := env.Ops.PushForceWithLease(ctx, RepoRoot, branch, false)` (`git push --force-with-lease origin refs/heads/<branch>`).
-     2. **If `err == nil`:**
-        - Mark upload as committed/published (disarming any interrupted staging rollback).
-        - Log `[git-drev] Took <M> min <S> sec` to `stderr` and return `PutResult`.
-     3. **If `err != nil` and `!stale`:**
-        - Return `errcode.ErrGitExec` (exit code `5`).
-     4. **If `stale == true`:**
-        - If `attempt == MaxPushRetries`, fail with `errcode.ErrGitExec` (exit code `5`): `exceeded maximum push retries (5) due to concurrent updates on origin/<branch>`.
-        - Log `[git-drev] Stale info detected, trying to resolve` to `stderr`.
-        - Invoke `env.Ops.FetchAll(ctx, RepoRoot, opts.Quiet && !opts.Verbose)` (`git fetch --all --prune`). On failure, return `errcode.ErrGitExec` (exit code `5`).
-        - **Sequence comparison (when `opts.SequenceCheck == true`):**
-          - Read remote tip metadata via `remoteMeta, metaErr := env.Insp.BranchCommitMeta(ctx, RepoRoot, "refs/remotes/origin/"+branch)`.
-          - If `metaErr == nil` and `remoteMeta.Seq != ""`:
-            - Parse `remoteSeq, parseErr := strconv.ParseUint(remoteMeta.Seq, 10, 64)`.
-            - If `parseErr == nil` and `opts.Sequence < remoteSeq`:
-              - Log `[git-drev] Newer revision found, dropping older (hard reset)` to `stderr`.
-              - Log `[git-drev] Hint: This is usually ok, you want to see the latest revision` to `stderr`.
-              - Invoke `env.Ops.ResetHard(ctx, RepoRoot, "refs/remotes/origin/"+branch)` (`git reset --hard refs/remotes/origin/<branch> --`). On failure, return `errcode.ErrGitExec` (exit code `5`).
-              - Set `result.DroppedOlder = true`, log `[git-drev] Took <M> min <S> sec` to `stderr`, and return `nil` (exit code `0`).
-        - **Rebase onto updated upstream:**
-          - Invoke `env.Ops.RebaseTheirs(ctx, RepoRoot, "refs/remotes/origin/"+branch)` (`git rebase --strategy-option=theirs refs/remotes/origin/<branch>`).
-          - If `RebaseTheirs` fails, execute `env.Ops.RebaseAbort(ctx, RepoRoot)` (`git rebase --abort`) to restore worktree consistency and return `errcode.ErrGitExec` (exit code `5`).
-        - Apply a brief backoff (`50ms * 2^(attempt-1)` with jitter) and continue to the next loop iteration to retry `PushForceWithLease`.
-
-### 3. Interruption, Cleanup & Rollback
-- **Signal handling (`SIGINT` / `SIGTERM`) or mid-upload failure:**
-   - When `ctx.Done()` fires during step 2 (`CloneBaseline`) or step 3 (`Upload`), the active `ssh` or `rsync` subprocess is terminated (`SIGTERM` followed by `SIGKILL` after 3s).
-   - A deferred cleanup handler runs with a detached `context.WithTimeout(context.Background(), 10*time.Second)` to execute `env.Remote.RemoveRevision(cleanupCtx, cfg.Remote.Host, cfg.Remote.Path, uuid)` (`ssh -T <host> rm -rf -- '<path>/<uuid>'`) if any remote files were staged before the commit was created, preventing orphaned half-uploaded directories on the server.
-- **No premature index pollution:**
-   - `git-drev put` does not touch the Git index until after `rsync` and `.git-drev-put-hook` succeed. If `rsync` or the hook fails, the local Git index and commit history remain untouched.
-- **Rebase abort guarantee:**
-   - If `git rebase --strategy-option=theirs` fails or is interrupted during stale-push recovery, `git rebase --abort` is invoked via a cleanup `defer` before returning the error so the repository is never left mid-rebase.
-
-## 5. Side Effects, Git Plumbing & I/O Contract
-
-### Git Plumbing Invocations
-| Command & Flags | Working Dir | Expected Output Format | Failure Handling |
+## 4. Error Handling & Exit Codes
+| Exit Code | Error Category | Scenario | Emitted Stderr Pattern |
 | :--- | :--- | :--- | :--- |
-| `git rev-parse --is-inside-work-tree --show-toplevel --show-prefix --git-dir` | Caller `PWD` | Newline-delimited boolean and paths | Exit code `3` (`ErrNotRepository`) |
-| `git symbolic-ref --quiet --short HEAD` | `RepoRoot` | `<branch>\n` | Exit code `1` from `git` maps to `ErrDetachedHead` (exit code `4`) |
-| `git config --local --get-all remote.origin.fetch` | `RepoRoot` | Newline-delimited refspecs | If `+refs/heads/*:refs/remotes/origin/*` missing, run `git config --local --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/*` |
-| `git log -n 1 --format=%s HEAD --` | `RepoRoot` | Single-line JSON string `{"uuid":"..."}` | Non-zero exit (unborn branch) or non-JSON subject treated as "no baseline available" |
-| `git add --all` | `RepoRoot` | Empty | Exit code `5` (`ErrGitExec`) |
-| `git commit --allow-empty -m <json>` | `RepoRoot` | Standard commit summary (captured) | Exit code `5` (`ErrGitExec`) |
-| `git push --force-with-lease origin refs/heads/<branch>` | `RepoRoot` | Standard push progress (`LC_ALL=C`) | If output contains `[rejected]` and `(stale info)`, trigger stale-push recovery; otherwise exit code `5` (`ErrGitExec`) |
-| `git fetch --all --prune` | `RepoRoot` | Standard fetch output | Exit code `5` (`ErrGitExec`) |
-| `git log -n 1 --format=%s refs/remotes/origin/<branch> --` | `RepoRoot` | Single-line JSON string `{"uuid":"...","seq":"..."}` | Non-JSON or missing `seq` skips sequence drop and proceeds to rebase |
-| `git reset --hard refs/remotes/origin/<branch> --` | `RepoRoot` | `HEAD is now at ...` | Exit code `5` (`ErrGitExec`) |
-| `git rebase --strategy-option=theirs refs/remotes/origin/<branch>` | `RepoRoot` | Standard rebase output | Run `git rebase --abort` and return exit code `5` (`ErrGitExec`) |
+| `0` | `nil` | Revision uploaded and published, or older revision dropped gracefully. | None (operational logs on `stderr`). |
+| `1` | `errcode.ErrRuntime` | `.git-drev-put-hook` failed or timed out. | `[git-drev] Error: Put hook '.git-drev-put-hook' failed: <details>` |
+| `2` | `errcode.ErrUsage` | Invalid flag, extra arguments, non-existent source directory, or invalid `--sequence`. | `[git-drev] Error: <usage error>` |
+| `2` | `errcode.ErrUsage` | Mutually exclusive flags passed (`--verbose` and `--quiet`). | `[git-drev] Error: flags --verbose and --quiet cannot be used together` |
+| `3` | `errcode.ErrNotRepository` | Outside Git working tree or inside a bare repository. | `[git-drev] Error: Not inside a Git working tree` |
+| `3` | `errcode.ErrConfig` | Missing, unreadable, or invalid `.git-drev.yaml` configuration. | `[git-drev] Error: Configuration error in '<path>': <detail>` |
+| `4` | `errcode.ErrDetachedHead`| Repository is in detached HEAD state. | `[git-drev] Error: Detached HEAD state detected, aborting`<br>`[git-drev] Hint: Use "git-drev select <branch>" to select a branch first.` |
+| `4` | `errcode.ErrGitState` | Git index is locked (`.git/index.lock` exists). | `[git-drev] Error: Git index is locked ('.git/index.lock' exists)` |
+| `5` | `errcode.ErrGitExec` | Git staging, commit, fetch, reset, or push exceeded max retries. | `[git-drev] Error: <operation> failed: <git stderr>` |
+| `7` | `errcode.ErrTransport` | SSH connection failure or `rsync` upload failure. | `[git-drev] Error: Unable to put directory revision: <details>` |
+| `130`| `errcode.ErrInterrupted` | Execution interrupted via `SIGINT` / `SIGTERM`. | `[git-drev] Error: Operation interrupted` |
 
-### Filesystem & Metadata Mutations
-- **Remote host (`<remote.host>`):**
-  - Creates directory `<remote.path>/<uuid>/` (mode `0755`, or hardlink-cloned from `<remote.path>/<last_uuid>/` via `cp -al --`).
-  - Synchronizes `<source_directory>/` contents into `<remote.path>/<uuid>/` via `rsync -a --delete-during`.
-- **Local repository (`<RepoRoot>`):**
-  - `.git-drev-put-hook` MAY create or modify tracked/untracked metadata files in `<RepoRoot>` (e.g., `env.json`, build manifests).
-  - Stages all modified/untracked non-ignored files in `<RepoRoot>` via `git add --all` and records a new commit on `refs/heads/<branch>`.
-  - If a concurrent push with a strictly newer sequence (`remoteSeq > localSeq`) is detected, `git reset --hard refs/remotes/origin/<branch>` resets the working tree and index to match `origin/<branch>`.
-
-### Standard Output (`stdout`)
-- By default, `git-drev put` emits **nothing** to `stdout` (all operational progress, `rsync` progress, and `git push` summaries are routed to `stderr` per `docs/spec/global.md` Section 1).
-
-### Standard Error (`stderr`)
-- Operational progress messages (suppressed when `--quiet` is set):
-  ```text
-  [git-drev] Directory revision uuid is '<uuid>'
-  [git-drev] Trying to use previous revision as baseline (this might take a while)
-  [git-drev] Baseline revision uuid is '<last_uuid>'
-  [git-drev] Putting directory revision to remote host (this might take a while)
-  [git-drev] Staging revision metadata
-  [git-drev] Committing revision metadata
-  [git-drev] Pushing revision metadata
-  [git-drev] Took <M> min <S> sec
-  ```
-- When baseline cloning is unavailable or fails:
-  ```text
-  [git-drev] Unable to use previous revision, doing a full copy
-  ```
-- When stale-push recovery drops an older revision:
-  ```text
-  [git-drev] Stale info detected, trying to resolve
-  [git-drev] Newer revision found, dropping older (hard reset)
-  [git-drev] Hint: This is usually ok, you want to see the latest revision
-  [git-drev] Took <M> min <S> sec
-  ```
-
-## 6. Error Matrix & Exit Code Mapping
-| Failure Condition | Go Error Sentinel / Type | Exit Code | Expected `stderr` Message Pattern |
-| :--- | :--- | :--- | :--- |
-| Unknown flag, extra positional args (`> 1`), or `--verbose` + `--quiet` | `errcode.ErrUsage` | `2` | `[git-drev] Error: Unsupported or invalid option: <detail>` |
-| Invalid `--sequence` value (non-integer, negative, or `uint64` overflow) | `errcode.ErrUsage` | `2` | `[git-drev] Error: Invalid sequence number '<val>': must be an unsigned 64-bit integer` |
-| Specified or default `<source_directory>` does not exist or is not a directory | `errcode.ErrUsage` | `2` | `[git-drev] Error: Specified source directory '<path>' does not exist` |
-| Invoked outside a Git worktree or inside a bare repository | `errcode.ErrNotRepository` | `3` | `[git-drev] Error: Not inside a Git working tree` |
-| Missing or malformed `.git-drev.yaml`, or missing `remote.host` / `remote.path` | `errcode.ErrConfig` | `3` | `[git-drev] Error: Configuration error in '<path>': <detail>` |
-| Repository is in detached `HEAD` state | `errcode.ErrDetachedHead` | `4` | `[git-drev] Error: Detached HEAD state detected, aborting\n[git-drev] Hint: Use "git-drev select <branch>" to select a branch first.` |
-| `.git/index.lock` exists | `errcode.ErrGitState` | `4` | `[git-drev] Error: Git index is locked ('.git/index.lock' exists)` |
-| `.git-drev-put-hook` exits with non-zero code or exceeds `GIT_DREV_HOOK_TIMEOUT` | `errcode.ErrRuntime` | `1` | `[git-drev] Error: Put hook '.git-drev-put-hook' failed: <detail>` |
-| Failed to generate cryptographic UUID | `errcode.ErrRuntime` | `1` | `[git-drev] Error: Failed to generate UUID: <detail>` |
-| `rsync` upload fails (SSH connection failure, disk full, permission denied) | `errcode.ErrTransport` | `7` | `[git-drev] Error: Unable to put directory revision: <detail>` |
-| `git add --all`, `git commit`, `git fetch`, `git reset`, or `git rebase` fails | `errcode.ErrGitExec` | `5` | `[git-drev] Error: <Operation> failed: <git stderr>` |
-| `git push --force-with-lease` fails with non-stale error or exceeds `MaxPushRetries` | `errcode.ErrGitExec` | `5` | `[git-drev] Error: Push failed: <detail>` |
-| Process receives `SIGINT` or `SIGTERM` | `errcode.ErrInterrupted` | `130` | `[git-drev] Error: Operation interrupted` |
-
-## 7. Edge Cases & Boundary Conditions
-
-### Boundary Conditions
-- **Symlinks:**
-  - If `<source_directory>` itself is a symlink to a directory, `os.Stat` follows it and appending `/` (`<source_directory>/`) causes `rsync -a` to traverse into the target directory and transfer its contents.
-  - Symlinks *inside* `<source_directory>` are preserved as symlinks on the remote server (`-l` implied by `rsync -a`) unless overridden by user `remote.rsync.put` (e.g., `--copy-links`).
-- **Empty `<source_directory>`:**
-  - Valid and permitted; creates an empty `<remote.path>/<uuid>/` directory on the remote server (and deletes baseline files via `--delete-during` if cloned from a non-empty baseline).
-- **Paths with spaces, quotes, or newlines:**
-  - Passed as discrete elements in `[]string` to `rsync` and POSIX-quoted in SSH remote commands; never subjected to `eval set --`.
-- **Subdirectory invocation (`GIT_PREFIX`):**
-  - Running `git-drev put ./build-output` from `<repo-root>/sub/dir` resolves `<source_directory>` to `<repo-root>/sub/dir/build-output`, while `.git-drev.yaml` and `.git-drev-put-hook` are resolved at `<repo-root>`.
-- **Detached `HEAD` state:**
-  - Rejected immediately at precondition check before touching the network or filesystem (exit code `4`).
-
-## 8. Black-Box Verification Scenarios
-| Scenario ID | Given (Repo & Filesystem State) | When (CLI Invocation) | Then (Expected Exit Code, `stdout`/`stderr`, & Repo/FS State) |
-| :--- | :--- | :--- | :--- |
-| `TC-01` | Valid repo on branch `main`; `HEAD` commit is `{"uuid":"11111111-1111-4111-8111-111111111111","seq":"100"}`; remote has `/var/drev/proj/11111111-1111-4111-8111-111111111111`; local `data/app.bin` modified; `.git-drev-put-hook` writes `build.txt`. | `git-drev put -s 200` | Exit `0`; `stdout` empty; `stderr` logs baseline `11111111-...` cloned to new `<uuid>`, `rsync` transfer, staging, commit, push, and elapsed time; remote `/var/drev/proj/<uuid>/app.bin` exists; `HEAD` and `origin/main` point to commit with `{"uuid":"<uuid>","seq":"200"}` containing `build.txt`. |
-| `TC-02` | Newly created branch `feature` whose `HEAD` is marker commit `{"uuid":"00000000-0000-0000-0000-000000000000","marker":"true"}`; caller is in subdirectory `sub/` with `./out/artifact.tar`. | `git-drev put ./out` | Exit `0`; `CloneBaseline` SSH call is skipped (`Unable to use previous revision, doing a full copy` logged to `stderr`); `sub/out/artifact.tar` is uploaded to `<remote.path>/<uuid>/artifact.tar`; new commit pushed to `origin/feature`. |
-| `TC-03` | Local branch `main` at `seq: 100`; concurrent producer already pushed `seq: 500` to `origin/main`. | `git-drev put --sequence 250` | Exit `0`; first `git push --force-with-lease` rejected as stale; `git fetch --all` runs; `250 < 500` detected; `stderr` logs `Newer revision found, dropping older (hard reset)`; local `main` hard-reset to `origin/main` (`seq: 500`). |
-| `TC-04` | Local branch `main` at `seq: 100`; concurrent producer pushed `seq: 150` to `origin/main`. | `git-drev put --no-sequence-check --sequence 120 data` | Exit `0`; `--no-sequence-check` does not swallow `--sequence 120` or `data`; after stale push rejection, sequence check is bypassed, local commit (`seq: 120`) is rebased with `--strategy-option=theirs` onto `origin/main` and pushed on retry. |
-| `TC-05` | Repository is in detached `HEAD` state (e.g., after `git-drev select <uuid>`); `data/` exists. | `git-drev put` | Exit `4` (`ErrDetachedHead`); `stderr` outputs `[git-drev] Error: Detached HEAD state detected, aborting` and `[git-drev] Hint: Use "git-drev select <branch>" to select a branch first.`; no SSH, `rsync`, or Git mutations occur. |
-| `TC-06` | Valid repo on branch `main`; `rsync` fails mid-transfer (or receives `SIGINT`). | `git-drev put` | Exit `7` (`ErrTransport`) on `rsync` error or `130` (`ErrInterrupted`) on `SIGINT`; deferred remote cleanup removes incomplete `<remote.path>/<uuid>`; local Git index and `HEAD` remain completely unmodified. |
+## 5. Edge Cases & Behavioral Notes
+- **Server-Side Baseline Hardlinking:** By cloning the parent UUID directory via `cp -al` on the remote server prior to running `rsync`, unchanged files across builds consume zero network transmission bandwidth and zero additional disk blocks.
+- **Atomic Cleanup on Interruption:** If `put` fails or is interrupted during `rsync`, a deferred cleanup handler removes the in-flight remote directory (`<remote.path>/<uuid>`) via SSH to avoid leaving uncommitted orphan snapshots on the server.
+- **Stale Push Resolution:** In CI/multi-builder pipelines where two builds complete simultaneously, sequence-based OCC avoids build races: the older build gracefully yields and adopts the newer build.
