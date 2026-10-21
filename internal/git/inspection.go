@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/bvarnai/git-drev/internal/command"
 	"github.com/bvarnai/git-drev/internal/domain"
 	"github.com/bvarnai/git-drev/internal/errcode"
 )
@@ -106,7 +107,7 @@ func (i *Inspector) CurrentBranch(ctx context.Context, dir string) (branch strin
 	if errors.Is(runErr, errcode.ErrInterrupted) || errors.Is(runErr, errcode.ErrTransport) {
 		return "", false, runErr
 	}
-	var cmdErr *CommandError
+	var cmdErr *command.Error
 	if errors.As(runErr, &cmdErr) && cmdErr.ExitCode == 1 && strings.TrimSpace(cmdErr.Stderr) == "" {
 		return "", true, nil
 	}
@@ -171,7 +172,7 @@ func (i *Inspector) LocalBranchExists(ctx context.Context, dir, branch string) (
 	if errors.Is(runErr, errcode.ErrInterrupted) || errors.Is(runErr, errcode.ErrTransport) {
 		return false, runErr
 	}
-	var cmdErr *CommandError
+	var cmdErr *command.Error
 	if errors.As(runErr, &cmdErr) && strings.TrimSpace(cmdErr.Stderr) == "" {
 		return false, nil
 	}
@@ -187,7 +188,7 @@ func (i *Inspector) RemoteTrackingBranchExists(ctx context.Context, dir, branch 
 	if errors.Is(runErr, errcode.ErrInterrupted) || errors.Is(runErr, errcode.ErrTransport) {
 		return false, runErr
 	}
-	var cmdErr *CommandError
+	var cmdErr *command.Error
 	if errors.As(runErr, &cmdErr) && strings.TrimSpace(cmdErr.Stderr) == "" {
 		return false, nil
 	}
@@ -205,7 +206,7 @@ func (i *Inspector) RemoteBranchExists(ctx context.Context, dir, branch string) 
 	if errors.Is(runErr, errcode.ErrInterrupted) || errors.Is(runErr, errcode.ErrTransport) {
 		return false, runErr
 	}
-	if code, ok := ExitCodeOf(runErr); ok && code == 2 {
+	if code, ok := command.ExitCodeOf(runErr); ok && code == 2 {
 		return false, nil
 	}
 	return false, errcode.WrapError(errcode.ErrGitExec, runErr, "Remote listing failed (git ls-remote --exit-code --heads origin %s)", ref)

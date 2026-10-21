@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/bvarnai/git-drev/internal/command"
 	"github.com/bvarnai/git-drev/internal/errcode"
 )
 
@@ -31,7 +32,7 @@ func (o *Operations) EnsureRemoteFetchConfig(ctx context.Context, dir string) er
 		if errors.Is(runErr, errcode.ErrInterrupted) || errors.Is(runErr, errcode.ErrTransport) {
 			return runErr
 		}
-		if code, ok := ExitCodeOf(runErr); !ok || code != 1 {
+		if code, ok := command.ExitCodeOf(runErr); !ok || code != 1 {
 			return errcode.WrapError(errcode.ErrGitExec, runErr, "Failed to read remote.origin.fetch")
 		}
 	}
@@ -182,7 +183,7 @@ func (o *Operations) PushForceWithLease(ctx context.Context, dir, branch string,
 		if errors.Is(runErr, errcode.ErrInterrupted) || errors.Is(runErr, errcode.ErrTransport) {
 			return false, out, runErr
 		}
-		var cmdErr *CommandError
+		var cmdErr *command.Error
 		if errors.As(runErr, &cmdErr) {
 			output = cmdErr.CombinedOutput()
 		} else {

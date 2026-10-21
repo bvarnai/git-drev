@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bvarnai/git-drev/internal/command"
 	"github.com/bvarnai/git-drev/internal/errcode"
 	"github.com/bvarnai/git-drev/internal/storage"
 	"github.com/bvarnai/git-drev/internal/transport"
@@ -81,7 +82,7 @@ func TestHasRevision(t *testing.T) {
 	t.Run("directory does not exist (exit code 1)", func(t *testing.T) {
 		ssh := &transport.MockSSHRunner{
 			RunFn: func(ctx context.Context, host, cmd string) (string, error) {
-				return "", &transport.CommandError{
+				return "", &command.Error{
 					Command:  "ssh",
 					Args:     []string{"-T", host, cmd},
 					ExitCode: 1,
@@ -99,7 +100,7 @@ func TestHasRevision(t *testing.T) {
 	t.Run("ssh execution failure", func(t *testing.T) {
 		ssh := &transport.MockSSHRunner{
 			RunFn: func(ctx context.Context, host, cmd string) (string, error) {
-				return "", &transport.CommandError{
+				return "", &command.Error{
 					Command:  "ssh",
 					Args:     []string{"-T", host, cmd},
 					ExitCode: 255,
@@ -138,7 +139,7 @@ func TestCloneBaseline(t *testing.T) {
 	t.Run("clone failure", func(t *testing.T) {
 		ssh := &transport.MockSSHRunner{
 			RunFn: func(ctx context.Context, host, cmd string) (string, error) {
-				return "", &transport.CommandError{
+				return "", &command.Error{
 					Command:  "ssh",
 					Args:     []string{"-T", host, cmd},
 					ExitCode: 1,
@@ -176,7 +177,7 @@ func TestRemoveRevision(t *testing.T) {
 	t.Run("remove failure", func(t *testing.T) {
 		ssh := &transport.MockSSHRunner{
 			RunFn: func(ctx context.Context, host, cmd string) (string, error) {
-				return "", &transport.CommandError{
+				return "", &command.Error{
 					Command:  "ssh",
 					Args:     []string{"-T", host, cmd},
 					ExitCode: 1,
@@ -223,7 +224,7 @@ func TestQueryUsage(t *testing.T) {
 	t.Run("remote path not found", func(t *testing.T) {
 		ssh := &transport.MockSSHRunner{
 			RunStreamFn: func(ctx context.Context, host, cmd string, stdin io.Reader, stdoutPipe func(io.Reader) error) error {
-				return &transport.CommandError{
+				return &command.Error{
 					Command:  "ssh",
 					Args:     []string{"-T", host, cmd},
 					ExitCode: 66,

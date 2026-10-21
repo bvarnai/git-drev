@@ -7,14 +7,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"strings"
-	"syscall"
-	"time"
 
+	"github.com/bvarnai/git-drev/internal/command"
 	"github.com/bvarnai/git-drev/internal/errcode"
 )
 
@@ -28,53 +25,6 @@ type Runner interface {
 	RunWithEnv(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error)
 	// RunStream executes a git command streaming stdout and stderr to the provided writers.
 	RunStream(ctx context.Context, dir string, stdout, stderr io.Writer, extraEnv []string, args ...string) error
-}
-
-// CommandError captures the exit code and output streams of a failed Git subprocess.
-type CommandError struct {
-	Args     []string
-	ExitCode int
-	Stdout   string
-	Stderr   string
-	Cause    error
-}
-
-// Error formats the failed git invocation and its combined output.
-func (e *CommandError) Error() string {
-	cmd := "git " + strings.Join(e.Args, " ")
-	out := e.CombinedOutput()
-	if out != "" {
-		return fmt.Sprintf("%s failed (exit %d): %s", cmd, e.ExitCode, out)
-	}
-	return fmt.Sprintf("%s failed (exit %d)", cmd, e.ExitCode)
-}
-
-// Unwrap allows errors.Is(err, errcode.ErrGitExec) to match CommandError by default.
-func (e *CommandError) Unwrap() error {
-	return errcode.ErrGitExec
-}
-
-// CombinedOutput returns trimmed stderr if present, or trimmed stdout, or both.
-func (e *CommandError) CombinedOutput() string {
-	s := strings.TrimSpace(e.Stderr)
-	o := strings.TrimSpace(e.Stdout)
-	if s != "" && o != "" {
-		return o + "\n" + s
-	}
-	if s != "" {
-		return s
-	}
-	return o
-}
-
-// ExitCodeOf extracts the process exit code from err if it wraps a *CommandError,
-// or returns (-1, false) otherwise.
-func ExitCodeOf(err error) (int, bool) {
-	var cmdErr *CommandError
-	if errors.As(err, &cmdErr) {
-		return cmdErr.ExitCode, true
-	}
-	return -1, false
 }
 
 // ExecRunner implements Runner using os/exec with LC_ALL=C and non-interactive safeguards.
@@ -114,7 +64,7 @@ func (r *ExecRunner) RunWithEnv(ctx context.Context, dir string, extraEnv []stri
 	err := r.RunStream(ctx, dir, &stdoutBuf, &stderrBuf, extraEnv, args...)
 	out := strings.TrimRight(stdoutBuf.String(), "\r\n")
 	if err != nil {
-		var cmdErr *CommandError
+		var cmdErr *command.Error
 		if errors.As(err, &cmdErr) {
 			cmdErr.Stdout = stdoutBuf.String()
 			cmdErr.Stderr = stderrBuf.String()
@@ -139,23 +89,13 @@ func (r *ExecRunner) RunStream(ctx context.Context, dir string, stdout, stderr i
 		return errcode.WrapError(errcode.ErrTransport, lookErr, "Required binary %q not found in $PATH", binName)
 	}
 
-	cmd := exec.CommandContext(ctx, resolvedBin, args...)
+	cmd := command.New(ctx, resolvedBin, args...)
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	cmd.Env = BuildSanitizedEnv(r.BaseEnv, extraEnv)
+	cmd.Env = command.SanitizedEnv(r.BaseEnv, extraEnv)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	cmd.WaitDelay = 3 * time.Second
-	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
-			return cmd.Process.Kill()
-		}
-		return nil
-	}
 
 	runErr := cmd.Run()
 	if runErr != nil {
@@ -164,51 +104,9 @@ func (r *ExecRunner) RunStream(ctx context.Context, dir string, stdout, stderr i
 		}
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) {
-			var cmdArgs []string
-			if len(cmd.Args) > 1 {
-				cmdArgs = append([]string(nil), cmd.Args[1:]...)
-			}
-			return &CommandError{
-				Args:     cmdArgs,
-				ExitCode: exitErr.ExitCode(),
-				Cause:    runErr,
-			}
+			return command.NewError(cmd, exitErr, "", "", errcode.ErrGitExec)
 		}
 		return errcode.WrapError(errcode.ErrTransport, runErr, "failed to execute %s", binName)
 	}
 	return nil
-}
-
-// BuildSanitizedEnv constructs a child process environment from baseEnv (or os.Environ()
-// if baseEnv is nil), appends extraEnv, and enforces mandatory overrides per
-// docs/spec/global.md Section 2: LC_ALL=C, LANG=C, GIT_TERMINAL_PROMPT=0, and GIT_ADVICE=0.
-func BuildSanitizedEnv(baseEnv []string, extraEnv ...[]string) []string {
-	if baseEnv == nil {
-		baseEnv = os.Environ()
-	}
-	combined := make([]string, 0, len(baseEnv)+8)
-	combined = append(combined, baseEnv...)
-	for _, extra := range extraEnv {
-		combined = append(combined, extra...)
-	}
-
-	filtered := make([]string, 0, len(combined)+4)
-	for _, entry := range combined {
-		k, _, ok := strings.Cut(entry, "=")
-		if !ok {
-			continue
-		}
-		switch k {
-		case "LC_ALL", "LANG", "GIT_TERMINAL_PROMPT", "GIT_ADVICE":
-			continue
-		default:
-			filtered = append(filtered, entry)
-		}
-	}
-	return append(filtered,
-		"LC_ALL=C",
-		"LANG=C",
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_ADVICE=0",
-	)
 }

@@ -13,9 +13,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
+	"github.com/bvarnai/git-drev/internal/command"
 	"github.com/bvarnai/git-drev/internal/errcode"
 )
 
@@ -173,6 +173,7 @@ func (r *ExecRunner) Run(ctx context.Context, req RunRequest) error {
 	} else {
 		cmd.Stderr = os.Stderr
 	}
+	cmd.Stdin = nil
 
 	// Working directory
 	if req.WorkDir != "" {
@@ -181,26 +182,16 @@ func (r *ExecRunner) Run(ctx context.Context, req RunRequest) error {
 		cmd.Dir = filepath.Dir(req.Path)
 	}
 
-	// Graceful child process termination
-	cmd.WaitDelay = 3 * time.Second
-	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
-			return cmd.Process.Kill()
-		}
-		return nil
-	}
-
 	// Environment sanitization
-	cmd.Env = buildHookEnv(req.Env, req.Kind)
+	cmd.Env = command.SanitizedEnv(nil, req.Env.ToEnviron(req.Kind))
 
 	runErr := cmd.Run()
 	if runErr == nil {
 		return nil
 	}
 
+	// If context expired or was canceled, waitErr may be exec.ErrWaitDelay when
+	// orphaned grandchildren still hold stdout/stderr pipes after WaitDelay.
 	if hookCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
 		return errcode.NewError(errcode.ErrRuntime, "%s hook %q timed out after %v", req.Kind, hookBase, timeout)
 	}
@@ -223,7 +214,7 @@ func buildHookCommand(ctx context.Context, req RunRequest, fi os.FileInfo) *exec
 
 	if isExec && isCustomShebang && shebang != "" {
 		// Standalone executable with non-sh/bash interpreter (e.g. python, perl, binary)
-		return exec.CommandContext(ctx, req.Path, req.Args...)
+		return command.New(ctx, req.Path, req.Args...)
 	}
 
 	// Shell script mode: supports both top-level execution and hook functions
@@ -239,7 +230,7 @@ fi
 
 	args := []string{"-c", script, "--", filepath.ToSlash(req.Path)}
 	args = append(args, req.Args...)
-	return exec.CommandContext(ctx, "bash", args...)
+	return command.New(ctx, "bash", args...)
 }
 
 func detectCustomShebang(path string) (shebang string, custom bool) {
@@ -270,33 +261,4 @@ func detectCustomShebang(path string) (shebang string, custom bool) {
 	}
 
 	return firstLine, true
-}
-
-func buildHookEnv(env Env, kind Kind) []string {
-	// Base sanitized environment
-	var base []string
-	for _, entry := range os.Environ() {
-		k, _, ok := strings.Cut(entry, "=")
-		if !ok {
-			continue
-		}
-		switch k {
-		case "LC_ALL", "LANG", "GIT_TERMINAL_PROMPT", "GIT_ADVICE":
-			continue
-		case "GIT_DREV_VERSION", "GIT_DREV_UUID", "GIT_DREV_SEQ", "GIT_DREV_BRANCH",
-			"GIT_DREV_WORK_DIR", "GIT_DREV_ROOT", "GIT_DREV_HOOK_TYPE":
-			continue
-		default:
-			base = append(base, entry)
-		}
-	}
-
-	base = append(base,
-		"LC_ALL=C",
-		"LANG=C",
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_ADVICE=0",
-	)
-	base = append(base, env.ToEnviron(kind)...)
-	return base
 }

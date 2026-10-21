@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/bvarnai/git-drev/internal/command"
 	"github.com/bvarnai/git-drev/internal/errcode"
 )
 
@@ -19,13 +20,13 @@ func NewSSHRunner() *ExecSSHRunner {
 	return &ExecSSHRunner{}
 }
 
-// Run executes a non-interactive command on host via SSH and returns its stdout, or a *CommandError.
+// Run executes a non-interactive command on host via SSH and returns its stdout, or a *command.Error.
 func (r *ExecSSHRunner) Run(ctx context.Context, host, cmd string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", errcode.WrapError(errcode.ErrInterrupted, err, "operation interrupted")
 	}
 
-	execCmd := NewCommand(ctx, "ssh", "-T", host, cmd)
+	execCmd := command.New(ctx, "ssh", "-T", host, cmd)
 
 	var outBuf, errBuf bytes.Buffer
 	execCmd.Stdout = &outBuf
@@ -41,7 +42,7 @@ func (r *ExecSSHRunner) Run(ctx context.Context, host, cmd string) (string, erro
 		}
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			return outStr, NewCommandError(execCmd, exitErr, outStr, errStr)
+			return outStr, command.NewError(execCmd, exitErr, outStr, errStr, errcode.ErrTransport)
 		}
 		return outStr, errcode.WrapError(errcode.ErrTransport, err, "SSH execution failed on host %q", host)
 	}
@@ -55,7 +56,7 @@ func (r *ExecSSHRunner) RunStream(ctx context.Context, host, cmd string, stdin i
 		return errcode.WrapError(errcode.ErrInterrupted, err, "operation interrupted")
 	}
 
-	execCmd := NewCommand(ctx, "ssh", "-T", host, cmd)
+	execCmd := command.New(ctx, "ssh", "-T", host, cmd)
 	execCmd.Stdin = stdin
 
 	var errBuf bytes.Buffer
@@ -84,7 +85,7 @@ func (r *ExecSSHRunner) RunStream(ctx context.Context, host, cmd string, stdin i
 		}
 		var exitErr *exec.ExitError
 		if errors.As(waitErr, &exitErr) {
-			return NewCommandError(execCmd, exitErr, "", errStr)
+			return command.NewError(execCmd, exitErr, "", errStr, errcode.ErrTransport)
 		}
 		return errcode.WrapError(errcode.ErrTransport, waitErr, "SSH execution failed on host %q", host)
 	}

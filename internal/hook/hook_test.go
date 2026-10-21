@@ -240,16 +240,19 @@ info_hook() {
 		hookFile := filepath.Join(tempDir, "timeout-hook.sh")
 		content := `
 info_hook() {
-  sleep 5
+  sleep 5 >/dev/null 2>&1
 }
 `
 		require.NoError(t, os.WriteFile(hookFile, []byte(content), 0o644))
 
+		var stdout, stderr bytes.Buffer
 		err := runner.Run(context.Background(), hook.RunRequest{
 			Kind:    hook.KindInfo,
 			Path:    hookFile,
 			WorkDir: tempDir,
 			Timeout: 100 * time.Millisecond,
+			Stdout:  &stdout,
+			Stderr:  &stderr,
 		})
 		require.Error(t, err)
 		assert.Equal(t, errcode.ExitRuntime, errcode.ExitCode(err))
@@ -260,7 +263,7 @@ info_hook() {
 		hookFile := filepath.Join(tempDir, "interrupt-hook.sh")
 		content := `
 info_hook() {
-  sleep 5
+  sleep 5 >/dev/null 2>&1
 }
 `
 		require.NoError(t, os.WriteFile(hookFile, []byte(content), 0o644))
@@ -271,11 +274,14 @@ info_hook() {
 			cancel()
 		}()
 
+		var stdout, stderr bytes.Buffer
 		err := runner.Run(ctx, hook.RunRequest{
 			Kind:    hook.KindInfo,
 			Path:    hookFile,
 			WorkDir: tempDir,
 			Timeout: 10 * time.Second,
+			Stdout:  &stdout,
+			Stderr:  &stderr,
 		})
 		require.Error(t, err)
 		assert.True(t, errors.Is(err, errcode.ErrInterrupted) || errors.Is(err, context.Canceled))

@@ -3,13 +3,13 @@ package storage
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/bvarnai/git-drev/internal/command"
 	"github.com/bvarnai/git-drev/internal/domain"
 	"github.com/bvarnai/git-drev/internal/errcode"
 	"github.com/bvarnai/git-drev/internal/transport"
@@ -106,17 +106,8 @@ func (c *Client) QueryUsage(ctx context.Context, host, basePath string, opts ...
 			return "", nil, errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "operation interrupted")
 		}
 
-		var cmdErr *transport.CommandError
-		errStr := runErr.Error()
-		exitCode := -1
-		if errors.As(runErr, &cmdErr) {
-			exitCode = cmdErr.ExitCode
-			if strings.TrimSpace(cmdErr.Stderr) != "" {
-				errStr = strings.TrimSpace(cmdErr.Stderr)
-			}
-		}
-
-		if exitCode == 66 || strings.Contains(errStr, "ERROR:Remote path") {
+		errStr := command.StderrOrError(runErr)
+		if code, ok := command.ExitCodeOf(runErr); (ok && code == 66) || strings.Contains(errStr, "ERROR:Remote path") {
 			return "", nil, errcode.NewError(errcode.ErrRemoteNotFound, "remote path %q does not exist on host %q", basePath, host)
 		}
 
