@@ -145,6 +145,6 @@ Yes. `git-drev` is supported on Windows:
 Deleting a Git branch removes the ref pointer in Git, while the remote snapshot directories on the storage server remain intact until pruned.
 To inspect snapshots that are no longer referenced by any Git commit, run:
 ```bash
-git drev usage -v
+git drev usage -a
 ```
 To prune unreferenced or expired snapshots, use the retention cleanup script in [Chapter 5: Storage architecture & retention](05-storage-and-retention.md).

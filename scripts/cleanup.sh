@@ -9,7 +9,7 @@
 # 2. Keep all commits from the last M days (default: 30) for every open branch.
 # 3. Never delete revision directories for tagged commits (lightweight or annotated).
 # 4. Protect parent baseline revisions referenced by retained branch marker commits
-#    ("created from <uuid>").
+#    ({"uuid":"<parent_uuid>","marker":"true"}).
 # 5. If a branch is deleted, its commits are removed from the keep list and their
 #    revision directories are purged unless retained by another active branch or tag.
 #

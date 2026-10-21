@@ -23,7 +23,7 @@ body:
       description: Exact commands executed in your terminal.
       placeholder: |
         1. git drev select main
-        2. git drev put -m "..."
+        2. git drev put -s 100
         3. See error ...
     validations:
       required: true

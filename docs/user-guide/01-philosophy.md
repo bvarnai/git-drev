@@ -132,4 +132,4 @@ sequenceDiagram
 1. **No custom server daemons:** Requires only standard `git`, OpenSSH (`ssh`), and `rsync` on the client, and `sshd`, `rsync`, and POSIX `cp` / `du` on the storage host.
 2. **Cross-platform client:** Written in Go 1.22+ with zero external runtime dependencies beyond `git`, `ssh`, and `rsync`; runs on Linux, macOS, and Windows (Git Bash).
 3. **Transactional safety:** All mutating commands check worktree state and `.git/index.lock` before running, push with `--force-with-lease`, and clean up incomplete remote staging directories if interrupted (`SIGINT` / `SIGTERM`).
-4. **Simple retention:** Remote revisions are plain `<path>/<uuid>/` directories on disk. Auditing active vs. orphaned snapshots takes a single command (`git drev usage -v`).
+4. **Simple retention:** Remote revisions are plain `<path>/<uuid>/` directories on disk. Auditing active vs. orphaned snapshots takes a single command (`git drev usage -a`).
