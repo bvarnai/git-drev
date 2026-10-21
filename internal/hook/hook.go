@@ -182,7 +182,7 @@ func (r *ExecRunner) Run(ctx context.Context, req RunRequest) error {
 	}
 
 	// Environment sanitization
-	cmd.Env = buildHookEnv(req.Env, req.Kind)
+	cmd.Env = command.SanitizedEnv(nil, req.Env.ToEnviron(req.Kind))
 
 	runErr := cmd.Run()
 	if runErr == nil {
@@ -258,23 +258,4 @@ func detectCustomShebang(path string) (shebang string, custom bool) {
 	}
 
 	return firstLine, true
-}
-
-func buildHookEnv(env Env, kind Kind) []string {
-	var base []string
-	for _, entry := range os.Environ() {
-		k, _, ok := strings.Cut(entry, "=")
-		if !ok {
-			continue
-		}
-		switch k {
-		case "GIT_DREV_VERSION", "GIT_DREV_UUID", "GIT_DREV_SEQ", "GIT_DREV_BRANCH",
-			"GIT_DREV_WORK_DIR", "GIT_DREV_ROOT", "GIT_DREV_HOOK_TYPE":
-			continue
-		default:
-			base = append(base, entry)
-		}
-	}
-
-	return command.SanitizedEnv(base, env.ToEnviron(kind))
 }

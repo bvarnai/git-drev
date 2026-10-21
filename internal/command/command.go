@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -18,11 +17,6 @@ import (
 
 // DefaultWaitDelay is the wait duration allowed for child process I/O completion after SIGTERM.
 const DefaultWaitDelay = 3 * time.Second
-
-// ExitCodeString converts an integer exit code to string.
-func ExitCodeString(code int) string {
-	return strconv.Itoa(code)
-}
 
 // New creates a context-bound *exec.Cmd pre-configured with sanitized
 // subprocess environment variables, a 3-second wait delay, and graceful SIGTERM cancellation.
@@ -43,37 +37,62 @@ func New(ctx context.Context, name string, args ...string) *exec.Cmd {
 }
 
 // SanitizedEnv constructs a child process environment from baseEnv (or os.Environ()
-// if baseEnv is nil), appends extraEnv, and enforces mandatory overrides:
-// LC_ALL=C, LANG=C, GIT_TERMINAL_PROMPT=0, and GIT_ADVICE=0.
+// if baseEnv is nil), applies extraEnv (with last-wins deduplication over baseEnv),
+// and enforces mandatory overrides: LC_ALL=C, LANG=C, GIT_TERMINAL_PROMPT=0, and GIT_ADVICE=0.
 func SanitizedEnv(baseEnv []string, extraEnv ...[]string) []string {
 	if baseEnv == nil {
 		baseEnv = os.Environ()
 	}
-	combined := make([]string, 0, len(baseEnv)+8)
-	combined = append(combined, baseEnv...)
+
+	overrides := make(map[string]struct{}, 8)
 	for _, extra := range extraEnv {
-		combined = append(combined, extra...)
+		for _, entry := range extra {
+			if k, _, ok := strings.Cut(entry, "="); ok {
+				overrides[k] = struct{}{}
+			}
+		}
 	}
 
-	filtered := make([]string, 0, len(combined)+4)
-	for _, entry := range combined {
+	filtered := make([]string, 0, len(baseEnv)+len(overrides)+4)
+	for _, entry := range baseEnv {
 		k, _, ok := strings.Cut(entry, "=")
 		if !ok {
 			continue
 		}
-		switch k {
-		case "LC_ALL", "LANG", "GIT_TERMINAL_PROMPT", "GIT_ADVICE":
+		if _, overridden := overrides[k]; overridden {
 			continue
-		default:
+		}
+		if isMandatoryOverride(k) {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+
+	for _, extra := range extraEnv {
+		for _, entry := range extra {
+			k, _, ok := strings.Cut(entry, "=")
+			if !ok || isMandatoryOverride(k) {
+				continue
+			}
 			filtered = append(filtered, entry)
 		}
 	}
+
 	return append(filtered,
 		"LC_ALL=C",
 		"LANG=C",
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_ADVICE=0",
 	)
+}
+
+func isMandatoryOverride(key string) bool {
+	switch key {
+	case "LC_ALL", "LANG", "GIT_TERMINAL_PROMPT", "GIT_ADVICE":
+		return true
+	default:
+		return false
+	}
 }
 
 // Error captures the command, arguments, exit code, and output streams of a failed subprocess.
@@ -158,4 +177,19 @@ func ExitCodeOf(err error) (int, bool) {
 		return cmdErr.ExitCode, true
 	}
 	return -1, false
+}
+
+// StderrOrError returns the trimmed Stderr of err if it wraps an *Error with non-empty stderr,
+// or err.Error() otherwise.
+func StderrOrError(err error) string {
+	if err == nil {
+		return ""
+	}
+	var cmdErr *Error
+	if errors.As(err, &cmdErr) {
+		if s := strings.TrimSpace(cmdErr.Stderr); s != "" {
+			return s
+		}
+	}
+	return err.Error()
 }

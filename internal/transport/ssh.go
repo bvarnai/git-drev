@@ -20,7 +20,7 @@ func NewSSHRunner() *ExecSSHRunner {
 	return &ExecSSHRunner{}
 }
 
-// Run executes a non-interactive command on host via SSH and returns its stdout, or a *CommandError.
+// Run executes a non-interactive command on host via SSH and returns its stdout, or a *command.Error.
 func (r *ExecSSHRunner) Run(ctx context.Context, host, cmd string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", errcode.WrapError(errcode.ErrInterrupted, err, "operation interrupted")

@@ -3,7 +3,6 @@ package storage
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -80,13 +79,7 @@ func (c *Client) HasRevision(ctx context.Context, host, basePath, uuid string) (
 		return false, nil
 	}
 
-	var cmdErr *command.Error
-	errMsg := err.Error()
-	if errors.As(err, &cmdErr) && strings.TrimSpace(cmdErr.Stderr) != "" {
-		errMsg = strings.TrimSpace(cmdErr.Stderr)
-	}
-
-	return false, errcode.NewError(errcode.ErrTransport, "SSH check failed on host %q: %s", host, errMsg)
+	return false, errcode.NewError(errcode.ErrTransport, "SSH check failed on host %q: %s", host, command.StderrOrError(err))
 }
 
 // CloneBaseline creates a remote hardlinked copy of srcUUID at dstUUID using `cp -al --`.
@@ -107,12 +100,7 @@ func (c *Client) CloneBaseline(ctx context.Context, host, basePath, srcUUID, dst
 		return errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "operation interrupted")
 	}
 
-	var cmdErr *command.Error
-	errMsg := err.Error()
-	if errors.As(err, &cmdErr) && strings.TrimSpace(cmdErr.Stderr) != "" {
-		errMsg = strings.TrimSpace(cmdErr.Stderr)
-	}
-	return errcode.NewError(errcode.ErrTransport, "SSH clone failed on host %q: %s", host, errMsg)
+	return errcode.NewError(errcode.ErrTransport, "SSH clone failed on host %q: %s", host, command.StderrOrError(err))
 }
 
 // RemoveRevision removes a remote revision directory on host using `rm -rf -- <remotePath>`.
@@ -132,12 +120,7 @@ func (c *Client) RemoveRevision(ctx context.Context, host, basePath, uuid string
 		return errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "operation interrupted")
 	}
 
-	var cmdErr *command.Error
-	errMsg := err.Error()
-	if errors.As(err, &cmdErr) && strings.TrimSpace(cmdErr.Stderr) != "" {
-		errMsg = strings.TrimSpace(cmdErr.Stderr)
-	}
-	return errcode.NewError(errcode.ErrTransport, "SSH remove failed on host %q: %s", host, errMsg)
+	return errcode.NewError(errcode.ErrTransport, "SSH remove failed on host %q: %s", host, command.StderrOrError(err))
 }
 
 // TransferRequest configures file synchronization between local and remote storage.

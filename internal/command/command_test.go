@@ -50,17 +50,20 @@ func TestSanitizedEnv(t *testing.T) {
 		"GIT_TERMINAL_PROMPT=1",
 		"GIT_ADVICE=1",
 		"MY_CUSTOM_VAR=value123",
+		"OVERRIDDEN_VAR=old",
 	}
 
-	extra := []string{"EXTRA_VAR=foo", "LANG=fr_FR.UTF-8"}
+	extra := []string{"EXTRA_VAR=foo", "OVERRIDDEN_VAR=new", "LANG=fr_FR.UTF-8"}
 
 	env := command.SanitizedEnv(base, extra)
 
 	got := make(map[string]string, len(env))
+	counts := make(map[string]int, len(env))
 	for _, e := range env {
 		k, v, ok := strings.Cut(e, "=")
 		if ok {
 			got[k] = v
+			counts[k]++
 		}
 	}
 
@@ -70,6 +73,9 @@ func TestSanitizedEnv(t *testing.T) {
 	assert.Equal(t, "0", got["GIT_ADVICE"])
 	assert.Equal(t, "value123", got["MY_CUSTOM_VAR"])
 	assert.Equal(t, "foo", got["EXTRA_VAR"])
+	assert.Equal(t, "new", got["OVERRIDDEN_VAR"])
+	assert.Equal(t, 1, counts["OVERRIDDEN_VAR"], "expected OVERRIDDEN_VAR to be deduplicated")
+	assert.Equal(t, 1, counts["LANG"], "expected LANG to appear once")
 }
 
 func TestError_FormatAndUnwrap(t *testing.T) {
@@ -128,5 +134,12 @@ func TestError_FormatAndUnwrap(t *testing.T) {
 		code, ok := command.ExitCodeOf(stdErr)
 		assert.False(t, ok)
 		assert.Equal(t, -1, code)
+	})
+
+	t.Run("StderrOrError", func(t *testing.T) {
+		assert.Equal(t, "", command.StderrOrError(nil))
+		assert.Equal(t, "plain error", command.StderrOrError(errors.New("plain error")))
+		assert.Equal(t, "trimmed stderr", command.StderrOrError(&command.Error{Command: "ssh", ExitCode: 1, Stderr: "  trimmed stderr \n"}))
+		assert.Equal(t, "ssh failed (exit 1)", command.StderrOrError(&command.Error{Command: "ssh", ExitCode: 1}))
 	})
 }
