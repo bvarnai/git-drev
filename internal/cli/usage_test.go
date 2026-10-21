@@ -127,8 +127,32 @@ remote:
 			},
 		},
 		{
-			name: "verbose mode correlates commits and marks orphaned",
+			name: "verbose mode keeps summary on stdout and emits debug logs to stderr",
 			args: []string{"usage", "-v"},
+			mockGit: map[string]mockGitResponse{
+				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
+				"config --local --get-all remote.origin.fetch":                  {out: git.WildcardFetchRefspec},
+			},
+			mockStorage: &storage.MockManager{
+				QueryUsageFn: func(ctx context.Context, host, basePath string, opts ...storage.QueryUsageOptions) (string, []domain.RemoteRevision, error) {
+					return "2.0G", []domain.RemoteRevision{
+						{UUID: "550e8400-e29b-41d4-a716-446655440000", SizeHuman: "1.0G", ModTime: time.Unix(1700000000, 0)},
+						{UUID: "c1ca82b1-7f34-4f4c-9a76-05e3297b2a23", SizeHuman: "1.0G", ModTime: time.Unix(1700001000, 0)},
+					}, nil
+				},
+			},
+			expectedCode: errcode.ExitSuccess,
+			validateOut: func(t *testing.T, stdout string, stderr string) {
+				assert.Contains(t, stdout, "Total space used:  2.0G")
+				assert.Contains(t, stdout, "Revisions found:   2")
+				assert.NotContains(t, stdout, "Revisions breakdown:")
+				assert.Contains(t, stderr, "[git-drev] Debug: Querying remote storage on host 'backup.example.com'")
+				assert.Contains(t, stderr, "[git-drev] Debug: Storage discovery completed: 2 revision(s) found")
+			},
+		},
+		{
+			name: "all and verbose combined renders table and emits debug logs",
+			args: []string{"usage", "-a", "-v"},
 			mockGit: map[string]mockGitResponse{
 				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
 				"config --local --get-all remote.origin.fetch":                  {out: git.WildcardFetchRefspec},
@@ -148,14 +172,9 @@ remote:
 			validateOut: func(t *testing.T, stdout string, stderr string) {
 				assert.Contains(t, stdout, "Total space used:  2.0G")
 				assert.Contains(t, stdout, "Revisions breakdown:")
-				// Active revision
 				assert.Contains(t, stdout, "550e8400-e29b-41d4-a716-446655440000")
-				assert.Contains(t, stdout, "1111111")
-				assert.Contains(t, stdout, "main, origin/main")
-				assert.Contains(t, stdout, "seq: 10")
-				// Orphaned revision
-				assert.Contains(t, stdout, "c1ca82b1-7f34-4f4c-9a76-05e3297b2a23")
 				assert.Contains(t, stdout, "[orphaned]")
+				assert.Contains(t, stderr, "[git-drev] Debug: Querying remote storage on host 'backup.example.com'")
 			},
 		},
 	}

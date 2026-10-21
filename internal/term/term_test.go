@@ -114,6 +114,7 @@ func TestLoggerOutputFormatsAndQuiet(t *testing.T) {
 		})
 
 		logger.Infof("Checking branch '%s'", "main")
+		logger.Debugf("Resolved target SHA '%s'", "abcdef1")
 		logger.Warn("Something minor")
 		logger.Hint("Use -v for details")
 
@@ -124,6 +125,7 @@ func TestLoggerOutputFormatsAndQuiet(t *testing.T) {
 		lines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 		wantLines := []string{
 			"[git-drev] Checking branch 'main'",
+			"[git-drev] Debug: Resolved target SHA 'abcdef1'",
 			"[git-drev] Warning: Something minor",
 			"[git-drev] Hint: Use -v for details",
 			"[git-drev] Error: Detached HEAD state detected, aborting",
@@ -168,6 +170,40 @@ func TestLoggerOutputFormatsAndQuiet(t *testing.T) {
 		})
 		if !strings.Contains(buf.String(), `[git-drev] Warning: Invalid GIT_DREV_COLOR value "bogus"`) {
 			t.Errorf("expected warning in stderr, got %q", buf.String())
+		}
+	})
+
+	t.Run("verbose false suppresses Debug output", func(t *testing.T) {
+		var buf bytes.Buffer
+		logger := term.New(term.Options{
+			Stderr:    &buf,
+			Verbose:   false,
+			Quiet:     false,
+			IsTTY:     false,
+			EnvLookup: mapEnv(nil),
+		})
+
+		logger.Debug("invisible debug message")
+		logger.Debugf("invisible %s", "debug")
+		if buf.Len() != 0 {
+			t.Errorf("expected no debug output when verbose=false, got %q", buf.String())
+		}
+	})
+
+	t.Run("debug color output when color enabled", func(t *testing.T) {
+		var buf bytes.Buffer
+		logger := term.New(term.Options{
+			Stderr:    &buf,
+			Verbose:   true,
+			Quiet:     false,
+			IsTTY:     true,
+			EnvLookup: mapEnv(map[string]string{"GIT_DREV_COLOR": "always"}),
+		})
+
+		logger.Debug("colored debug message")
+		want := "[git-drev] \x1b[35mDebug: colored debug message\x1b[0m\n"
+		if buf.String() != want {
+			t.Errorf("colored debug output = %q, want %q", buf.String(), want)
 		}
 	})
 }

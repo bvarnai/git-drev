@@ -5,13 +5,13 @@
   - Via Git plugin: `git drev usage [flags]`
   - Direct binary: `git-drev usage [flags]`
 - **Target Go package:** `internal/cli` (`usage.go`)
-- **Summary:** Queries the configured remote storage host via SSH for total disk consumption and revision directory inventory, and when `-a` / `--all` (or `-v` / `--verbose`) is enabled, correlates remote UUID directories against local Git commit history to display an itemized breakdown of active versus `[orphaned]` revisions.
+- **Summary:** Queries the configured remote storage host via SSH for total disk consumption and revision directory inventory, and when `-a` / `--all` is enabled, correlates remote UUID directories against local Git commit history to display an itemized breakdown of active versus `[orphaned]` revisions. When global `-v` / `--verbose` is enabled, operational debug traces are emitted to `stderr`.
 
 ## 2. Arguments, Flags & Preconditions
 - **Subcommand-specific flags:**
   | Flag | Short | Go Type | Default | Required | Description |
   | :--- | :--- | :--- | :--- | :--- | :--- |
-  | `--all` | `-a` | `bool` | `false` | No | Display detailed breakdown of all revisions (also enabled when global `--verbose` / `-v` is passed). |
+  | `--all` | `-a` | `bool` | `false` | No | Display detailed breakdown table of all revisions on `stdout`. |
 
 - **Positional arguments:**
   - **Cardinality:** `0` (no positional arguments accepted).
@@ -97,13 +97,13 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
    - **Step 2.2: Query remote storage via SSH:**
      - Emit operational progress log / spinner to `stderr` (unless `--quiet` is active):
        `[git-drev] Connecting to host '<host>'...`
-     - Invoke `Storage.QueryUsage(ctx, opts.Config.Remote.Host, opts.Config.Remote.Path, storage.QueryUsageOptions{Verbose: opts.All || opts.Verbose, OnProgress: ...})`.
-     - Under the hood, `QueryUsage` executes a single non-interactive SSH command (`ssh -T <host> /bin/sh -s -- <quoted-path> <mode>`) with `LC_ALL=C` (where `<mode>` is `"verbose"` when `opts.All || opts.Verbose` is true and `"fast"` otherwise) and feeds a POSIX shell script on `stdin` that:
+     - Invoke `Storage.QueryUsage(ctx, opts.Config.Remote.Host, opts.Config.Remote.Path, storage.QueryUsageOptions{Detailed: opts.All, OnProgress: ...})`.
+     - Under the hood, `QueryUsage` executes a single non-interactive SSH command (`ssh -T <host> /bin/sh -s -- <quoted-path> <mode>`) with `LC_ALL=C` (where `<mode>` is `"verbose"` when `opts.All` is true and `"fast"` otherwise) and feeds a POSIX shell script on `stdin` that:
        1. Checks `[ -d "$1" ]`; if missing, prints `ERROR:Remote path '$1' does not exist.` and exits with status `66` (parsed into `errcode.ErrRemoteNotFound`, exit code `6`).
        2. Computes human-readable total directory usage via `du -sh -- "$1" 2>/dev/null | cut -f1` and emits `TOTAL_SIZE:<size>` (defaulting to `"-"` if empty).
        3. Iterates safely over immediate child entries of `"$1"` matching the 5-group RFC 4122 UUID glob (`[0-9a-fA-F]...` `8-4-4-4-12`), testing `[ -d "$d" ]`, and:
-          - In `fast` mode (`!opts.All && !opts.Verbose`): skips per-directory `du -sh` and `stat` forks and emits `REV:<uuid>:-:0`.
-          - In `verbose` mode (`opts.All || opts.Verbose`): emits `COUNT:<total>` first for streaming progress feedback, then queries `du -sh -- "$d"` and modification time (`stat -c %Y -- "$d"` on GNU/Linux or `stat -f %m -- "$d"` on BSD/macOS, falling back to `0`) and emits `REV:<uuid>:<size>:<mtime_epoch>`.
+          - In `fast` mode (`!opts.All`): skips per-directory `du -sh` and `stat` forks and emits `REV:<uuid>:-:0`.
+          - In `verbose` (detailed) mode (`opts.All`): emits `COUNT:<total>` first for streaming progress feedback, then queries `du -sh -- "$d"` and modification time (`stat -c %Y -- "$d"` on GNU/Linux or `stat -f %m -- "$d"` on BSD/macOS, falling back to `0`) and emits `REV:<uuid>:<size>:<mtime_epoch>`.
      - If the SSH transport fails for reasons other than the missing remote path sentinel, return `errcode.ErrTransport` (exit code `7`) including the captured remote output in the error diagnostic.
    - **Step 2.3: Render storage summary:**
      - Write the summary block to `stdout`:
@@ -118,11 +118,11 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
      - If `len(revisions) == 0`:
        - Emit to `stderr` (unless `--quiet`): `[git-drev] No revision directories found on remote storage.`
        - Return `UsageResult` with `nil` error (exit code `0`).
-     - If `!opts.All && !opts.Verbose`:
+     - If `!opts.All`:
        - Emit to `stderr` (unless `--quiet`):
          `[git-drev] Hint: Use -a/--all to view the detailed breakdown of revisions.`
        - Return `UsageResult` with `nil` error (exit code `0`).
-   - **Step 2.4: Correlate with local Git commit history (`--all` or `--verbose`):**
+   - **Step 2.4: Correlate with local Git commit history (`--all`):**
      - Invoke `Insp.ScanAllCommits(ctx, repoRoot)` which executes `git log --all -z --format=%H%x00%h%x00%ad%x00%D%x00%s --date=unix`.
      - Build a lookup map `byUUID map[string]git.CommitRecord` keyed by lowercase UUID string:
        - For each `CommitRecord`:
@@ -142,7 +142,7 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
            - `Commit = record.ShortHash`
            - Clean and format `record.Refs`: strip `"HEAD -> "` prefixes, strip `"tag: "` prefixes, trim whitespace on each comma-separated token, filter out `"origin/HEAD"` and empty strings, and join remaining tokens with `", "`. If no tokens remain, set `BranchTag = "-"`.
            - Format `Message`: if `record.Meta != nil && record.Meta.Seq != ""`, set `Message = "seq: " + record.Meta.Seq`; otherwise set `Message = record.Subject` (or `"-"` if empty).
-   - **Step 2.5: Render detailed breakdown table (`--all` or `--verbose`):**
+   - **Step 2.5: Render detailed breakdown table (`--all`):**
      - Write the table header and rows to `stdout` using exact column widths:
        ```text
        Revisions breakdown:
@@ -162,7 +162,7 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
   | :--- | :--- | :--- | :--- |
   | `git rev-parse --is-inside-work-tree --show-toplevel --show-prefix` | Caller `PWD` | 3 newline-separated lines (`true`, `<abs-root>`, `<rel-prefix>`) | Non-zero exit or `false` maps to `errcode.ErrNotRepository` (exit `3`). |
   | `git config --local --get-all remote.origin.fetch` | `RepoRoot` | Newline-separated refspec strings | Non-zero exit (key absent) triggers `git config --local --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/*`. |
-  | `git log --all -z --format=%H%x00%h%x00%ad%x00%D%x00%s --date=unix` | `RepoRoot` | NUL-delimited records (`\x00` between fields and `\x00` between commits); only executed when `--all` or `--verbose` is active and remote revisions exist | Empty repository (`HEAD` unborn) or non-zero exit is treated gracefully as zero known commits (all remote revisions marked `[orphaned]`). |
+  | `git log --all -z --format=%H%x00%h%x00%ad%x00%D%x00%s --date=unix` | `RepoRoot` | NUL-delimited records (`\x00` between fields and `\x00` between commits); only executed when `--all` is active and remote revisions exist | Empty repository (`HEAD` unborn) or non-zero exit is treated gracefully as zero known commits (all remote revisions marked `[orphaned]`). |
 
 - **Filesystem & metadata mutations:**
   - None on remote host (strictly read-only `du` and `stat` over SSH).
@@ -178,7 +178,7 @@ func CorrelateRevisions(revisions []domain.RemoteRevision, commits []git.CommitR
       Revisions found:   2
 
     ```
-  - Detailed mode (`--all` or `--verbose` with revisions present):
+  - Detailed mode (`--all` with revisions present):
     ```text
 
     Summary:

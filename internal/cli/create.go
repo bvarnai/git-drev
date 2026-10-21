@@ -136,6 +136,9 @@ func RunCreate(
 			parentUUID = strings.ToLower(meta.UUID)
 		}
 	}
+	if logger != nil {
+		logger.Debugf("Resolved parent revision UUID: %s", parentUUID)
+	}
 
 	// Record starting state for transactional rollback
 	origBranch, origDetached, _ := insp.CurrentBranch(ctx, repoRoot)

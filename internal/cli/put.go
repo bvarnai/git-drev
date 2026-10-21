@@ -180,6 +180,10 @@ func RunPut(
 		UserOptions: cfg.Remote.Rsync.Put,
 	}
 
+	if logger != nil {
+		logger.Debugf("Initiating rsync upload from %s to %s:%s/%s", sourceDir, cfg.Remote.Host, cfg.Remote.Path, newUUID)
+	}
+
 	if err := stor.Upload(ctx, syncReq); err != nil {
 		return nil, err
 	}

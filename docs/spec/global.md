@@ -5,7 +5,7 @@
 - **Global flags:**
   | Flag | Short | Type | Default | Description |
   | :--- | :--- | :--- | :--- | :--- |
-  | `--verbose` | `-v` | `bool` | `false` | Enable verbose diagnostic logging and detailed command/transfer output (e.g., `rsync --itemize-changes` or detailed table breakdowns). Mutually exclusive with `--quiet`. |
+  | `--verbose` | `-v` | `bool` | `false` | Enable verbose diagnostic logging to `stderr` and detailed transfer output (e.g., `rsync --itemize-changes` or internal execution debug traces). Mutually exclusive with `--quiet`. |
   | `--quiet` | `-q` | `bool` | `false` | Suppress informational notices and hints, emitting only errors or strict porcelain output. Mutually exclusive with `--verbose`. |
   | `--no-color` | — | `bool` | `false` | Disable ANSI color styling on `stdout` and `stderr` regardless of TTY status. |
   | `--version` | — | `bool` | `false` | Print `git-drev version <semver> (<commit> <os>/<arch>)` to `stdout` and exit `0`. |

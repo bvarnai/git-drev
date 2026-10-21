@@ -90,9 +90,13 @@ func RunUsage(
 	}
 
 	basePath := strings.TrimRight(cfg.Remote.Path, "/")
-	showDetails := opts.All || opts.Verbose
+	showDetails := opts.All
+	if logger != nil {
+		logger.Debugf("Querying remote storage on host '%s', path '%s' (detailed=%v)", cfg.Remote.Host, basePath, showDetails)
+	}
 	totalSize, revisions, queryErr := stor.QueryUsage(ctx, cfg.Remote.Host, basePath, storage.QueryUsageOptions{
-		Verbose: showDetails,
+		Detailed: showDetails,
+		Verbose:  showDetails,
 		OnProgress: func(current, total int, uuid string) {
 			if spinner == nil {
 				return
@@ -120,6 +124,7 @@ func RunUsage(
 	}
 
 	if logger != nil {
+		logger.Debugf("Storage discovery completed: %d revision(s) found, total space: %s", len(revisions), totalSize)
 		logger.Infof("Retrieved storage usage from host '%s'", cfg.Remote.Host)
 	}
 

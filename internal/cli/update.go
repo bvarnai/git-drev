@@ -79,6 +79,10 @@ func RunUpdate(
 		return nil, errcode.NewError(errcode.ErrGitState, "Remote branch 'origin/%s' does not exist", branch)
 	}
 
+	if logger != nil {
+		logger.Debugf("Resetting HEAD hard to upstream reference '%s'", upstreamRef)
+	}
+
 	if err := ops.ResetHard(ctx, repoRoot, upstreamRef); err != nil {
 		return nil, err
 	}

@@ -17,10 +17,11 @@ const Prefix = "[git-drev]"
 
 // ANSI SGR color escape sequences.
 const (
-	ansiReset  = "\x1b[0m"
-	ansiRed    = "\x1b[31;1m"
-	ansiYellow = "\x1b[33m"
-	ansiCyan   = "\x1b[36m"
+	ansiReset   = "\x1b[0m"
+	ansiRed     = "\x1b[31;1m"
+	ansiYellow  = "\x1b[33m"
+	ansiCyan    = "\x1b[36m"
+	ansiMagenta = "\x1b[35m"
 )
 
 // Options configures a Logger instance.
@@ -203,6 +204,26 @@ func (l *Logger) Infof(format string, args ...any) {
 		return
 	}
 	l.Info(fmt.Sprintf(format, args...))
+}
+
+// Debug emits `[git-drev] Debug: <msg>` to stderr if verbose mode is enabled.
+func (l *Logger) Debug(msg string) {
+	if !l.verbose {
+		return
+	}
+	if l.useColor {
+		l.writeLine(fmt.Sprintf("%s %sDebug: %s%s", Prefix, ansiMagenta, msg, ansiReset))
+		return
+	}
+	l.writeLine(fmt.Sprintf("%s Debug: %s", Prefix, msg))
+}
+
+// Debugf emits a formatted `[git-drev] Debug: <msg>` line to stderr if verbose mode is enabled.
+func (l *Logger) Debugf(format string, args ...any) {
+	if !l.verbose {
+		return
+	}
+	l.Debug(fmt.Sprintf(format, args...))
 }
 
 // Warn emits `[git-drev] Warning: <msg>` to stderr.

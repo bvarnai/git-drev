@@ -171,9 +171,9 @@ Queries the remote storage host via SSH (`du -sh`) to report total disk space co
 ```bash
 git drev usage
 ```
-Add `-v` (`--verbose`) to correlate all remote UUID directories against local Git history, revealing active versus `[orphaned]` snapshots:
+Add `-a` (`--all`) to correlate all remote UUID directories against local Git history, revealing active versus `[orphaned]` snapshots:
 ```bash
-git drev usage -v
+git drev usage -a
 ```
 Output:
 ```

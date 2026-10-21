@@ -181,6 +181,10 @@ func RunGet(
 		UserOptions: cfg.Remote.Rsync.Get,
 	}
 
+	if logger != nil {
+		logger.Debugf("Initiating rsync download from %s:%s/%s to %s", cfg.Remote.Host, cfg.Remote.Path, uuid, targetDir)
+	}
+
 	if err := stor.Download(ctx, syncReq); err != nil {
 		return nil, err
 	}
