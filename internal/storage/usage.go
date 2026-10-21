@@ -17,6 +17,9 @@ import (
 
 // QueryUsageOptions configures options and progress callbacks for QueryUsage.
 type QueryUsageOptions struct {
+	// Detailed enables per-revision size and mtime scanning via SSH du and stat.
+	Detailed bool
+	// Verbose is preserved for backward compatibility and treated as Detailed if true.
 	Verbose    bool
 	OnProgress func(current, total int, uuid string)
 }
@@ -80,7 +83,7 @@ func (c *Client) QueryUsage(ctx context.Context, host, basePath string, opts ...
 	}
 
 	mode := "fast"
-	if opt.Verbose {
+	if opt.Detailed || opt.Verbose {
 		mode = "verbose"
 	}
 

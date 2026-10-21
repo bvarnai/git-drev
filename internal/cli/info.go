@@ -72,6 +72,7 @@ func RunInfo(
 				return InfoResult{}, errcode.NewError(errcode.ErrRuntime, "info hook %q is a broken symlink", hookFile)
 			}
 			if logger != nil {
+				logger.Debugf("Checked for info hook at %s: not found", hookPath)
 				logger.Info("No info hook found")
 			}
 			return InfoResult{HookFound: false, HookPath: hookPath}, nil
@@ -96,6 +97,8 @@ func RunInfo(
 	if meta, headErr := insp.HeadCommitMeta(ctx, repoRoot); headErr == nil {
 		uuidStr = meta.UUID
 		seqStr = meta.Seq
+	} else if logger != nil {
+		logger.Debugf("HEAD commit has no drev metadata (%v); falling back to empty UUID and sequence", headErr)
 	}
 
 	hookEnv := hook.Env{
@@ -120,6 +123,10 @@ func RunInfo(
 		Timeout: timeout,
 		Stdout:  stdout,
 		Stderr:  stderr,
+	}
+
+	if logger != nil {
+		logger.Debugf("Executing info hook %s (branch: %s, uuid: %s, seq: %s)", hookPath, branch, uuidStr, seqStr)
 	}
 
 	if err := hooks.Run(ctx, runReq); err != nil {

@@ -107,6 +107,10 @@ func RunSelect(
 		kind = SelectTargetRef
 	}
 
+	if logger != nil {
+		logger.Debugf("Checking out resolved ref '%s' (kind: %v, requested: %s)", resolvedRef, kind, requested)
+	}
+
 	if err := ops.Checkout(ctx, repoRoot, resolvedRef, false); err != nil {
 		if kind == SelectTargetRef {
 			candidates, _ := insp.ListAllBranchNames(ctx, repoRoot)

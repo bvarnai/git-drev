@@ -90,9 +90,13 @@ func RunUsage(
 	}
 
 	basePath := strings.TrimRight(cfg.Remote.Path, "/")
-	showDetails := opts.All || opts.Verbose
+	showDetails := opts.All
+	if logger != nil {
+		logger.Debugf("Querying remote storage on host '%s', path '%s' (detailed=%v)", cfg.Remote.Host, basePath, showDetails)
+	}
 	totalSize, revisions, queryErr := stor.QueryUsage(ctx, cfg.Remote.Host, basePath, storage.QueryUsageOptions{
-		Verbose: showDetails,
+		Detailed: showDetails,
+		Verbose:  showDetails,
 		OnProgress: func(current, total int, uuid string) {
 			if spinner == nil {
 				return
@@ -120,6 +124,7 @@ func RunUsage(
 	}
 
 	if logger != nil {
+		logger.Debugf("Storage discovery completed: %d revision(s) found, total space: %s", len(revisions), totalSize)
 		logger.Infof("Retrieved storage usage from host '%s'", cfg.Remote.Host)
 	}
 
@@ -168,6 +173,8 @@ func RunUsage(
 	}
 
 	var rows []UsageRevisionRow
+	activeCount := 0
+	orphanedCount := 0
 	for _, rev := range revisions {
 		created := "-"
 		if !rev.ModTime.IsZero() {
@@ -181,6 +188,7 @@ func RunUsage(
 		var orphaned bool
 
 		if found {
+			activeCount++
 			orphaned = false
 			commitStr = rec.ShortHash
 			branchTagStr = formatRefs(rec.Refs)
@@ -193,6 +201,7 @@ func RunUsage(
 				}
 			}
 		} else {
+			orphanedCount++
 			orphaned = true
 			commitStr = "[orphaned]"
 			branchTagStr = "-"
@@ -208,6 +217,10 @@ func RunUsage(
 			Message:   msgStr,
 			Orphaned:  orphaned,
 		})
+	}
+
+	if logger != nil {
+		logger.Debugf("Correlated %d remote revision(s) against %d Git commit(s): %d active, %d orphaned", len(revisions), len(commits), activeCount, orphanedCount)
 	}
 
 	res.Revisions = rows

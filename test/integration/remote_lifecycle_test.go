@@ -91,6 +91,19 @@ func TestRemoteLifecycle_PutGetUsageWorkflow(t *testing.T) {
 	if err := replica.RunDrev(&stdout, &stderr, "usage", "-v"); err != nil {
 		t.Fatalf("usage -v failed: %v\nstderr: %s", err, stderr.String())
 	}
+	usageSummaryOut := stdout.String()
+	if strings.Contains(usageSummaryOut, "Revisions breakdown:") {
+		t.Fatalf("usage -v without -a unexpectedly contained detailed revisions breakdown:\n%s", usageSummaryOut)
+	}
+	if !strings.Contains(stderr.String(), "Debug:") {
+		t.Fatalf("usage -v expected debug logs on stderr:\n%s", stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if err := replica.RunDrev(&stdout, &stderr, "usage", "-a", "-v"); err != nil {
+		t.Fatalf("usage -a -v failed: %v\nstderr: %s", err, stderr.String())
+	}
 	usageOut := stdout.String()
 	if !strings.Contains(usageOut, meta.UUID) {
 		t.Fatalf("usage table missing UUID %s:\n%s", meta.UUID, usageOut)
@@ -114,8 +127,8 @@ func TestRemoteLifecycle_PutGetUsageWorkflow(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	if err := replica.RunDrev(&stdout, &stderr, "usage", "-v"); err != nil {
-		t.Fatalf("usage -v with orphan failed: %v\nstderr: %s", err, stderr.String())
+	if err := replica.RunDrev(&stdout, &stderr, "usage", "-a"); err != nil {
+		t.Fatalf("usage -a with orphan failed: %v\nstderr: %s", err, stderr.String())
 	}
 	orphanOut := stdout.String()
 	if !strings.Contains(orphanOut, orphanedUUID) || !strings.Contains(orphanOut, "[orphaned]") {
