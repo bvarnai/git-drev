@@ -291,3 +291,50 @@ func TestLoggerOutAndErgonomics(t *testing.T) {
 		}
 	}
 }
+
+func TestLogger_VariadicAndStreams(t *testing.T) {
+	t.Parallel()
+
+	var stdin bytes.Buffer
+	var stdout, stderr bytes.Buffer
+
+	logger := term.New(term.Options{
+		Stdin:       &stdin,
+		Stdout:      &stdout,
+		Stderr:      &stderr,
+		Verbose:     true,
+		NoColorFlag: true,
+	})
+
+	if logger.Stderr() != &stderr {
+		t.Errorf("logger.Stderr() did not return expected stderr writer")
+	}
+	if logger.Stdout() != &stdout {
+		t.Errorf("logger.Stdout() did not return expected stdout writer")
+	}
+
+	logger.Info("info formatted: %s %d", "test", 42)
+	logger.Debug("debug formatted: %s", "verbose")
+	logger.Warn("warn formatted: %s", "caution")
+	logger.Hint("hint formatted: %s", "tip")
+	logger.Error("error formatted: %s", "failure")
+
+	out := stderr.String()
+	wantLines := []string{
+		"[git-drev] info formatted: test 42",
+		"[git-drev] Debug: debug formatted: verbose",
+		"[git-drev] Warning: warn formatted: caution",
+		"[git-drev] Hint: hint formatted: tip",
+		"[git-drev] Error: error formatted: failure",
+	}
+
+	for _, want := range wantLines {
+		if !strings.Contains(out, want) {
+			t.Errorf("stderr missing %q, got:\n%s", want, out)
+		}
+	}
+
+	if term.ColorEnvVar != "GIT_DREV_COLOR" {
+		t.Errorf("term.ColorEnvVar = %q, want GIT_DREV_COLOR", term.ColorEnvVar)
+	}
+}
