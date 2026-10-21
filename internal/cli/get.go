@@ -129,7 +129,11 @@ func RunGet(
 	}
 	uuid := meta.UUID
 	if logger != nil {
-		logger.Debugf("Resolved active revision from HEAD: uuid=%s, seq=%s", meta.UUID, meta.Seq)
+		seqStr := meta.Seq
+		if seqStr == "" {
+			seqStr = "none"
+		}
+		logger.Debugf("Resolved active revision from HEAD: uuid=%s, seq=%s", meta.UUID, seqStr)
 	}
 
 	// 4. Verify remote directory exists

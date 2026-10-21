@@ -106,8 +106,10 @@ func RunPut(
 		return nil, errcode.NewError(errcode.ErrUsage, "source directory '%s' does not exist or is not a directory", sourceDir)
 	}
 
-	// 4. Validate sequence format if provided
-	if opts.Sequence != "" {
+	// 4. Validate or default sequence format
+	if opts.Sequence == "" {
+		opts.Sequence = strconv.FormatInt(time.Now().Unix(), 10)
+	} else {
 		if _, err := strconv.ParseUint(opts.Sequence, 10, 64); err != nil {
 			return nil, errcode.NewError(errcode.ErrUsage, "invalid sequence %q: must be a non-negative integer", opts.Sequence)
 		}
