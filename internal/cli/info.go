@@ -97,6 +97,8 @@ func RunInfo(
 	if meta, headErr := insp.HeadCommitMeta(ctx, repoRoot); headErr == nil {
 		uuidStr = meta.UUID
 		seqStr = meta.Seq
+	} else if logger != nil {
+		logger.Debugf("HEAD commit has no drev metadata (%v); falling back to empty UUID and sequence", headErr)
 	}
 
 	hookEnv := hook.Env{

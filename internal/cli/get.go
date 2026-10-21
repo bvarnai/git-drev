@@ -121,10 +121,16 @@ func RunGet(
 	// 3. Resolve UUID from HEAD commit metadata
 	meta, headErr := insp.HeadCommitMeta(ctx, repoRoot)
 	if headErr != nil || meta.UUID == "" || meta.UUID == domain.ZeroUUID || meta.IsMarker() {
+		if logger != nil {
+			logger.Debugf("HEAD commit metadata invalid or marker (err=%v, uuid=%q, marker=%v)", headErr, meta.UUID, meta.IsMarker())
+		}
 		return nil, errcode.NewError(errcode.ErrGitState, "No revision committed yet on this branch").
 			WithHint(`Use "git-drev put" to create the initial revision.`)
 	}
 	uuid := meta.UUID
+	if logger != nil {
+		logger.Debugf("Resolved active revision from HEAD: uuid=%s, seq=%s", meta.UUID, meta.Seq)
+	}
 
 	// 4. Verify remote directory exists
 	var checkSpinner *term.Spinner
@@ -182,7 +188,7 @@ func RunGet(
 	}
 
 	if logger != nil {
-		logger.Debugf("Initiating rsync download from %s:%s/%s to %s", cfg.Remote.Host, cfg.Remote.Path, uuid, targetDir)
+		logger.Debugf("Initiating rsync download from %s:%s/%s to %s (user_options=%q)", cfg.Remote.Host, cfg.Remote.Path, uuid, targetDir, cfg.Remote.Rsync.Get)
 	}
 
 	if err := stor.Download(ctx, syncReq); err != nil {

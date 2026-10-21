@@ -147,6 +147,9 @@ func RunCreate(
 
 	defer func() {
 		if branchCreatedLocally {
+			if logger != nil {
+				logger.Debugf("Rolling back locally created branch '%s' after failed remote push", opts.Branch)
+			}
 			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if origDetached && origHeadHash != "" {

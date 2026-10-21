@@ -137,11 +137,15 @@ func RunPut(
 		}
 		if cloneErr != nil {
 			if logger != nil {
+				logger.Debugf("Baseline hardlink clone from '%s' to '%s' failed: %v", lastMeta.UUID, newUUID, cloneErr)
 				logger.Info("Unable to use previous revision, performing a full copy")
 			}
+		} else if logger != nil {
+			logger.Debugf("Cloned baseline revision '%s' to '%s' on '%s'", lastMeta.UUID, newUUID, cfg.Remote.Host)
 		}
 	} else {
 		if logger != nil {
+			logger.Debugf("No valid parent revision on HEAD (err=%v, uuid=%q); skipping baseline clone", headErr, lastMeta.UUID)
 			logger.Info("Unable to use previous revision, performing a full copy")
 		}
 	}
@@ -150,6 +154,9 @@ func RunPut(
 	stagedRemote := true
 	defer func() {
 		if stagedRemote {
+			if logger != nil {
+				logger.Debugf("Cleaning up uncommitted remote revision directory '%s' on host '%s'", newUUID, cfg.Remote.Host)
+			}
 			cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			_ = stor.RemoveRevision(cleanupCtx, cfg.Remote.Host, cfg.Remote.Path, newUUID)
@@ -181,7 +188,7 @@ func RunPut(
 	}
 
 	if logger != nil {
-		logger.Debugf("Initiating rsync upload from %s to %s:%s/%s", sourceDir, cfg.Remote.Host, cfg.Remote.Path, newUUID)
+		logger.Debugf("Initiating rsync upload from %s to %s:%s/%s (user_options=%q)", sourceDir, cfg.Remote.Host, cfg.Remote.Path, newUUID, cfg.Remote.Rsync.Put)
 	}
 
 	if err := stor.Upload(ctx, syncReq); err != nil {
@@ -219,9 +226,15 @@ func RunPut(
 			Stderr:  stderr,
 		}
 
+		if logger != nil {
+			logger.Debugf("Executing put hook %s (timeout: %s, uuid: %s, seq: %s)", hookPath, hookTimeout, newUUID, opts.Sequence)
+		}
+
 		if err := hooks.Run(ctx, runReq); err != nil {
 			return nil, err
 		}
+	} else if logger != nil {
+		logger.Debugf("No put hook found at %s; skipping", hookPath)
 	}
 
 	// 9. Stage revision metadata
@@ -290,6 +303,9 @@ func RunPut(
 			upstreamRef := "refs/remotes/origin/" + branch
 			remoteMeta, metaErr := insp.BranchCommitMeta(ctx, repoRoot, upstreamRef)
 			if metaErr == nil && remoteMeta.Seq != "" && opts.Sequence != "" {
+				if logger != nil {
+					logger.Debugf("Comparing sequences on 'origin/%s': local=%q, remote=%q", branch, opts.Sequence, remoteMeta.Seq)
+				}
 				remoteSeq, rErr := strconv.ParseUint(remoteMeta.Seq, 10, 64)
 				localSeq, lErr := strconv.ParseUint(opts.Sequence, 10, 64)
 				if rErr == nil && lErr == nil && localSeq < remoteSeq {
@@ -314,6 +330,9 @@ func RunPut(
 
 		// Rebase local commit onto remote tip
 		upstreamRef := "refs/remotes/origin/" + branch
+		if logger != nil {
+			logger.Debugf("Rebasing local revision commit onto '%s' (attempt %d/%d)", upstreamRef, attempt, MaxPushRetries)
+		}
 		if rebaseErr := ops.RebaseTheirs(ctx, repoRoot, upstreamRef); rebaseErr != nil {
 			_ = ops.RebaseAbort(ctx, repoRoot)
 			return nil, rebaseErr

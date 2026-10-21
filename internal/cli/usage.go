@@ -173,6 +173,8 @@ func RunUsage(
 	}
 
 	var rows []UsageRevisionRow
+	activeCount := 0
+	orphanedCount := 0
 	for _, rev := range revisions {
 		created := "-"
 		if !rev.ModTime.IsZero() {
@@ -186,6 +188,7 @@ func RunUsage(
 		var orphaned bool
 
 		if found {
+			activeCount++
 			orphaned = false
 			commitStr = rec.ShortHash
 			branchTagStr = formatRefs(rec.Refs)
@@ -198,6 +201,7 @@ func RunUsage(
 				}
 			}
 		} else {
+			orphanedCount++
 			orphaned = true
 			commitStr = "[orphaned]"
 			branchTagStr = "-"
@@ -213,6 +217,10 @@ func RunUsage(
 			Message:   msgStr,
 			Orphaned:  orphaned,
 		})
+	}
+
+	if logger != nil {
+		logger.Debugf("Correlated %d remote revision(s) against %d Git commit(s): %d active, %d orphaned", len(revisions), len(commits), activeCount, orphanedCount)
 	}
 
 	res.Revisions = rows
