@@ -23,7 +23,10 @@ func NewCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
 		if cmd.Process == nil {
 			return nil
 		}
-		return cmd.Process.Signal(syscall.SIGTERM)
+		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+			return cmd.Process.Kill()
+		}
+		return nil
 	}
 	return cmd
 }

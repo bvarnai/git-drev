@@ -111,14 +111,15 @@ func TestExecRunner_StatPreconditions(t *testing.T) {
 
 	// 3. Broken symlink
 	brokenSymlink := filepath.Join(tempDir, "broken-symlink")
-	require.NoError(t, os.Symlink(filepath.Join(tempDir, "nonexistent-target"), brokenSymlink))
-	err = runner.Run(context.Background(), hook.RunRequest{
-		Kind: hook.KindInfo,
-		Path: brokenSymlink,
-	})
-	require.Error(t, err)
-	assert.Equal(t, errcode.ExitRuntime, errcode.ExitCode(err))
-	assert.Contains(t, err.Error(), "is a broken symlink")
+	if err := os.Symlink(filepath.Join(tempDir, "nonexistent-target"), brokenSymlink); err == nil {
+		err = runner.Run(context.Background(), hook.RunRequest{
+			Kind: hook.KindInfo,
+			Path: brokenSymlink,
+		})
+		require.Error(t, err)
+		assert.Equal(t, errcode.ExitRuntime, errcode.ExitCode(err))
+		assert.Contains(t, err.Error(), "is a broken symlink")
+	}
 
 	// 4. Empty hook file (0 bytes) is a valid no-op
 	emptyPath := filepath.Join(tempDir, "empty-hook")

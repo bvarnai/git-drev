@@ -145,7 +145,8 @@ See [Chapter 5: Storage architecture & retention](docs/user-guide/05-storage-and
 ## Installation
 
 > [!NOTE]
-> `git-drev` requires `git`, `ssh` (OpenSSH), and `rsync` in your `$PATH`. On Windows, run inside Git Bash and install `rsync` via Scoop (`scoop install rsync`).
+> - **Client (`git-drev` CLI):** Supported on **Linux**, **macOS**, and **Windows** (inside Git Bash). Requires `git`, `ssh` (OpenSSH), and `rsync` in your `$PATH`. On Windows, install `rsync` via Scoop (`scoop install rsync`).
+> - **Storage server (`remote.host`):** Requires a **Linux** (or Linux-compatible) SSH server with `sshd`, `rsync`, and GNU coreutils (`cp -al`, `du -sh`, `stat -c %Y`, `rm -rf`).
 
 ### Via Scoop (Windows)
 ```powershell

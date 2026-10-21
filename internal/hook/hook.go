@@ -187,7 +187,10 @@ func (r *ExecRunner) Run(ctx context.Context, req RunRequest) error {
 		if cmd.Process == nil {
 			return nil
 		}
-		return cmd.Process.Signal(syscall.SIGTERM)
+		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+			return cmd.Process.Kill()
+		}
+		return nil
 	}
 
 	// Environment sanitization
@@ -234,7 +237,7 @@ if declare -F %s >/dev/null 2>&1; then
 fi
 `, fnName, fnName)
 
-	args := []string{"-c", script, "--", req.Path}
+	args := []string{"-c", script, "--", filepath.ToSlash(req.Path)}
 	args = append(args, req.Args...)
 	return exec.CommandContext(ctx, "bash", args...)
 }

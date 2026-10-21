@@ -35,10 +35,11 @@ brew install git openssh rsync
 ---
 
 ### Storage server prerequisites
-The remote storage host requires:
+The remote storage host (`remote.host`) must be a **Linux** (or Linux-compatible) server with:
 - An OpenSSH server (`sshd`) with public key authentication enabled
 - `rsync` (3.1.0 or later)
-- Standard POSIX utilities: `cp` (supporting `-a` and `-l` hardlink flags), `du`, `stat`, and `rm`
+- GNU coreutils / standard Linux utilities: `/bin/sh`, `cp` (supporting `-a` and `-l` hardlink flags), `du -sh`, `stat -c %Y`, and `rm -rf`
+- `bash` (4.0+) and `git` if running the server-side [`scripts/cleanup.sh`](../../scripts/cleanup.sh) retention script
 - Write permissions for the SSH user on the target storage directory (e.g., `/srv/drev/`)
 
 ---
