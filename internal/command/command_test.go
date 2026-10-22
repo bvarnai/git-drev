@@ -3,7 +3,10 @@ package command_test
 import (
 	"context"
 	"errors"
+	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -141,5 +144,110 @@ func TestError_FormatAndUnwrap(t *testing.T) {
 		assert.Equal(t, "plain error", command.StderrOrError(errors.New("plain error")))
 		assert.Equal(t, "trimmed stderr", command.StderrOrError(&command.Error{Command: "ssh", ExitCode: 1, Stderr: "  trimmed stderr \n"}))
 		assert.Equal(t, "ssh failed (exit 1)", command.StderrOrError(&command.Error{Command: "ssh", ExitCode: 1}))
+	})
+}
+
+func TestRun(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	t.Run("successful execution returns trimmed-capable stdout", func(t *testing.T) {
+		out, err := command.Run(ctx, command.Request{
+			Name: "echo",
+			Args: []string{"hello", "world"},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "hello world\n", out)
+	})
+
+	t.Run("environment and working directory propagation", func(t *testing.T) {
+		tempDir := t.TempDir()
+		out, err := command.Run(ctx, command.Request{
+			Name:     "sh",
+			Args:     []string{"-c", "echo test_marker > marker.txt && echo $TEST_RUN_VAR"},
+			Dir:      tempDir,
+			ExtraEnv: []string{"TEST_RUN_VAR=drev_refactored"},
+		})
+		require.NoError(t, err)
+		assert.Contains(t, out, "drev_refactored")
+		content, readErr := os.ReadFile(filepath.Join(tempDir, "marker.txt"))
+		require.NoError(t, readErr)
+		assert.Contains(t, string(content), "test_marker")
+	})
+
+	t.Run("streaming stdout and stderr with teeing", func(t *testing.T) {
+		var streamOut, streamErr strings.Builder
+		out, err := command.Run(ctx, command.Request{
+			Name:   "sh",
+			Args:   []string{"-c", "echo stdout_data; echo stderr_data >&2"},
+			Stdout: &streamOut,
+			Stderr: &streamErr,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "stdout_data\n", streamOut.String())
+		assert.Equal(t, "stderr_data\n", streamErr.String())
+		assert.Equal(t, "stdout_data\n", out)
+	})
+
+	t.Run("non-zero exit maps to command.Error with category and stderr", func(t *testing.T) {
+		out, err := command.Run(ctx, command.Request{
+			Name:     "sh",
+			Args:     []string{"-c", "echo standard_out; echo specific_failure >&2; exit 42"},
+			Category: errcode.ErrGitExec,
+		})
+		require.Error(t, err)
+		assert.Equal(t, "standard_out\n", out)
+
+		var cmdErr *command.Error
+		require.True(t, errors.As(err, &cmdErr))
+		assert.Equal(t, 42, cmdErr.ExitCode)
+		assert.Equal(t, "specific_failure", cmdErr.Stderr)
+		assert.Equal(t, "standard_out\n", cmdErr.Stdout)
+		assert.True(t, errors.Is(err, errcode.ErrGitExec))
+	})
+
+	t.Run("pre-canceled context returns ErrInterrupted", func(t *testing.T) {
+		canceledCtx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		_, err := command.Run(canceledCtx, command.Request{
+			Name: "echo",
+			Args: []string{"unreachable"},
+		})
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, errcode.ErrInterrupted))
+	})
+
+	t.Run("stdout pipe streaming and callback", func(t *testing.T) {
+		var collected strings.Builder
+		_, err := command.Run(ctx, command.Request{
+			Name: "sh",
+			Args: []string{"-c", "echo piped_output"},
+			StdoutPipe: func(r io.Reader) error {
+				buf := make([]byte, 128)
+				n, readErr := r.Read(buf)
+				if readErr != nil && !errors.Is(readErr, io.EOF) {
+					return readErr
+				}
+				collected.Write(buf[:n])
+				return nil
+			},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "piped_output\n", collected.String())
+	})
+
+	t.Run("stdout pipe callback error propagation", func(t *testing.T) {
+		expectedPipeErr := errors.New("custom pipe error")
+		_, err := command.Run(ctx, command.Request{
+			Name: "sh",
+			Args: []string{"-c", "echo piped_output"},
+			StdoutPipe: func(r io.Reader) error {
+				return expectedPipeErr
+			},
+		})
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, expectedPipeErr))
 	})
 }

@@ -1,14 +1,10 @@
 package transport
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
-	"strings"
 
 	"github.com/bvarnai/git-drev/internal/command"
 	"github.com/bvarnai/git-drev/internal/errcode"
@@ -68,50 +64,26 @@ func BuildRsyncArgs(opts RsyncOptions) ([]string, error) {
 
 // Sync executes rsync according to opts.
 func (r *ExecRsyncRunner) Sync(ctx context.Context, opts RsyncOptions) error {
-	if err := ctx.Err(); err != nil {
-		return errcode.WrapError(errcode.ErrInterrupted, err, "operation interrupted")
-	}
-
 	args, err := BuildRsyncArgs(opts)
 	if err != nil {
 		return err
 	}
 
-	cmd := command.New(ctx, "rsync", args...)
-
-	var errBuf bytes.Buffer
+	var stdout io.Writer
 	if opts.Verbose || opts.Stats {
 		if opts.Stdout != nil {
-			cmd.Stdout = opts.Stdout
+			stdout = opts.Stdout
 		} else {
-			cmd.Stdout = os.Stdout
+			stdout = os.Stdout
 		}
 	}
 
-	if opts.Stderr != nil {
-		cmd.Stderr = io.MultiWriter(opts.Stderr, &errBuf)
-	} else {
-		cmd.Stderr = &errBuf
-	}
-
-	runErr := cmd.Run()
-	if runErr == nil {
-		return nil
-	}
-
-	if ctx.Err() != nil {
-		return errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "operation interrupted")
-	}
-
-	errMsg := strings.TrimSpace(errBuf.String())
-	if errMsg == "" {
-		errMsg = runErr.Error()
-	}
-
-	var exitErr *exec.ExitError
-	if errors.As(runErr, &exitErr) {
-		return command.NewError(cmd, exitErr, "", errMsg, errcode.ErrTransport)
-	}
-
-	return errcode.WrapError(errcode.ErrTransport, runErr, "rsync failed: %s", errMsg)
+	_, err = command.Run(ctx, command.Request{
+		Name:     "rsync",
+		Args:     args,
+		Stdout:   stdout,
+		Stderr:   opts.Stderr,
+		Category: errcode.ErrTransport,
+	})
+	return err
 }
