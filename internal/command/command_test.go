@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -163,13 +165,15 @@ func TestRun(t *testing.T) {
 		tempDir := t.TempDir()
 		out, err := command.Run(ctx, command.Request{
 			Name:     "sh",
-			Args:     []string{"-c", "pwd && echo $TEST_RUN_VAR"},
+			Args:     []string{"-c", "echo test_marker > marker.txt && echo $TEST_RUN_VAR"},
 			Dir:      tempDir,
 			ExtraEnv: []string{"TEST_RUN_VAR=drev_refactored"},
 		})
 		require.NoError(t, err)
-		assert.Contains(t, out, tempDir)
 		assert.Contains(t, out, "drev_refactored")
+		content, readErr := os.ReadFile(filepath.Join(tempDir, "marker.txt"))
+		require.NoError(t, readErr)
+		assert.Contains(t, string(content), "test_marker")
 	})
 
 	t.Run("streaming stdout and stderr with teeing", func(t *testing.T) {
