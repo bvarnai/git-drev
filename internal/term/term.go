@@ -8,8 +8,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-
-	"github.com/bvarnai/git-drev/internal/errcode"
 )
 
 // Prefix is the canonical operational log prefix emitted on stderr.
@@ -299,18 +297,6 @@ func (l *Logger) Error(format string, args ...any) {
 // Errorf emits a formatted `[git-drev] Error: <msg>` line to stderr (never suppressed by Quiet).
 func (l *Logger) Errorf(format string, args ...any) {
 	l.Error(format, args...)
-}
-
-// LogError emits `[git-drev] Error: <err>` and, if err carries an errcode.Hint, follows it
-// with `[git-drev] Hint: <remediation>` on stderr.
-func (l *Logger) LogError(err error) {
-	if err == nil {
-		return
-	}
-	l.Error(err.Error())
-	if hint := errcode.Hint(err); hint != "" {
-		l.HintAlways(hint)
-	}
 }
 
 // Hyperlink formats a URL as an OSC 8 clickable terminal hyperlink if color is enabled.

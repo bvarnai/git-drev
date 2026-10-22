@@ -193,7 +193,7 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
   └── go.mod
   ```
   - **Package dependency boundaries:**
-    - `internal/domain` and `internal/errcode` depend only on the Go standard library.
+    - `internal/domain`, `internal/errcode`, and `internal/term` depend only on the Go standard library.
     - `internal/config`, `internal/git`, `internal/transport`, `internal/storage`, and `internal/hook` depend on `internal/domain`, `internal/errcode`, and `internal/term`, never on `internal/cli`.
     - `internal/cli` wires flags and invokes domain/runner interfaces, enabling 100% unit testability with mock runners.
 - **Shared Go interfaces & structs:**

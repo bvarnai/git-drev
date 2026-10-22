@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bvarnai/git-drev/internal/errcode"
 	"github.com/bvarnai/git-drev/internal/term"
 )
 
@@ -117,10 +116,8 @@ func TestLoggerOutputFormatsAndQuiet(t *testing.T) {
 		logger.Debugf("Resolved target SHA '%s'", "abcdef1")
 		logger.Warn("Something minor")
 		logger.Hint("Use -v for details")
-
-		err := errcode.NewError(errcode.ErrDetachedHead, "Detached HEAD state detected, aborting").
-			WithHint(`Use "git-drev select <branch>" to select a branch first.`)
-		logger.LogError(err)
+		logger.Error("Detached HEAD state detected, aborting")
+		logger.HintAlways(`Use "git-drev select <branch>" to select a branch first.`)
 
 		lines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 		wantLines := []string{
