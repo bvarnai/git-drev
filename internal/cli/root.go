@@ -33,6 +33,7 @@ type App struct {
 	Storage    storage.Manager
 	Hooks      hook.Runner
 	Opts       GlobalOptions
+	Stdin      io.Reader
 	Stdout     io.Writer
 	Stderr     io.Writer
 }
@@ -79,7 +80,12 @@ on remote SSH/rsync storage hosts, binding them to Git commit metadata and branc
 			if app.Opts.Verbose && app.Opts.Quiet {
 				return errcode.NewError(errcode.ErrUsage, "Flags --verbose and --quiet cannot be used together")
 			}
+			stdin := app.Stdin
+			if stdin == nil && app.Logger != nil {
+				stdin = app.Logger.Stdin()
+			}
 			app.Logger = term.New(term.Options{
+				Stdin:       stdin,
 				Stdout:      stdout,
 				Stderr:      stderr,
 				NoColorFlag: app.Opts.NoColor,
@@ -102,6 +108,7 @@ on remote SSH/rsync storage hosts, binding them to Git commit metadata and branc
 	rootCmd.PersistentFlags().BoolVar(&app.Opts.NoColor, "no-color", false, "Disable ANSI color styling")
 
 	// Register subcommands
+	rootCmd.AddCommand(app.newInitCmd())
 	rootCmd.AddCommand(app.newConfigCmd())
 	rootCmd.AddCommand(app.newNameCmd())
 	rootCmd.AddCommand(app.newCreateCmd())

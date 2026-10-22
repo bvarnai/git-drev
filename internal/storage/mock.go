@@ -15,6 +15,7 @@ type MockManager struct {
 	QueryUsageFn     func(ctx context.Context, host, basePath string, opts ...QueryUsageOptions) (string, []domain.RemoteRevision, error)
 	DownloadFn       func(ctx context.Context, req TransferRequest) error
 	UploadFn         func(ctx context.Context, req TransferRequest) error
+	CheckAccessFn    func(ctx context.Context, host, basePath string) (AccessResult, error)
 
 	Calls []string
 }
@@ -71,4 +72,13 @@ func (m *MockManager) Upload(ctx context.Context, req TransferRequest) error {
 		return m.UploadFn(ctx, req)
 	}
 	return nil
+}
+
+// CheckAccess records the call and delegates to CheckAccessFn or returns (AccessResult{Readable: true, Writable: true}, nil).
+func (m *MockManager) CheckAccess(ctx context.Context, host, basePath string) (AccessResult, error) {
+	m.Calls = append(m.Calls, fmt.Sprintf("CheckAccess %s %s", host, basePath))
+	if m.CheckAccessFn != nil {
+		return m.CheckAccessFn(ctx, host, basePath)
+	}
+	return AccessResult{Readable: true, Writable: true}, nil
 }

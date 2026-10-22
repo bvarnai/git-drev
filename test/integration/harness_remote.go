@@ -283,3 +283,40 @@ func pruneExtraneous(srcDir, dstDir string) error {
 	}
 	return nil
 }
+
+// CheckAccess probes the local filesystem directory corresponding to basePath.
+func (r *LocalRemoteRunner) CheckAccess(ctx context.Context, host, basePath string) (storage.AccessResult, error) {
+	if err := ctx.Err(); err != nil {
+		return storage.AccessResult{}, errcode.WrapError(errcode.ErrInterrupted, err, "Operation interrupted")
+	}
+
+	p := r.resolveBasePath(basePath)
+	created := false
+	fi, err := os.Stat(p)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			if mkErr := os.MkdirAll(p, 0o755); mkErr == nil {
+				created = true
+				fi, err = os.Stat(p)
+			}
+		}
+	}
+	if err != nil || !fi.IsDir() {
+		return storage.AccessResult{}, errcode.NewError(errcode.ErrTransport, "Remote directory %q does not exist and could not be created", basePath)
+	}
+
+	// Test write access by writing a temporary probe file
+	probeFile := filepath.Join(p, ".probe-access")
+	writable := true
+	if writeErr := os.WriteFile(probeFile, []byte("ok"), 0o644); writeErr != nil {
+		writable = false
+	} else {
+		_ = os.Remove(probeFile)
+	}
+
+	return storage.AccessResult{
+		Readable: true,
+		Writable: writable,
+		Created:  created,
+	}, nil
+}

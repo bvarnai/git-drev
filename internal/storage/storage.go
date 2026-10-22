@@ -14,6 +14,13 @@ import (
 	"github.com/bvarnai/git-drev/internal/transport"
 )
 
+// AccessResult represents the probed permissions and state of the remote base path.
+type AccessResult struct {
+	Readable bool
+	Writable bool
+	Created  bool
+}
+
 // Manager defines the interface for remote storage operations.
 type Manager interface {
 	HasRevision(ctx context.Context, host, basePath, uuid string) (bool, error)
@@ -22,6 +29,7 @@ type Manager interface {
 	QueryUsage(ctx context.Context, host, basePath string, opts ...QueryUsageOptions) (totalSize string, revisions []domain.RemoteRevision, err error)
 	Download(ctx context.Context, req TransferRequest) error
 	Upload(ctx context.Context, req TransferRequest) error
+	CheckAccess(ctx context.Context, host, basePath string) (AccessResult, error)
 }
 
 // Client implements Manager using transport.SSHRunner and transport.RsyncRunner.
@@ -121,6 +129,51 @@ func (c *Client) RemoveRevision(ctx context.Context, host, basePath, uuid string
 	}
 
 	return errcode.NewError(errcode.ErrTransport, "SSH remove failed on host %q: %s", host, command.StderrOrError(err))
+}
+
+// CheckAccess probes the remote base path over SSH: verifies connectivity, ensures the
+// directory exists (attempting creation if needed), checks read/executable access, and
+// detects whether the directory is writable.
+func (c *Client) CheckAccess(ctx context.Context, host, basePath string) (AccessResult, error) {
+	if err := ctx.Err(); err != nil {
+		return AccessResult{}, errcode.WrapError(errcode.ErrInterrupted, err, "Operation interrupted")
+	}
+
+	cleanBase := strings.TrimRight(strings.ReplaceAll(basePath, "\\", "/"), "/")
+	qBase := transport.POSIXEscape(cleanBase)
+	probeScript := fmt.Sprintf(
+		"if [ ! -d %s ]; then mkdir -p -- %s 2>/dev/null && echo 'CREATED:1'; fi; "+
+			"if [ ! -d %s ]; then echo 'ERROR:NOT_DIR' >&2; exit 42; fi; "+
+			"if [ ! -r %s ] || [ ! -x %s ]; then echo 'ERROR:NOT_READABLE' >&2; exit 43; fi; "+
+			"if [ -w %s ]; then echo 'ACCESS:rw'; else echo 'ACCESS:ro'; fi",
+		qBase, qBase, qBase, qBase, qBase, qBase,
+	)
+
+	out, err := c.ssh.Run(ctx, host, probeScript)
+	if err != nil {
+		if ctx.Err() != nil {
+			return AccessResult{}, errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "Operation interrupted")
+		}
+		if code, ok := command.ExitCodeOf(err); ok {
+			switch code {
+			case 42:
+				return AccessResult{}, errcode.NewError(errcode.ErrTransport, "Remote directory %q does not exist and could not be created on host %q", basePath, host).
+					WithHint("Ensure the remote path exists and is accessible via SSH.")
+			case 43:
+				return AccessResult{}, errcode.NewError(errcode.ErrTransport, "Remote directory %q on host %q is not readable or accessible", basePath, host).
+					WithHint("Verify directory permissions (read and execute) for the SSH user.")
+			}
+		}
+		return AccessResult{}, errcode.NewError(errcode.ErrTransport, "SSH check failed on host %q: %s", host, command.StderrOrError(err)).
+			WithHint("Verify SSH connectivity and authentication for %s.", host)
+	}
+
+	res := AccessResult{
+		Readable: true,
+		Writable: strings.Contains(out, "ACCESS:rw"),
+		Created:  strings.Contains(out, "CREATED:1"),
+	}
+	return res, nil
 }
 
 // TransferRequest configures file synchronization between local and remote storage.

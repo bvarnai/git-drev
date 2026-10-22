@@ -86,6 +86,12 @@ flowchart LR
 
 ## Quick start
 
+### Repository initialization (one-time setup)
+```bash
+# In a fresh directory, bootstrap a dedicated git-drev repository:
+git drev init --host storage-server --path /srv/drev/{repo}
+```
+
 ### Producer workflow (e.g. CI build)
 ```bash
 # 1. Initialize or switch to a revision branch

@@ -204,3 +204,51 @@ func (o *Operations) PushForceWithLease(ctx context.Context, dir, branch string,
 func IsStalePushOutput(output string) bool {
 	return strings.Contains(strings.ToLower(output), "stale info")
 }
+
+// Init initializes a new Git repository in dir. If initialBranch is provided,
+// it runs `git init -b <initialBranch>`, falling back to `git init` + `git symbolic-ref`
+// if `-b` is not supported.
+func (o *Operations) Init(ctx context.Context, dir, initialBranch string) error {
+	branch := strings.TrimSpace(initialBranch)
+	if branch != "" {
+		if _, runErr := o.runner.Run(ctx, dir, "init", "-b", branch); runErr == nil {
+			return nil
+		}
+	}
+	if _, runErr := o.runner.Run(ctx, dir, "init"); runErr != nil {
+		if errors.Is(runErr, errcode.ErrInterrupted) || errors.Is(runErr, errcode.ErrTransport) {
+			return runErr
+		}
+		return errcode.WrapError(errcode.ErrGitExec, runErr, "Failed to initialize Git repository")
+	}
+	if branch != "" {
+		_, _ = o.runner.Run(ctx, dir, "symbolic-ref", "HEAD", "refs/heads/"+branch)
+	}
+	return nil
+}
+
+// StageFiles executes `git add -- <paths...>` in dir.
+func (o *Operations) StageFiles(ctx context.Context, dir string, paths ...string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	args := append([]string{"add", "--"}, paths...)
+	if _, runErr := o.runner.Run(ctx, dir, args...); runErr != nil {
+		if errors.Is(runErr, errcode.ErrInterrupted) || errors.Is(runErr, errcode.ErrTransport) {
+			return runErr
+		}
+		return errcode.WrapError(errcode.ErrGitExec, runErr, "Staging failed (git add)")
+	}
+	return nil
+}
+
+// Commit executes `git commit -m <message>` in dir.
+func (o *Operations) Commit(ctx context.Context, dir, message string) error {
+	if _, runErr := o.runner.Run(ctx, dir, "commit", "-m", message); runErr != nil {
+		if errors.Is(runErr, errcode.ErrInterrupted) || errors.Is(runErr, errcode.ErrTransport) {
+			return runErr
+		}
+		return errcode.WrapError(errcode.ErrGitExec, runErr, "Commit failed (git commit)")
+	}
+	return nil
+}

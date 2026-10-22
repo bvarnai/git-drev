@@ -205,3 +205,83 @@ func TestInspectorAndOperationsIntegration(t *testing.T) {
 		t.Errorf("expected ErrNotRepository inside bare repo, got %v", err)
 	}
 }
+
+func TestInspectorAndOperations_InitAndTracking(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	ctx := context.Background()
+
+	runner := git.NewExecRunner()
+	insp := git.NewInspector(runner)
+	ops := git.NewOperations(runner)
+
+	// Configure git user/email environment for isolated commit test
+	runner.BaseEnv = append(os.Environ(),
+		"GIT_AUTHOR_NAME=Test",
+		"GIT_AUTHOR_EMAIL=test@example.com",
+		"GIT_COMMITTER_NAME=Test",
+		"GIT_COMMITTER_EMAIL=test@example.com",
+	)
+
+	// 1. Initially not a repository
+	if isWork, _ := insp.IsWorkTree(ctx, tmpDir); isWork {
+		t.Fatalf("expected tmpDir not to be a worktree before init")
+	}
+
+	// 2. Initialize with initial branch "main"
+	if err := ops.Init(ctx, tmpDir, "main"); err != nil {
+		t.Fatalf("ops.Init error: %v", err)
+	}
+	if isWork, err := insp.IsWorkTree(ctx, tmpDir); err != nil || !isWork {
+		t.Fatalf("IsWorkTree after init = (%v, %v), want (true, nil)", isWork, err)
+	}
+
+	// 3. Before any commit, HasCommits should be false
+	hasCommits, err := insp.HasCommits(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("HasCommits error: %v", err)
+	}
+	if hasCommits {
+		t.Errorf("HasCommits = true, want false before first commit")
+	}
+
+	// 4. Before staging any file, HasTrackedFiles should be false
+	hasTracked, err := insp.HasTrackedFiles(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("HasTrackedFiles error: %v", err)
+	}
+	if hasTracked {
+		t.Errorf("HasTrackedFiles = true, want false before staging")
+	}
+
+	// 5. Create a file, stage it with StageFiles
+	filePath := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(filePath, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ops.StageFiles(ctx, tmpDir, "test.txt"); err != nil {
+		t.Fatalf("ops.StageFiles error: %v", err)
+	}
+
+	hasTracked, err = insp.HasTrackedFiles(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("HasTrackedFiles error: %v", err)
+	}
+	if !hasTracked {
+		t.Errorf("HasTrackedFiles = false, want true after staging")
+	}
+
+	// 6. Commit staged file with Commit
+	if err := ops.Commit(ctx, tmpDir, "initial commit"); err != nil {
+		t.Fatalf("ops.Commit error: %v", err)
+	}
+
+	hasCommits, err = insp.HasCommits(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("HasCommits error: %v", err)
+	}
+	if !hasCommits {
+		t.Errorf("HasCommits = false, want true after commit")
+	}
+}

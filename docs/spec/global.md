@@ -333,6 +333,7 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
       QueryUsage(ctx context.Context, host, basePath string, opts ...QueryUsageOptions) (totalSize string, revisions []domain.RemoteRevision, err error)
       Download(ctx context.Context, req TransferRequest) error
       Upload(ctx context.Context, req TransferRequest) error
+      CheckAccess(ctx context.Context, host, basePath string) (AccessResult, error)
   }
   ```
 
@@ -341,6 +342,7 @@ All subcommands are dispatched from the single `git-drev` binary:
 
 | Subcommand | Target Go Package | Core Responsibility |
 | :--- | :--- | :--- |
+| `init` | `internal/cli` (`init.go`) | Initializes a dedicated git-drev metadata repository, validates configuration, verifies remote SSH access, generates `.git-drev.yaml` and `.gitignore`, and optionally creates the initial commit. |
 | `create` | `internal/cli` (`create.go`) | Creates a new revision metadata branch with an initial marker commit (or switches to it if it already exists locally/remotely) and pushes it to `origin`. |
 | `get` | `internal/cli` (`get.go`) | Synchronizes the local working directory (or `<target_directory>`) with the remote directory revision referenced by `HEAD` (optionally updating to `--latest` first). |
 | `put` | `internal/cli` (`put.go`) | Uploads local directory contents to a new remote UUID directory (cloning the previous revision as a server-side baseline when possible), runs `.git-drev-put-hook`, commits metadata with sequence number, and pushes with optimistic concurrency retry. |

@@ -120,7 +120,31 @@ ssh -T storage-server "mkdir -p /srv/drev && rsync --version"
 
 As covered in [Chapter 1](philosophy.md#repository-topology-dedicated-repo-vs-git-submodule), `git-drev` operates in a dedicated metadata repository (which can be used standalone or mounted as a Git submodule).
 
-### Step 1: Create a metadata repository and add a Git remote
+> [!WARNING]
+> **Dedicated repository only:** `git-drev` is **not** an add-on (like Git LFS) for existing source code repositories. Commits in a `git-drev` repository are lightweight revision pointers, and branches serve as data streams. Do not initialize `git-drev` inside your source code repository!
+
+### Option A: Automated bootstrap with `git drev init` (recommended)
+You can initialize a fresh Git repository, verify remote SSH connectivity and permissions, generate `.git-drev.yaml`, update `.gitignore`, and create the initial commit in a single step:
+
+```bash
+mkdir my-build-storage
+cd my-build-storage
+
+# Run interactively (prompts for host, remote path, and workdir):
+git drev init
+
+# Or run non-interactively with flags:
+git drev init -y --host storage-server --path /srv/drev/{repo} --workdir data
+```
+
+`git drev init` automatically tests SSH connectivity to `storage-server`, verifies that `/srv/drev/my-build-storage` exists (creating it if needed), detects whether the remote path is writable (Producer ready) or read-only (Consumer mode), and stages your initial commit.
+
+---
+
+### Option B: Manual setup
+If you prefer configuring files manually:
+
+#### Step 1: Create a metadata repository and add a Git remote
 ```bash
 mkdir my-build-storage
 cd my-build-storage
@@ -128,7 +152,7 @@ git init
 git remote add origin git@github.com:myorg/my-build-storage.git
 ```
 
-### Step 2: Configure `.git-drev.yaml`
+#### Step 2: Configure `.git-drev.yaml`
 Create `.git-drev.yaml` in the repository root:
 
 ```yaml
@@ -153,14 +177,14 @@ remote:
 > [!TIP]
 > `remote.path` supports `{repo}` and `{project}` placeholders, which expand to the repository name (derived from the `origin` URL slug or directory name). If `remote.path` is defined in a user-global config (`~/.config/git-drev/config.yaml`) without a placeholder, `git-drev` automatically appends `/{repo}` to isolate repositories on the server.
 
-### Step 3: Ignore `workdir` in `.gitignore`
+#### Step 3: Ignore `workdir` in `.gitignore`
 The working directory holds the large payload files and **must be ignored by Git**:
 
 ```bash
 echo "/data" >> .gitignore
 ```
 
-### Step 4: Commit initial metadata configuration
+#### Step 4: Commit initial metadata configuration
 ```bash
 git add .git-drev.yaml .gitignore
 git commit -m "chore: initialize git-drev configuration"
