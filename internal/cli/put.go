@@ -103,7 +103,7 @@ func RunPut(
 
 	fi, statErr := os.Stat(sourceDir)
 	if statErr != nil || !fi.IsDir() {
-		return nil, errcode.NewError(errcode.ErrUsage, "source directory '%s' does not exist or is not a directory", sourceDir)
+		return nil, errcode.NewError(errcode.ErrUsage, "Source directory '%s' does not exist or is not a directory", sourceDir)
 	}
 
 	// 4. Validate or default sequence format
@@ -111,14 +111,14 @@ func RunPut(
 		opts.Sequence = strconv.FormatInt(time.Now().Unix(), 10)
 	} else {
 		if _, err := strconv.ParseUint(opts.Sequence, 10, 64); err != nil {
-			return nil, errcode.NewError(errcode.ErrUsage, "invalid sequence %q: must be a non-negative integer", opts.Sequence)
+			return nil, errcode.NewError(errcode.ErrUsage, "Invalid sequence %q: must be a non-negative integer", opts.Sequence)
 		}
 	}
 
 	// 5. Generate new UUID
 	newUUID, err := domain.NewUUID()
 	if err != nil {
-		return nil, errcode.WrapError(errcode.ErrRuntime, err, "failed to generate UUID")
+		return nil, errcode.WrapError(errcode.ErrRuntime, err, "Failed to generate UUID")
 	}
 
 	// 6. Attempt server-side baseline clone
@@ -257,7 +257,7 @@ func RunPut(
 	}
 	commitJSON, err := meta.MarshalSubject()
 	if err != nil {
-		return nil, errcode.WrapError(errcode.ErrRuntime, err, "failed to marshal revision metadata")
+		return nil, errcode.WrapError(errcode.ErrRuntime, err, "Failed to marshal revision metadata")
 	}
 
 	if err := ops.CommitAllowEmpty(ctx, repoRoot, commitJSON); err != nil {
@@ -289,7 +289,7 @@ func RunPut(
 		}
 
 		if attempt == MaxPushRetries {
-			return nil, errcode.NewError(errcode.ErrGitExec, "exceeded maximum push retries (%d) due to concurrent updates on origin/%s", MaxPushRetries, branch)
+			return nil, errcode.NewError(errcode.ErrGitExec, "Exceeded maximum push retries (%d) due to concurrent updates on origin/%s", MaxPushRetries, branch)
 		}
 
 		if logger != nil {

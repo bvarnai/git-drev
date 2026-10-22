@@ -121,7 +121,7 @@ func RunSelect(
 				if errors.As(err, &appErr) {
 					appErr.WithHint("Did you mean '%s'?", closest)
 				} else {
-					return SelectResult{}, errcode.WrapError(errcode.ErrGitExec, err, "could not checkout '%s'", requested).
+					return SelectResult{}, errcode.WrapError(errcode.ErrGitExec, err, "Could not checkout '%s'", requested).
 						WithHint("Did you mean '%s'?", closest)
 				}
 			}

@@ -58,7 +58,7 @@ func (r *ExecRunner) RunLines(ctx context.Context, dir string, args ...string) (
 
 func (r *ExecRunner) resolveBinary(ctx context.Context) (string, error) {
 	if err := ctx.Err(); err != nil {
-		return "", errcode.WrapError(errcode.ErrInterrupted, err, "operation interrupted")
+		return "", errcode.WrapError(errcode.ErrInterrupted, err, "Operation interrupted")
 	}
 	binName := r.BinaryPath
 	if binName == "" {

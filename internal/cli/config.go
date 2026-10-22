@@ -38,11 +38,11 @@ func RunConfig(ctx context.Context, insp *git.Inspector, logger *term.Logger, st
 
 	formatted, err := config.FormatReport(report, opts.Sources)
 	if err != nil {
-		return errcode.WrapError(errcode.ErrConfig, err, "failed to format configuration report")
+		return errcode.WrapError(errcode.ErrConfig, err, "Failed to format configuration report")
 	}
 
 	if _, err := fmt.Fprint(stdout, formatted); err != nil {
-		return errcode.WrapError(errcode.ErrRuntime, err, "failed to write output")
+		return errcode.WrapError(errcode.ErrRuntime, err, "Failed to write output")
 	}
 
 	return nil

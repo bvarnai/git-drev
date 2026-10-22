@@ -57,7 +57,7 @@ type Request struct {
 // stream buffering, and maps exit errors to structured *Error instances.
 func Run(ctx context.Context, req Request) (string, error) {
 	if err := ctx.Err(); err != nil {
-		return "", errcode.WrapError(errcode.ErrInterrupted, err, "operation interrupted")
+		return "", errcode.WrapError(errcode.ErrInterrupted, err, "Operation interrupted")
 	}
 
 	category := req.Category
@@ -85,13 +85,13 @@ func Run(ctx context.Context, req Request) (string, error) {
 	if req.StdoutPipe != nil {
 		pipeReader, err := cmd.StdoutPipe()
 		if err != nil {
-			return "", errcode.WrapError(errcode.ErrRuntime, err, "failed to create stdout pipe")
+			return "", errcode.WrapError(errcode.ErrRuntime, err, "Failed to create stdout pipe")
 		}
 		if err := cmd.Start(); err != nil {
 			if ctx.Err() != nil {
-				return "", errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "operation interrupted")
+				return "", errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "Operation interrupted")
 			}
-			return "", errcode.WrapError(category, err, "%s execution failed", req.Name)
+			return "", errcode.WrapError(category, err, "Failed to execute %s", req.Name)
 		}
 
 		pipeErr := req.StdoutPipe(pipeReader)
@@ -100,13 +100,13 @@ func Run(ctx context.Context, req Request) (string, error) {
 
 		if runErr != nil {
 			if ctx.Err() != nil {
-				return "", errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "operation interrupted")
+				return "", errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "Operation interrupted")
 			}
 			var exitErr *exec.ExitError
 			if errors.As(runErr, &exitErr) {
 				return "", NewError(cmd, exitErr, "", errStr, category)
 			}
-			return "", errcode.WrapError(category, runErr, "%s execution failed", req.Name)
+			return "", errcode.WrapError(category, runErr, "Failed to execute %s", req.Name)
 		}
 
 		if pipeErr != nil {
@@ -128,13 +128,13 @@ func Run(ctx context.Context, req Request) (string, error) {
 
 	if runErr != nil {
 		if ctx.Err() != nil {
-			return outStr, errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "operation interrupted")
+			return outStr, errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "Operation interrupted")
 		}
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) {
 			return outStr, NewError(cmd, exitErr, outStr, errStr, category)
 		}
-		return outStr, errcode.WrapError(category, runErr, "%s execution failed", req.Name)
+		return outStr, errcode.WrapError(category, runErr, "Failed to execute %s", req.Name)
 	}
 
 	return outStr, nil

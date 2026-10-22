@@ -61,7 +61,7 @@ func NormalizeDir(dir string) string {
 // HasRevision tests whether a revision directory exists on host.
 func (c *Client) HasRevision(ctx context.Context, host, basePath, uuid string) (bool, error) {
 	if err := ctx.Err(); err != nil {
-		return false, errcode.WrapError(errcode.ErrInterrupted, err, "operation interrupted")
+		return false, errcode.WrapError(errcode.ErrInterrupted, err, "Operation interrupted")
 	}
 
 	remotePath := RevisionPath(basePath, uuid)
@@ -72,7 +72,7 @@ func (c *Client) HasRevision(ctx context.Context, host, basePath, uuid string) (
 	}
 
 	if ctx.Err() != nil {
-		return false, errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "operation interrupted")
+		return false, errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "Operation interrupted")
 	}
 
 	if code, ok := command.ExitCodeOf(err); ok && code == 1 {
@@ -85,7 +85,7 @@ func (c *Client) HasRevision(ctx context.Context, host, basePath, uuid string) (
 // CloneBaseline creates a remote hardlinked copy of srcUUID at dstUUID using `cp -al --`.
 func (c *Client) CloneBaseline(ctx context.Context, host, basePath, srcUUID, dstUUID string) error {
 	if err := ctx.Err(); err != nil {
-		return errcode.WrapError(errcode.ErrInterrupted, err, "operation interrupted")
+		return errcode.WrapError(errcode.ErrInterrupted, err, "Operation interrupted")
 	}
 
 	srcPath := RevisionPath(basePath, srcUUID)
@@ -97,7 +97,7 @@ func (c *Client) CloneBaseline(ctx context.Context, host, basePath, srcUUID, dst
 	}
 
 	if ctx.Err() != nil {
-		return errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "operation interrupted")
+		return errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "Operation interrupted")
 	}
 
 	return errcode.NewError(errcode.ErrTransport, "SSH clone failed on host %q: %s", host, command.StderrOrError(err))
@@ -106,7 +106,7 @@ func (c *Client) CloneBaseline(ctx context.Context, host, basePath, srcUUID, dst
 // RemoveRevision removes a remote revision directory on host using `rm -rf -- <remotePath>`.
 func (c *Client) RemoveRevision(ctx context.Context, host, basePath, uuid string) error {
 	if err := ctx.Err(); err != nil {
-		return errcode.WrapError(errcode.ErrInterrupted, err, "operation interrupted")
+		return errcode.WrapError(errcode.ErrInterrupted, err, "Operation interrupted")
 	}
 
 	remotePath := RevisionPath(basePath, uuid)
@@ -117,7 +117,7 @@ func (c *Client) RemoveRevision(ctx context.Context, host, basePath, uuid string
 	}
 
 	if ctx.Err() != nil {
-		return errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "operation interrupted")
+		return errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "Operation interrupted")
 	}
 
 	return errcode.NewError(errcode.ErrTransport, "SSH remove failed on host %q: %s", host, command.StderrOrError(err))
@@ -142,7 +142,7 @@ func ValidateUploadOptions(tokens []string) error {
 	for _, opt := range tokens {
 		switch opt {
 		case "--inplace", "--append", "--append-verify":
-			return errcode.NewError(errcode.ErrConfig, "rsync option %q is not allowed in remote.rsync.put because it mutates hardlinked baseline revisions in-place", opt).
+			return errcode.NewError(errcode.ErrConfig, "Rsync option %q is not allowed in remote.rsync.put because it mutates hardlinked baseline revisions in-place", opt).
 				WithHint("Remove %q from remote.rsync.put so rsync replaces modified files atomically.", opt)
 		}
 	}

@@ -213,7 +213,7 @@ func TestLoader_InvalidEnvVarConfigFails(t *testing.T) {
 	_, err := config.Load(t.TempDir())
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, errcode.ErrConfig))
-	assert.Contains(t, err.Error(), "configuration file specified by GIT_DREV_CONFIG not found")
+	assert.Contains(t, err.Error(), "Configuration file specified by GIT_DREV_CONFIG not found")
 }
 
 func TestLoader_MissingConfigFails(t *testing.T) {

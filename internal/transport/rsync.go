@@ -21,13 +21,13 @@ func NewRsyncRunner() *ExecRsyncRunner {
 // BuildRsyncArgs constructs sanitized, deterministic rsync command arguments.
 func BuildRsyncArgs(opts RsyncOptions) ([]string, error) {
 	if opts.Host == "" {
-		return nil, errcode.NewError(errcode.ErrConfig, "remote host is not configured")
+		return nil, errcode.NewError(errcode.ErrConfig, "Remote host is not configured")
 	}
 	if opts.RemotePath == "" {
-		return nil, errcode.NewError(errcode.ErrConfig, "remote path is not configured")
+		return nil, errcode.NewError(errcode.ErrConfig, "Remote path is not configured")
 	}
 	if opts.LocalPath == "" {
-		return nil, errcode.NewError(errcode.ErrUsage, "local path is not specified")
+		return nil, errcode.NewError(errcode.ErrUsage, "Local path is not specified")
 	}
 
 	args := []string{

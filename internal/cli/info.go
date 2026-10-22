@@ -69,7 +69,7 @@ func RunInfo(
 	if statErr != nil {
 		if errors.Is(statErr, fs.ErrNotExist) {
 			if _, lerr := os.Lstat(hookPath); lerr == nil {
-				return InfoResult{}, errcode.NewError(errcode.ErrRuntime, "info hook %q is a broken symlink", hookFile)
+				return InfoResult{}, errcode.NewError(errcode.ErrRuntime, "Info hook %q is a broken symlink", hookFile)
 			}
 			if logger != nil {
 				logger.Debugf("Checked for info hook at %s: not found", hookPath)
@@ -77,11 +77,11 @@ func RunInfo(
 			}
 			return InfoResult{HookFound: false, HookPath: hookPath}, nil
 		}
-		return InfoResult{}, errcode.WrapError(errcode.ErrRuntime, statErr, "failed to stat info hook %q", hookPath)
+		return InfoResult{}, errcode.WrapError(errcode.ErrRuntime, statErr, "Failed to stat info hook %q", hookPath)
 	}
 
 	if fi.IsDir() {
-		return InfoResult{}, errcode.NewError(errcode.ErrRuntime, "info hook path %q is a directory, expected file", hookPath)
+		return InfoResult{}, errcode.NewError(errcode.ErrRuntime, "Info hook path %q is a directory, expected file", hookPath)
 	}
 
 	// Resolve Git context for hook env

@@ -74,7 +74,7 @@ done
 // QueryUsage executes remote storage discovery and returns total size and discovered revision directories.
 func (c *Client) QueryUsage(ctx context.Context, host, basePath string, opts ...QueryUsageOptions) (string, []domain.RemoteRevision, error) {
 	if err := ctx.Err(); err != nil {
-		return "", nil, errcode.WrapError(errcode.ErrInterrupted, err, "operation interrupted")
+		return "", nil, errcode.WrapError(errcode.ErrInterrupted, err, "Operation interrupted")
 	}
 
 	var opt QueryUsageOptions
@@ -103,12 +103,12 @@ func (c *Client) QueryUsage(ctx context.Context, host, basePath string, opts ...
 
 	if runErr != nil {
 		if ctx.Err() != nil {
-			return "", nil, errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "operation interrupted")
+			return "", nil, errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "Operation interrupted")
 		}
 
 		errStr := command.StderrOrError(runErr)
 		if code, ok := command.ExitCodeOf(runErr); (ok && code == 66) || strings.Contains(errStr, "ERROR:Remote path") {
-			return "", nil, errcode.NewError(errcode.ErrRemoteNotFound, "remote path %q does not exist on host %q", basePath, host)
+			return "", nil, errcode.NewError(errcode.ErrRemoteNotFound, "Remote path %q does not exist on host %q", basePath, host)
 		}
 
 		return "", nil, errcode.NewError(errcode.ErrTransport, "SSH usage query failed on host %q: %s", host, errStr)

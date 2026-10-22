@@ -100,7 +100,7 @@ remote:
 				"symbolic-ref --quiet --short HEAD":                             {out: "main"},
 			},
 			expectedCode: errcode.ExitUsage,
-			errSubstr:    "invalid sequence \"abc\"",
+			errSubstr:    "Invalid sequence \"abc\"",
 		},
 		{
 			name: "successful put uploads, runs hook, commits and pushes",
