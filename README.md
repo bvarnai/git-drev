@@ -79,6 +79,9 @@ flowchart LR
 1. **Producer (CI pipeline):** Creates or selects a branch (`create`), writes build outputs into `workdir/`, and publishes a new revision (`put`).
 2. **Consumer (developer / tester):** Switches to a branch, tag, or specific UUID (`select`) and syncs `workdir/` (`get` or `get --latest`) without having to build from source.
 
+> [!TIP]
+> **SSH key management:** You do not need to provision separate SSH keys on the server for every client unless you want to. For maximum safety and zero per-developer onboarding overhead, teams typically assign a dedicated **read-write** SSH key/account to the **Producer** (CI) and let **Consumers** share a single **read-only** SSH key/account.
+
 ---
 
 ## Quick start

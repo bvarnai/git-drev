@@ -119,11 +119,13 @@ sequenceDiagram
 - Creates or switches to target branches with `git drev create <branch>`.
 - Compiles or packages artifacts into `workdir`.
 - Publishes snapshots with `git drev put` (optionally passing `-s <sequence>` to attach a monotonic CI build number) and uses `.git-drev-put-hook` to record build metadata.
+- Connects to the storage server using a **read-write** SSH key/account.
 
 ### The Consumer (developer / QA engineer)
 - Pulls prebuilt artifacts without compiling locally.
 - Switches between branches, tags, or historical UUIDs with `git drev select [<branch>|<tag>|<uuid>]`.
 - Downloads the snapshot into `workdir` with `git drev get`, or runs `git drev get --latest` (`-l`) to update the active branch from `origin` and download in one command.
+- Connects to the storage server using a **read-only** SSH key/account (which can be a single shared team key or individual client keys) so consumers cannot accidentally modify or delete published revisions.
 
 ---
 
