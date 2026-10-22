@@ -4,9 +4,7 @@
 package git
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"io"
 	"os/exec"
 	"strings"
@@ -58,55 +56,53 @@ func (r *ExecRunner) RunLines(ctx context.Context, dir string, args ...string) (
 	return strings.Split(normalized, "\n"), nil
 }
 
-// RunWithEnv executes a git command with additional environment variables and returns stdout.
-func (r *ExecRunner) RunWithEnv(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {
-	var stdoutBuf, stderrBuf bytes.Buffer
-	err := r.RunStream(ctx, dir, &stdoutBuf, &stderrBuf, extraEnv, args...)
-	out := strings.TrimRight(stdoutBuf.String(), "\r\n")
-	if err != nil {
-		var cmdErr *command.Error
-		if errors.As(err, &cmdErr) {
-			cmdErr.Stdout = stdoutBuf.String()
-			cmdErr.Stderr = stderrBuf.String()
-		}
-		return out, err
-	}
-	return out, nil
-}
-
-// RunStream executes a git command streaming stdout and stderr to the provided writers.
-func (r *ExecRunner) RunStream(ctx context.Context, dir string, stdout, stderr io.Writer, extraEnv []string, args ...string) error {
+func (r *ExecRunner) resolveBinary(ctx context.Context) (string, error) {
 	if err := ctx.Err(); err != nil {
-		return errcode.WrapError(errcode.ErrInterrupted, err, "Operation interrupted")
+		return "", errcode.WrapError(errcode.ErrInterrupted, err, "operation interrupted")
 	}
-
 	binName := r.BinaryPath
 	if binName == "" {
 		binName = "git"
 	}
 	resolvedBin, lookErr := exec.LookPath(binName)
 	if lookErr != nil {
-		return errcode.WrapError(errcode.ErrTransport, lookErr, "Required binary %q not found in $PATH", binName)
+		return "", errcode.WrapError(errcode.ErrTransport, lookErr, "Required binary %q not found in $PATH", binName)
 	}
+	return resolvedBin, nil
+}
 
-	cmd := command.New(ctx, resolvedBin, args...)
-	if dir != "" {
-		cmd.Dir = dir
+// RunWithEnv executes a git command with additional environment variables and returns stdout.
+func (r *ExecRunner) RunWithEnv(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {
+	bin, err := r.resolveBinary(ctx)
+	if err != nil {
+		return "", err
 	}
-	cmd.Env = command.SanitizedEnv(r.BaseEnv, extraEnv)
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
+	out, err := command.Run(ctx, command.Request{
+		Name:     bin,
+		Args:     args,
+		Dir:      dir,
+		BaseEnv:  r.BaseEnv,
+		ExtraEnv: extraEnv,
+		Category: errcode.ErrGitExec,
+	})
+	return strings.TrimRight(out, "\r\n"), err
+}
 
-	runErr := cmd.Run()
-	if runErr != nil {
-		if ctx.Err() != nil {
-			return errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "Operation interrupted")
-		}
-		var exitErr *exec.ExitError
-		if errors.As(runErr, &exitErr) {
-			return command.NewError(cmd, exitErr, "", "", errcode.ErrGitExec)
-		}
-		return errcode.WrapError(errcode.ErrTransport, runErr, "failed to execute %s", binName)
+// RunStream executes a git command streaming stdout and stderr to the provided writers.
+func (r *ExecRunner) RunStream(ctx context.Context, dir string, stdout, stderr io.Writer, extraEnv []string, args ...string) error {
+	bin, err := r.resolveBinary(ctx)
+	if err != nil {
+		return err
 	}
-	return nil
+	_, err = command.Run(ctx, command.Request{
+		Name:     bin,
+		Args:     args,
+		Dir:      dir,
+		BaseEnv:  r.BaseEnv,
+		ExtraEnv: extraEnv,
+		Stdout:   stdout,
+		Stderr:   stderr,
+		Category: errcode.ErrGitExec,
+	})
+	return err
 }

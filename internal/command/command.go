@@ -3,9 +3,11 @@
 package command
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -34,6 +36,108 @@ func New(ctx context.Context, name string, args ...string) *exec.Cmd {
 		return nil
 	}
 	return cmd
+}
+
+// Request defines the specification for executing an external command.
+type Request struct {
+	Name       string
+	Args       []string
+	Dir        string
+	BaseEnv    []string
+	ExtraEnv   []string
+	Stdin      io.Reader
+	Stdout     io.Writer
+	Stderr     io.Writer
+	StdoutPipe func(io.Reader) error
+	Category   error
+}
+
+// Run executes an external command specified by req within ctx.
+// It manages standard environment sanitization, context cancellation,
+// stream buffering, and maps exit errors to structured *Error instances.
+func Run(ctx context.Context, req Request) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", errcode.WrapError(errcode.ErrInterrupted, err, "operation interrupted")
+	}
+
+	category := req.Category
+	if category == nil {
+		category = errcode.ErrTransport
+	}
+
+	cmd := New(ctx, req.Name, req.Args...)
+	if req.Dir != "" {
+		cmd.Dir = req.Dir
+	}
+	if req.BaseEnv != nil || len(req.ExtraEnv) > 0 {
+		cmd.Env = SanitizedEnv(req.BaseEnv, req.ExtraEnv)
+	}
+	cmd.Stdin = req.Stdin
+
+	var outBuf, errBuf bytes.Buffer
+
+	if req.Stderr != nil {
+		cmd.Stderr = io.MultiWriter(req.Stderr, &errBuf)
+	} else {
+		cmd.Stderr = &errBuf
+	}
+
+	if req.StdoutPipe != nil {
+		pipeReader, err := cmd.StdoutPipe()
+		if err != nil {
+			return "", errcode.WrapError(errcode.ErrRuntime, err, "failed to create stdout pipe")
+		}
+		if err := cmd.Start(); err != nil {
+			if ctx.Err() != nil {
+				return "", errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "operation interrupted")
+			}
+			return "", errcode.WrapError(category, err, "%s execution failed", req.Name)
+		}
+
+		pipeErr := req.StdoutPipe(pipeReader)
+		runErr := cmd.Wait()
+		errStr := strings.TrimSpace(errBuf.String())
+
+		if runErr != nil {
+			if ctx.Err() != nil {
+				return "", errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "operation interrupted")
+			}
+			var exitErr *exec.ExitError
+			if errors.As(runErr, &exitErr) {
+				return "", NewError(cmd, exitErr, "", errStr, category)
+			}
+			return "", errcode.WrapError(category, runErr, "%s execution failed", req.Name)
+		}
+
+		if pipeErr != nil {
+			return "", pipeErr
+		}
+
+		return "", nil
+	}
+
+	if req.Stdout != nil {
+		cmd.Stdout = io.MultiWriter(req.Stdout, &outBuf)
+	} else {
+		cmd.Stdout = &outBuf
+	}
+
+	runErr := cmd.Run()
+	outStr := outBuf.String()
+	errStr := strings.TrimSpace(errBuf.String())
+
+	if runErr != nil {
+		if ctx.Err() != nil {
+			return outStr, errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "operation interrupted")
+		}
+		var exitErr *exec.ExitError
+		if errors.As(runErr, &exitErr) {
+			return outStr, NewError(cmd, exitErr, outStr, errStr, category)
+		}
+		return outStr, errcode.WrapError(category, runErr, "%s execution failed", req.Name)
+	}
+
+	return outStr, nil
 }
 
 // SanitizedEnv constructs a child process environment from baseEnv (or os.Environ()
