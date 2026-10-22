@@ -281,9 +281,9 @@ func RunInit(
 
 		if logger != nil {
 			if access.Writable {
-				logger.Info("Remote storage verified (read-write access: Producer & Consumer ready)")
+				logger.Info("Remote storage verified (read-write access)")
 			} else {
-				logger.Warn("Remote storage path is read-only (Consumer mode: 'get' is available, 'put' requires write access)")
+				logger.Warn("Remote storage path is read-only ('get' is available, 'put' requires write access)")
 			}
 		}
 	}

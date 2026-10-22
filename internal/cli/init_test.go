@@ -240,7 +240,7 @@ func TestInitCommand_UnitTable(t *testing.T) {
 
 		err := app.Execute(context.Background())
 		require.NoError(t, err)
-		assert.Contains(t, stderr.String(), "Warning: Remote storage path is read-only (Consumer mode")
+		assert.Contains(t, stderr.String(), "Warning: Remote storage path is read-only ('get' is available, 'put' requires write access)")
 	})
 
 	t.Run("storage connection failure returns ExitTransport", func(t *testing.T) {

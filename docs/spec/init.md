@@ -54,8 +54,8 @@
    - Unless `--skip-check` is passed, probe remote SSH connectivity and permissions (`storage.Manager.CheckAccess`):
      - Checks if remote directory exists and whether it is readable/writable (`-d`, `-r`, `-w`, `-x`).
      - If missing: in interactive mode, prompts `Remote directory '<path>' does not exist on host '<host>'. Create it? [Y/n]`. If accepted (or in `-y` mode), runs `mkdir -p` on remote host.
-     - If writable, logs `Remote storage verified (read-write access: Producer & Consumer ready)`.
-     - If read-only, logs `Warning: Remote storage path is read-only (Consumer mode: 'get' is available, 'put' requires write access)`.
+     - If writable, logs `Remote storage verified (read-write access)`.
+     - If read-only, logs `Warning: Remote storage path is read-only ('get' is available, 'put' requires write access)`.
 6. **File Generation & Local Directory Preparation:**
    - Write `.git-drev.yaml` with clean, documented YAML formatting (including commented `# rsync:` examples and preserving `{repo}` template variable in the file if typed by the user).
    - Idempotently update `.gitignore` to ignore `/<workdir>/`.
