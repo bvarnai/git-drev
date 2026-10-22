@@ -387,3 +387,42 @@ func (i *Inspector) ListAllTags(ctx context.Context, dir string) ([]string, erro
 	}
 	return tags, nil
 }
+
+// HasCommits reports whether dir has at least one Git commit (i.e. HEAD exists).
+func (i *Inspector) HasCommits(ctx context.Context, dir string) (bool, error) {
+	_, err := i.runner.Run(ctx, dir, "rev-parse", "--verify", "--quiet", "HEAD")
+	if err != nil {
+		if errors.Is(err, errcode.ErrInterrupted) || errors.Is(err, errcode.ErrTransport) {
+			return false, err
+		}
+		return false, nil
+	}
+	return true, nil
+}
+
+// HasTrackedFiles reports whether dir has any files tracked in the Git index.
+func (i *Inspector) HasTrackedFiles(ctx context.Context, dir string) (bool, error) {
+	out, err := i.runner.Run(ctx, dir, "ls-files")
+	if err != nil {
+		if errors.Is(err, errcode.ErrInterrupted) || errors.Is(err, errcode.ErrTransport) {
+			return false, err
+		}
+		return false, nil
+	}
+	return strings.TrimSpace(out) != "", nil
+}
+
+// HasStagedChanges reports whether the Git index contains staged changes ready to be committed.
+func (i *Inspector) HasStagedChanges(ctx context.Context, dir string) (bool, error) {
+	_, err := i.runner.Run(ctx, dir, "diff", "--cached", "--quiet")
+	if err == nil {
+		return false, nil
+	}
+	if code, ok := command.ExitCodeOf(err); ok && code == 1 {
+		return true, nil
+	}
+	if errors.Is(err, errcode.ErrInterrupted) || errors.Is(err, errcode.ErrTransport) {
+		return false, err
+	}
+	return false, err
+}

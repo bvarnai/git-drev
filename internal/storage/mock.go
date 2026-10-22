@@ -9,12 +9,14 @@ import (
 
 // MockManager provides a configurable in-memory mock implementing Manager.
 type MockManager struct {
-	HasRevisionFn    func(ctx context.Context, host, basePath, uuid string) (bool, error)
-	CloneBaselineFn  func(ctx context.Context, host, basePath, srcUUID, dstUUID string) error
-	RemoveRevisionFn func(ctx context.Context, host, basePath, uuid string) error
-	QueryUsageFn     func(ctx context.Context, host, basePath string, opts ...QueryUsageOptions) (string, []domain.RemoteRevision, error)
-	DownloadFn       func(ctx context.Context, req TransferRequest) error
-	UploadFn         func(ctx context.Context, req TransferRequest) error
+	HasRevisionFn     func(ctx context.Context, host, basePath, uuid string) (bool, error)
+	CloneBaselineFn   func(ctx context.Context, host, basePath, srcUUID, dstUUID string) error
+	RemoveRevisionFn  func(ctx context.Context, host, basePath, uuid string) error
+	QueryUsageFn      func(ctx context.Context, host, basePath string, opts ...QueryUsageOptions) (string, []domain.RemoteRevision, error)
+	DownloadFn        func(ctx context.Context, req TransferRequest) error
+	UploadFn          func(ctx context.Context, req TransferRequest) error
+	CheckAccessFn     func(ctx context.Context, host, basePath string) (AccessResult, error)
+	CreateDirectoryFn func(ctx context.Context, host, basePath string) error
 
 	Calls []string
 }
@@ -69,6 +71,24 @@ func (m *MockManager) Upload(ctx context.Context, req TransferRequest) error {
 	m.Calls = append(m.Calls, fmt.Sprintf("Upload %s %s %s", req.Host, req.BasePath, req.UUID))
 	if m.UploadFn != nil {
 		return m.UploadFn(ctx, req)
+	}
+	return nil
+}
+
+// CheckAccess records the call and delegates to CheckAccessFn or returns (AccessResult{Readable: true, Writable: true}, nil).
+func (m *MockManager) CheckAccess(ctx context.Context, host, basePath string) (AccessResult, error) {
+	m.Calls = append(m.Calls, fmt.Sprintf("CheckAccess %s %s", host, basePath))
+	if m.CheckAccessFn != nil {
+		return m.CheckAccessFn(ctx, host, basePath)
+	}
+	return AccessResult{Exists: true, Readable: true, Writable: true}, nil
+}
+
+// CreateDirectory records the call and delegates to CreateDirectoryFn or returns nil.
+func (m *MockManager) CreateDirectory(ctx context.Context, host, basePath string) error {
+	m.Calls = append(m.Calls, fmt.Sprintf("CreateDirectory %s %s", host, basePath))
+	if m.CreateDirectoryFn != nil {
+		return m.CreateDirectoryFn(ctx, host, basePath)
 	}
 	return nil
 }

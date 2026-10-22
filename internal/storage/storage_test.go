@@ -407,3 +407,115 @@ REV:c1ca82b1-7f34-4f4c-9a76-05e3297b2a23:800M:1700001000
 	assert.Equal(t, "800M", revs[1].SizeHuman)
 	assert.Equal(t, time.Unix(1700001000, 0), revs[1].ModTime)
 }
+
+func TestCheckAccess(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	t.Run("read-write existing directory", func(t *testing.T) {
+		ssh := &transport.MockSSHRunner{
+			RunFn: func(ctx context.Context, host, cmd string) (string, error) {
+				return "EXISTS:1\nACCESS:rw\n", nil
+			},
+		}
+		client := storage.NewClient(ssh, &transport.MockRsyncRunner{})
+		res, err := client.CheckAccess(ctx, "storage.host", "/srv/drev/repo")
+		require.NoError(t, err)
+		assert.True(t, res.Exists)
+		assert.True(t, res.Readable)
+		assert.True(t, res.Writable)
+	})
+
+	t.Run("directory does not exist", func(t *testing.T) {
+		ssh := &transport.MockSSHRunner{
+			RunFn: func(ctx context.Context, host, cmd string) (string, error) {
+				return "EXISTS:0\n", nil
+			},
+		}
+		client := storage.NewClient(ssh, &transport.MockRsyncRunner{})
+		res, err := client.CheckAccess(ctx, "storage.host", "/srv/drev/repo")
+		require.NoError(t, err)
+		assert.False(t, res.Exists)
+		assert.False(t, res.Readable)
+		assert.False(t, res.Writable)
+	})
+
+	t.Run("read-only directory", func(t *testing.T) {
+		ssh := &transport.MockSSHRunner{
+			RunFn: func(ctx context.Context, host, cmd string) (string, error) {
+				return "EXISTS:1\nACCESS:ro\n", nil
+			},
+		}
+		client := storage.NewClient(ssh, &transport.MockRsyncRunner{})
+		res, err := client.CheckAccess(ctx, "storage.host", "/srv/drev/repo")
+		require.NoError(t, err)
+		assert.True(t, res.Exists)
+		assert.True(t, res.Readable)
+		assert.False(t, res.Writable)
+	})
+
+	t.Run("directory not readable (exit 43)", func(t *testing.T) {
+		ssh := &transport.MockSSHRunner{
+			RunFn: func(ctx context.Context, host, cmd string) (string, error) {
+				return "", &command.Error{
+					ExitCode: 43,
+					Stderr:   "ERROR:NOT_READABLE\n",
+				}
+			},
+		}
+		client := storage.NewClient(ssh, &transport.MockRsyncRunner{})
+		_, err := client.CheckAccess(ctx, "storage.host", "/srv/drev/repo")
+		require.Error(t, err)
+		assert.Equal(t, errcode.ExitTransport, errcode.ExitCode(err))
+	})
+
+	t.Run("ssh transport error", func(t *testing.T) {
+		ssh := &transport.MockSSHRunner{
+			RunFn: func(ctx context.Context, host, cmd string) (string, error) {
+				return "", &command.Error{
+					ExitCode: 255,
+					Stderr:   "Connection refused\n",
+				}
+			},
+		}
+		client := storage.NewClient(ssh, &transport.MockRsyncRunner{})
+		_, err := client.CheckAccess(ctx, "storage.host", "/srv/drev/repo")
+		require.Error(t, err)
+		assert.Equal(t, errcode.ExitTransport, errcode.ExitCode(err))
+	})
+}
+
+func TestCreateDirectory(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	t.Run("successful mkdir", func(t *testing.T) {
+		ssh := &transport.MockSSHRunner{
+			RunFn: func(ctx context.Context, host, cmd string) (string, error) {
+				return "", nil
+			},
+		}
+		client := storage.NewClient(ssh, &transport.MockRsyncRunner{})
+		err := client.CreateDirectory(ctx, "storage.host", "/srv/drev/repo")
+		require.NoError(t, err)
+		require.Len(t, ssh.Calls, 1)
+		assert.Contains(t, ssh.Calls[0], "mkdir -p -- '/srv/drev/repo'")
+	})
+
+	t.Run("mkdir failure returns ExitTransport", func(t *testing.T) {
+		ssh := &transport.MockSSHRunner{
+			RunFn: func(ctx context.Context, host, cmd string) (string, error) {
+				return "", &command.Error{
+					ExitCode: 1,
+					Stderr:   "Permission denied\n",
+				}
+			},
+		}
+		client := storage.NewClient(ssh, &transport.MockRsyncRunner{})
+		err := client.CreateDirectory(ctx, "storage.host", "/srv/drev/repo")
+		require.Error(t, err)
+		assert.Equal(t, errcode.ExitTransport, errcode.ExitCode(err))
+	})
+}

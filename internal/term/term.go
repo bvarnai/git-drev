@@ -3,6 +3,7 @@
 package term
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -40,15 +41,16 @@ type Options struct {
 // Logger emits structured operational diagnostics, warnings, hints, and errors
 // to stderr, and provides stream and terminal formatting utilities.
 type Logger struct {
-	mu        sync.Mutex
-	stdin     io.Reader
-	stdout    io.Writer
-	stderr    io.Writer
-	verbose   bool
-	quiet     bool
-	useColor  bool
-	isTTY     bool
-	envLookup func(key string) (string, bool)
+	mu          sync.Mutex
+	stdin       io.Reader
+	stdinReader *bufio.Reader
+	stdout      io.Writer
+	stderr      io.Writer
+	verbose     bool
+	quiet       bool
+	useColor    bool
+	isTTY       bool
+	envLookup   func(key string) (string, bool)
 }
 
 // New constructs a Logger from Options, evaluating color policy and emitting a
@@ -155,6 +157,13 @@ func ResolveColorPolicy(noColorFlag bool, isTTY bool, envLookup func(string) (st
 	}
 
 	return isTTY, invalidColorVal
+}
+
+// Stdin returns the underlying stdin io.Reader.
+func (l *Logger) Stdin() io.Reader {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.stdin
 }
 
 // Stderr returns the underlying stderr io.Writer.

@@ -72,7 +72,7 @@ func RunInfo(
 				return InfoResult{}, errcode.NewError(errcode.ErrRuntime, "Info hook %q is a broken symlink", hookFile)
 			}
 			if logger != nil {
-				logger.Debugf("Checked for info hook at %s: not found", hookPath)
+				logger.Debugf("Checked for info hook at '%s': not found", hookPath)
 				logger.Info("No info hook found")
 			}
 			return InfoResult{HookFound: false, HookPath: hookPath}, nil
@@ -126,7 +126,7 @@ func RunInfo(
 	}
 
 	if logger != nil {
-		logger.Debugf("Executing info hook %s (branch: %s, uuid: %s, seq: %s)", hookPath, branch, uuidStr, seqStr)
+		logger.Debugf("Executing info hook '%s' (branch: '%s', uuid: '%s', seq: '%s')", hookPath, branch, uuidStr, seqStr)
 	}
 
 	if err := hooks.Run(ctx, runReq); err != nil {

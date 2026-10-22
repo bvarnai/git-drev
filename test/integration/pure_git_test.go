@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/bvarnai/git-drev/internal/cli"
+	"github.com/bvarnai/git-drev/internal/git"
 	"github.com/bvarnai/git-drev/test/integration"
 )
 
@@ -148,5 +151,106 @@ func TestPureGit_SubdirectoryExecution(t *testing.T) {
 	}
 	if strings.TrimSpace(stdout.String()) != "main" {
 		t.Fatalf("expected 'main', got %q", stdout.String())
+	}
+}
+
+func TestPureGit_InitWorkflow(t *testing.T) {
+	baseDir := t.TempDir()
+	initDir := filepath.Join(baseDir, "new-repo")
+	if err := os.MkdirAll(initDir, 0o755); err != nil {
+		t.Fatalf("mkdir initDir: %v", err)
+	}
+
+	storageDir := filepath.Join(baseDir, "storage")
+	if err := os.MkdirAll(storageDir, 0o755); err != nil {
+		t.Fatalf("mkdir storageDir: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	runner := git.NewExecRunner()
+	runner.BaseEnv = integration.IsolatedGitEnv(filepath.Join(baseDir, "home"))
+
+	app := cli.NewApp(&stdout, &stderr, runner)
+	app.WorkingDir = initDir
+	app.Storage = integration.NewLocalRemoteRunner(baseDir, storageDir, "/srv/drev/myrepo")
+
+	// 1. Run git-drev init with -y to bootstrap fresh repo and commit
+	app.RootCmd.SetArgs([]string{
+		"init",
+		"-y",
+		"--host", "storage.example.com",
+		"--path", "/srv/drev/myrepo",
+		"--workdir", "data",
+		"--branch", "main",
+	})
+
+	if err := app.Execute(context.Background()); err != nil {
+		t.Fatalf("git-drev init failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	// 2. Verify git was initialized and commit was made
+	cmd := exec.Command("git", "log", "-1", "--format=%s")
+	cmd.Dir = initDir
+	cmd.Env = runner.BaseEnv
+	logOut, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git log failed: %v, out: %s", err, string(logOut))
+	}
+	if strings.TrimSpace(string(logOut)) != "chore: initialize git-drev configuration" {
+		t.Fatalf("unexpected initial commit subject: %q", string(logOut))
+	}
+
+	// 3. Verify .git-drev.yaml was written
+	cfgBytes, err := os.ReadFile(filepath.Join(initDir, ".git-drev.yaml"))
+	if err != nil {
+		t.Fatalf("read .git-drev.yaml: %v", err)
+	}
+	if !strings.Contains(string(cfgBytes), `host: "storage.example.com"`) || !strings.Contains(string(cfgBytes), `path: "/srv/drev/myrepo"`) {
+		t.Fatalf("unexpected .git-drev.yaml content: %s", string(cfgBytes))
+	}
+
+	// 4. Verify .gitignore contains /data
+	ignoreBytes, err := os.ReadFile(filepath.Join(initDir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("read .gitignore: %v", err)
+	}
+	if !strings.Contains(string(ignoreBytes), "/data\n") {
+		t.Fatalf("expected /data in .gitignore, got: %s", string(ignoreBytes))
+	}
+
+	// 5. Verify git-drev name works
+	stdout.Reset()
+	stderr.Reset()
+	nameApp := cli.NewApp(&stdout, &stderr, runner)
+	nameApp.WorkingDir = initDir
+	nameApp.Storage = app.Storage
+	nameApp.RootCmd.SetArgs([]string{"name"})
+	if err := nameApp.Execute(context.Background()); err != nil {
+		t.Fatalf("git-drev name failed: %v\nstderr: %s", err, stderr.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "main" {
+		t.Fatalf("expected branch 'main', got %q", stdout.String())
+	}
+
+	// 6. Running init again without --force fails due to existing non-empty repo / config guard
+	stdout.Reset()
+	stderr.Reset()
+	reInitApp := cli.NewApp(&stdout, &stderr, runner)
+	reInitApp.WorkingDir = initDir
+	reInitApp.Storage = app.Storage
+	reInitApp.RootCmd.SetArgs([]string{"init", "-y", "--host", "storage.example.com", "--path", "/srv/drev/myrepo"})
+	if err := reInitApp.Execute(context.Background()); err == nil {
+		t.Fatalf("expected re-init without --force to fail on non-empty repo")
+	}
+
+	// 7. Running init with --force succeeds
+	stdout.Reset()
+	stderr.Reset()
+	forceInitApp := cli.NewApp(&stdout, &stderr, runner)
+	forceInitApp.WorkingDir = initDir
+	forceInitApp.Storage = app.Storage
+	forceInitApp.RootCmd.SetArgs([]string{"init", "-y", "--force", "--host", "storage.example.com", "--path", "/srv/drev/myrepo"})
+	if err := forceInitApp.Execute(context.Background()); err != nil {
+		t.Fatalf("expected force re-init to succeed, got: %v\nstderr: %s", err, stderr.String())
 	}
 }

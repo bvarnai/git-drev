@@ -229,14 +229,14 @@ func RunPut(
 		}
 
 		if logger != nil {
-			logger.Debugf("Executing put hook %s (timeout: %s, uuid: %s, seq: %s)", hookPath, hookTimeout, newUUID, opts.Sequence)
+			logger.Debugf("Executing put hook '%s' (timeout: %s, uuid: '%s', seq: '%s')", hookPath, hookTimeout, newUUID, opts.Sequence)
 		}
 
 		if err := hooks.Run(ctx, runReq); err != nil {
 			return nil, err
 		}
 	} else if logger != nil {
-		logger.Debugf("No put hook found at %s; skipping", hookPath)
+		logger.Debugf("No put hook found at '%s'; skipping", hookPath)
 	}
 
 	// 9. Stage revision metadata

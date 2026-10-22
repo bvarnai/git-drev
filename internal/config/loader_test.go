@@ -375,3 +375,65 @@ func TestNormalizeAndValidate_ValidationRules(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadGlobalDefaults(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+
+	// When no configs exist, returns empty config
+	t.Setenv("GIT_DREV_CONFIG", "")
+	cfg := config.LoadGlobalDefaults()
+	require.NotNil(t, cfg)
+	assert.Empty(t, cfg.Remote.Host)
+
+	// User global config
+	userConfigDir := filepath.Join(fakeHome, ".config", "git-drev")
+	require.NoError(t, os.MkdirAll(userConfigDir, 0755))
+	userConfigContent := `
+remote:
+  host: user-host
+  path: /srv/drev/{repo}
+workdir: data
+`
+	require.NoError(t, os.WriteFile(filepath.Join(userConfigDir, "config.yaml"), []byte(userConfigContent), 0644))
+
+	cfg = config.LoadGlobalDefaults()
+	require.NotNil(t, cfg)
+	assert.Equal(t, "user-host", cfg.Remote.Host)
+	assert.Equal(t, "/srv/drev/{repo}", cfg.Remote.Path)
+	assert.Equal(t, "data", cfg.WorkDir)
+}
+
+func TestFormatRepoConfig(t *testing.T) {
+	cfg := &domain.ProjectConfig{
+		Remote: domain.RemoteConfig{
+			Host: "storage.company.com",
+			Path: "/srv/drev/my-repo",
+			Rsync: domain.RsyncConfig{
+				Get: "-az --stats",
+				Put: "-az --stats",
+			},
+		},
+		WorkDir: "assets",
+		Branch: domain.BranchConfig{
+			Default: "trunk",
+		},
+	}
+
+	formatted := config.FormatRepoConfig(cfg)
+	assert.Contains(t, formatted, `host: "storage.company.com"`)
+	assert.Contains(t, formatted, `path: "/srv/drev/my-repo"`)
+	assert.Contains(t, formatted, `workdir: "assets"`)
+	assert.Contains(t, formatted, `default: "trunk"`)
+	assert.Contains(t, formatted, `get: "-az --stats"`)
+	assert.Contains(t, formatted, `put: "-az --stats"`)
+
+	// Verify unmarshaling the formatted string produces equivalent configuration
+	parsed := &domain.ProjectConfig{}
+	err := yaml.Unmarshal([]byte(formatted), parsed)
+	require.NoError(t, err)
+	assert.Equal(t, cfg.Remote.Host, parsed.Remote.Host)
+	assert.Equal(t, cfg.Remote.Path, parsed.Remote.Path)
+	assert.Equal(t, cfg.WorkDir, parsed.WorkDir)
+	assert.Equal(t, cfg.Branch.Default, parsed.Branch.Default)
+}

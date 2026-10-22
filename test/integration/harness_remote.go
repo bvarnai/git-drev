@@ -283,3 +283,46 @@ func pruneExtraneous(srcDir, dstDir string) error {
 	}
 	return nil
 }
+
+// CheckAccess probes the local filesystem directory corresponding to basePath.
+func (r *LocalRemoteRunner) CheckAccess(ctx context.Context, host, basePath string) (storage.AccessResult, error) {
+	if err := ctx.Err(); err != nil {
+		return storage.AccessResult{}, errcode.WrapError(errcode.ErrInterrupted, err, "Operation interrupted")
+	}
+
+	p := r.resolveBasePath(basePath)
+	fi, err := os.Stat(p)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return storage.AccessResult{Exists: false}, nil
+		}
+		return storage.AccessResult{}, err
+	}
+	if !fi.IsDir() {
+		return storage.AccessResult{}, errcode.NewError(errcode.ErrTransport, "Remote path '%s' is not a directory", basePath)
+	}
+
+	// Test write access by writing a temporary probe file
+	probeFile := filepath.Join(p, ".probe-access")
+	writable := true
+	if writeErr := os.WriteFile(probeFile, []byte("ok"), 0o644); writeErr != nil {
+		writable = false
+	} else {
+		_ = os.Remove(probeFile)
+	}
+
+	return storage.AccessResult{
+		Exists:   true,
+		Readable: true,
+		Writable: writable,
+	}, nil
+}
+
+// CreateDirectory creates the directory corresponding to basePath on local disk.
+func (r *LocalRemoteRunner) CreateDirectory(ctx context.Context, host, basePath string) error {
+	if err := ctx.Err(); err != nil {
+		return errcode.WrapError(errcode.ErrInterrupted, err, "Operation interrupted")
+	}
+	p := r.resolveBasePath(basePath)
+	return os.MkdirAll(p, 0o755)
+}

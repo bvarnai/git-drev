@@ -20,6 +20,30 @@ The following flags are accepted by the root `git-drev` command and all subcomma
 
 ## Subcommands
 
+### `git drev init [flags]`
+Initializes a dedicated `git-drev` metadata repository in the current directory.
+
+- **Usage:** `git drev init [flags]`
+- **Flags:**
+  - `--host <host>`: Remote SSH host (e.g. `storage.example.com` or `user@host`).
+  - `--path <path>`: Remote storage base path (e.g. `/srv/drev/{repo}`).
+  - `--workdir <dir>`: Local working directory for tracked revisions (default: `data`).
+  - `--branch <name>`: Default baseline branch name (default: `main`).
+  - `-y`, `--yes`: Non-interactive mode (accepts default options and automated confirmations).
+  - `--force`: Force overwrite of existing `.git-drev.yaml` or initialization inside non-empty repository.
+  - `--commit`: Create Git commit for generated configuration and `.gitignore`.
+  - `--no-commit`: Skip committing generated configuration and `.gitignore`.
+  - `--skip-check`: Skip remote SSH connection and directory access verification.
+- **Behavior:**
+  - If executed outside a Git repository, prompts to run `git init` (or auto-accepts with `-y`).
+  - If executed inside an existing non-empty Git repository, emits a defensive warning that `git-drev` requires a dedicated metadata repository and requires confirmation or `--force`.
+  - Collects mandatory configuration fields via flags or interactive prompts with global tier defaults.
+  - Verifies remote SSH read access and detects read-only vs. read-write permissions.
+  - Generates `.git-drev.yaml` and idempotently updates `.gitignore`.
+  - Stages and creates the initial configuration commit (unless `--no-commit` is specified).
+
+---
+
 ### `git drev config`
 Inspects and prints the effective resolved configuration across the 3-tier YAML cascade (`User Global -> $GIT_DREV_CONFIG -> Repository Local`).
 
