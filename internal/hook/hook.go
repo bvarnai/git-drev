@@ -70,7 +70,7 @@ type Env struct {
 }
 
 // ToEnviron returns a slice of KEY=VALUE strings for the hook environment.
-func (e Env) ToEnviron(kind Kind) []string {
+func (e Env) ToEnviron() []string {
 	return []string{
 		"GIT_DREV_VERSION=" + e.Version,
 		"GIT_DREV_UUID=" + e.UUID,
@@ -78,7 +78,6 @@ func (e Env) ToEnviron(kind Kind) []string {
 		"GIT_DREV_BRANCH=" + e.Branch,
 		"GIT_DREV_WORK_DIR=" + e.WorkDir,
 		"GIT_DREV_ROOT=" + e.Root,
-		"GIT_DREV_HOOK_TYPE=" + string(kind),
 	}
 }
 
@@ -183,7 +182,7 @@ func (r *ExecRunner) Run(ctx context.Context, req RunRequest) error {
 	}
 
 	// Environment sanitization
-	cmd.Env = command.SanitizedEnv(nil, req.Env.ToEnviron(req.Kind))
+	cmd.Env = command.SanitizedEnv(nil, req.Env.ToEnviron())
 
 	runErr := cmd.Run()
 	if runErr == nil {

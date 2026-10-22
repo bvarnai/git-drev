@@ -285,3 +285,62 @@ func TestInspectorAndOperations_InitAndTracking(t *testing.T) {
 		t.Errorf("HasCommits = false, want true after commit")
 	}
 }
+
+func TestOperations_StageMetadata(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	ctx := context.Background()
+
+	runner := git.NewExecRunner()
+	ops := git.NewOperations(runner)
+
+	runner.BaseEnv = append(os.Environ(),
+		"GIT_AUTHOR_NAME=Test",
+		"GIT_AUTHOR_EMAIL=test@example.com",
+		"GIT_COMMITTER_NAME=Test",
+		"GIT_COMMITTER_EMAIL=test@example.com",
+	)
+
+	if err := ops.Init(ctx, tmpDir, "main"); err != nil {
+		t.Fatalf("ops.Init error: %v", err)
+	}
+
+	// Create root config file and workdir payload file
+	if err := os.WriteFile(filepath.Join(tmpDir, ".git-drev.yaml"), []byte("workdir: data\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dataDir := filepath.Join(tmpDir, "data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "large_payload.bin"), []byte("not for git"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ops.StageMetadata(ctx, tmpDir, "data"); err != nil {
+		t.Fatalf("ops.StageMetadata error: %v", err)
+	}
+
+	// Verify only .git-drev.yaml is staged, and data/ remains unstaged
+	statusLines, err := runner.RunLines(ctx, tmpDir, "status", "--porcelain")
+	if err != nil {
+		t.Fatalf("git status error: %v", err)
+	}
+
+	var stagedConfig, untrackedData bool
+	for _, line := range statusLines {
+		if strings.HasPrefix(line, "A  ") && strings.Contains(line, ".git-drev.yaml") {
+			stagedConfig = true
+		}
+		if strings.HasPrefix(line, "??") && strings.Contains(line, "data") {
+			untrackedData = true
+		}
+	}
+	if !stagedConfig {
+		t.Errorf("expected .git-drev.yaml to be staged, got lines: %v", statusLines)
+	}
+	if !untrackedData {
+		t.Errorf("expected data/ to remain untracked, got lines: %v", statusLines)
+	}
+}

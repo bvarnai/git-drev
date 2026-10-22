@@ -40,7 +40,6 @@
   | :--- | :--- | :--- | :--- |
   | `GIT_DREV_CONFIG` | Explicit file path for shared global configuration overlay (Tier 2) | Search standard 3-tier configuration cascade | Must be a readable YAML file if provided. |
   | `GIT_DREV_COLOR` | Control ANSI color emission (`auto`, `always`, `never`) | `auto` | Case-insensitive enum: `auto`, `always`, `never`, `true`, `false`, `1`, `0`. Invalid values log a warning and fall back to `auto`. |
-  | `GIT_DREV_SSH_COMMAND` | Override SSH executable or command prefix used by `git-drev` and `rsync -e` | `ssh -T` | Parsed via POSIX shell word-splitting rules; executable must exist in `$PATH` or as an absolute path. |
   | `GIT_DREV_HOOK_TIMEOUT` | Maximum execution duration for project hook scripts | `5m` | Parsed via `time.ParseDuration`; must be `> 0`. |
   | `NO_COLOR` | Standard CLI flag to disable ANSI colors when non-empty | `""` | Any non-empty string disables color unless overridden by `GIT_DREV_COLOR=always`. |
   | `GIT_DIR` | Standard Git variable specifying `.git` directory location | Discovered via `git rev-parse --git-dir` | Must point to a valid Git directory if set. |
@@ -161,17 +160,21 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
   │   └── git-drev/
   │       └── main.go              # Entrypoint, signal context, exit code mapping
   ├── internal/
+  │   ├── checks/                  # Preflight assertions (InsideWorkTree, AttachedBranch, NoIndexLock)
   │   ├── cli/                     # Root dispatcher, global flags, subcommand handlers
   │   │   ├── root.go
+  │   │   ├── completion.go        # git-drev completion
   │   │   ├── config.go            # git-drev config
   │   │   ├── create.go            # git-drev create
   │   │   ├── get.go               # git-drev get
   │   │   ├── info.go              # git-drev info
+  │   │   ├── init.go              # git-drev init
   │   │   ├── name.go              # git-drev name
   │   │   ├── put.go               # git-drev put
-  │   │   ├── selectcmd.go         # git-drev select
+  │   │   ├── select.go            # git-drev select
   │   │   ├── update.go            # git-drev update
   │   │   └── usage.go             # git-drev usage
+  │   ├── command/                 # Context subprocess runner and exit error types
   │   ├── config/                  # 3-tier YAML config loader, merger, provenance report & validator
   │   │   ├── loader.go
   │   │   ├── merge.go
@@ -186,8 +189,10 @@ All subcommands map errors to standard exit codes using `errors.Is` against sent
   │   │   └── operations.go        # Mutating Git operations (fetch, checkout, commit, push)
   │   ├── hook/                    # Hook runner for .git-drev-put-hook and .git-drev-info-hook
   │   ├── storage/                 # Remote revision storage manager (Manager, Client, usage discovery)
+  │   ├── suggest/                 # Fuzzy branch and command typo suggestion engine
   │   ├── term/                    # Structured stderr logger, TTY & NO_COLOR detection, timer
-  │   └── transport/               # SSHRunner and RsyncRunner interfaces & implementations
+  │   ├── transport/               # SSHRunner and RsyncRunner interfaces & implementations
+  │   └── version/                 # Semantic version string builder
   ├── scripts/
   │   └── cleanup.sh               # Reference retention policy and remote storage cleanup script
   └── go.mod

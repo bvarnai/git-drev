@@ -243,7 +243,7 @@ func RunPut(
 	if logger != nil {
 		logger.Info("Staging revision metadata")
 	}
-	if err := ops.StageAll(ctx, repoRoot); err != nil {
+	if err := ops.StageMetadata(ctx, repoRoot, cfg.WorkDir); err != nil {
 		return nil, err
 	}
 

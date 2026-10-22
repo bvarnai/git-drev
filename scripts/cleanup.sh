@@ -21,7 +21,6 @@ set -euo pipefail
 readonly ZERO_UUID="00000000-0000-0000-0000-000000000000"
 readonly UUID_HEX='[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
 readonly UUID_JSON_PATTERN="\"uuid\":\"(${UUID_HEX})\""
-readonly CREATED_FROM_PATTERN="created from (${UUID_HEX})"
 readonly UUID_EXACT_REGEX="^${UUID_HEX}$"
 
 show_help() {
@@ -132,13 +131,9 @@ main() {
     uuid=""
     if [[ "$msg" =~ $UUID_JSON_PATTERN ]]; then
       uuid="${BASH_REMATCH[1],,}"
-      # If this is a branch marker commit (ZeroUUID), protect its parent baseline UUID if present
+      # If this is a branch marker commit with ZeroUUID, it references no parent baseline
       if [[ "$uuid" == "$ZERO_UUID" ]]; then
-        if [[ "$msg" =~ $CREATED_FROM_PATTERN ]]; then
-          uuid="${BASH_REMATCH[1],,}"
-        else
-          uuid=""
-        fi
+        uuid=""
       fi
     else
       uuid=$(printf '%s\n' "$msg" | grep -oE "$UUID_HEX" | head -n 1 | tr '[:upper:]' '[:lower:]' || true)

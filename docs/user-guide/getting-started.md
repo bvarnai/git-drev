@@ -192,8 +192,9 @@ git commit -m "chore: initialize git-drev configuration"
 
 Verify your effective configuration and see which tier provided each setting:
 ```bash
-git drev config --sources
+git drev config
 ```
+*(Or run `git drev config --sources` to inspect only the active configuration file hierarchy).*
 
 ---
 

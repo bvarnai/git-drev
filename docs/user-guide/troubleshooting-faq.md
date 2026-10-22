@@ -39,8 +39,8 @@ This chapter addresses common operational questions, edge cases, and diagnostic 
 
 **Symptom:**
 ```
-[git-drev] Error: Cannot execute put: HEAD is detached
-[git-drev] Hint: Use "git drev select <branch>" to select an existing branch or "git drev create <branch>" to start a new branch.
+[git-drev] Error: Detached HEAD state detected, aborting
+[git-drev] Hint: Use "git-drev select <branch>" to select a branch first.
 ```
 
 **Why this happens:**
@@ -62,8 +62,7 @@ Mutating commands like `put` and `update` require an attached branch so that new
 
 **Symptom:**
 ```
-[git-drev] Error: Git index is locked (.git/index.lock)
-[git-drev] Hint: Another Git process may be running. If not, delete .git/index.lock manually.
+[git-drev] Error: Git index is locked ('.git/index.lock' exists)
 ```
 
 **Why this happens:**

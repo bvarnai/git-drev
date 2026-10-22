@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Interactive and non-interactive `git-drev init` subcommand to bootstrap dedicated metadata repositories, verify remote SSH read/write access permissions, and generate `.git-drev.yaml` and `.gitignore` (`#53`, `#54`).
+- Automated Windows Scoop bucket release publication workflow (`.github/workflows/publish-scoop.yml`) (`#45`, `#46`).
+- Deterministic Eclipse SDK benchmark agent skill and runner script (`.agents/skills/drev-benchmark/`) (`#55`, `#56`).
+
+### Changed
+- Comprehensive User Guide reorganization, architecture documentation, and shared read-only consumer SSH deployment patterns (`#43`, `#44`, `#49`).
+- Exclude `workdir` payload path during `git add --all` staging in `git-drev put` (`#57`).
+
+### Fixed
+- Wire `--latest` (`-l`) flag in `git-drev get` to fetch upstream commits and hard-reset the active branch prior to downloading payload (`#42`).
+- Prevent redundant `+commit` build metadata duplication in version string (`#54`).
+- Remove redundant, undocumented `GIT_DREV_HOOK_TYPE` environment variable from hook runner (`#57`).
+- Correct benchmark table storage savings percentage to `64.6%` (`#57`).
+
 ## [0.1.0] - 2026-10-21
 
 ### Added

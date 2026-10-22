@@ -10,7 +10,7 @@
 
 | Hook script | Trigger point | Execution context | Common use cases |
 | :--- | :--- | :--- | :--- |
-| `.git-drev-put-hook` | Immediately after `rsync` upload succeeds during `git drev put`, before `git add --all` and `git commit` | Invoked in repository root. Subprocess environment receives revision metadata | Injecting CI build URLs, commit hashes, build logs, or generating checksum manifest files |
+| `.git-drev-put-hook` | Immediately after `rsync` upload succeeds during `git drev put`, before metadata staging and `git commit` | Invoked in repository root. Subprocess environment receives revision metadata | Injecting CI build URLs, commit hashes, build logs, or generating checksum manifest files |
 | `.git-drev-info-hook` | Triggered when `git drev info` is executed | Invoked in repository root. Output is streamed directly to `stdout` | Displaying linked CI build numbers, test results, or download metrics |
 
 ---
@@ -41,6 +41,13 @@ When executing a hook, `git-drev` sanitizes the environment (`LC_ALL=C`, `LANG=C
    - `git drev put` immediately halts execution.
    - The pending Git commit is aborted.
    - The remote staging directory is removed so half-published snapshots are not left on the storage host.
+4. **Background processes & file descriptors:** If your hook script forks background or asynchronous tasks (e.g., reporting metrics or triggering webhook daemons), you must explicitly decouple all standard streams:
+   ```bash
+   # Decouple standard streams when backgrounding tasks
+   nohup /path/to/notifier >/dev/null 2>&1 </dev/null &
+   ```
+   > [!TIP]
+   > Subprocess execution in `git-drev` enforces process group management and a 3-second grace period on standard stream closure. Background jobs that retain inherited file descriptors will prevent clean stream teardown until the grace timer forces a termination.
 
 ---
 
@@ -80,7 +87,7 @@ fi
 ```
 
 ### Example 3: Permanent build logs & SBOMs in Git (`.git-drev-put-hook`)
-Because `git drev put` stages the repository root (`git add --all`) before committing, any lightweight files placed outside `workdir/` are committed directly into Git. This preserves build provenance even after older remote snapshots are purged:
+Because `git drev put` stages repository metadata (excluding `workdir/`) before committing, any lightweight files placed outside `workdir/` are committed directly into Git. This preserves build provenance even after older remote snapshots are purged:
 
 ```bash
 #!/usr/bin/env bash

@@ -150,7 +150,7 @@ func TestExecRunner_ExecutionModesAndEnv(t *testing.T) {
 		hookFile := filepath.Join(tempDir, ".git-drev-info-hook")
 		content := `
 info_hook() {
-  echo "version=${GIT_DREV_VERSION} uuid=${GIT_DREV_UUID} seq=${GIT_DREV_SEQ} branch=${GIT_DREV_BRANCH} type=${GIT_DREV_HOOK_TYPE}"
+  echo "version=${GIT_DREV_VERSION} uuid=${GIT_DREV_UUID} seq=${GIT_DREV_SEQ} branch=${GIT_DREV_BRANCH}"
 }
 `
 		require.NoError(t, os.WriteFile(hookFile, []byte(content), 0o644))
@@ -165,7 +165,7 @@ info_hook() {
 			Stderr:  &stderr,
 		})
 		require.NoError(t, err)
-		assert.Equal(t, "version=1.2.3 uuid=550e8400-e29b-41d4-a716-446655440000 seq=42 branch=feature/hooks type=info\n", stdout.String())
+		assert.Equal(t, "version=1.2.3 uuid=550e8400-e29b-41d4-a716-446655440000 seq=42 branch=feature/hooks\n", stdout.String())
 	})
 
 	t.Run("put_hook function with extra arguments", func(t *testing.T) {
