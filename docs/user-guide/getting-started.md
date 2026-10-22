@@ -83,6 +83,12 @@ git-drev --version
 
 `git-drev` runs non-interactive `ssh -T` and `rsync` sessions (`GIT_TERMINAL_PROMPT=0`), so passwordless SSH key authentication (or `ssh-agent`) is required.
 
+> [!TIP]
+> **Read-write Producer vs. shared read-only Consumer keys:**
+> You do not need to register separate SSH keys on the server for every developer unless you prefer per-user keys. For maximum safety and minimal administrative overhead:
+> - **Producer (CI):** Use a dedicated **read-write** SSH user/key (e.g., `drev-rw`) that owns `/srv/drev` (mode `0755`) and publishes snapshots via `git drev put`.
+> - **Consumers (developers / testers):** Share a single **read-only** SSH user/key (e.g., `drev-ro` with read and traverse permissions on `/srv/drev`) across the team. This guarantees consumers can run `get` and `usage` while preventing accidental writes or deletions on the storage host.
+
 ### Generate and deploy an SSH key
 ```bash
 # Generate an Ed25519 key pair if you don't already have one
