@@ -28,7 +28,7 @@ Before running any commands on a remote server, **always ask the user** for the 
 ### Task 2: Build Local `git-drev` Binary & Verify SSH Pre-flight
 1. Compile the current `git-drev` binary from the workspace root so the benchmark tests the exact working tree:
    ```bash
-   go build -ldflags "-s -w -X 'github.com/bvarnai/git-drev/internal/version.Version=v0.1.0-dev' -X 'github.com/bvarnai/git-drev/internal/version.Commit=$(git rev-parse --short=7 HEAD)' -X 'github.com/bvarnai/git-drev/internal/version.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)'" -trimpath -o bin/git-drev ./cmd/git-drev
+   go build -ldflags "-s -w -X 'github.com/bvarnai/git-drev/internal/version.Version=v0.2.0-dev' -X 'github.com/bvarnai/git-drev/internal/version.Commit=$(git rev-parse --short=7 HEAD)' -X 'github.com/bvarnai/git-drev/internal/version.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)'" -trimpath -o bin/git-drev ./cmd/git-drev
    ```
 2. Verify non-interactive SSH connectivity and check whether `<REMOTE_PATH>` already exists:
    ```bash

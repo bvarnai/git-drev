@@ -117,7 +117,7 @@ if [[ "${SELF_TEST}" == "false" ]]; then
     (
       cd "${REPO_ROOT}"
       mkdir -p "$(dirname "${DREV_BIN}")"
-      go build -ldflags "-s -w -X 'github.com/bvarnai/git-drev/internal/version.Version=v0.1.0-dev' -X 'github.com/bvarnai/git-drev/internal/version.Commit=$(git rev-parse --short=7 HEAD)' -X 'github.com/bvarnai/git-drev/internal/version.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)'" -trimpath -o "${DREV_BIN}" ./cmd/git-drev
+      go build -ldflags "-s -w -X 'github.com/bvarnai/git-drev/internal/version.Version=v0.2.0-dev' -X 'github.com/bvarnai/git-drev/internal/version.Commit=$(git rev-parse --short=7 HEAD)' -X 'github.com/bvarnai/git-drev/internal/version.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)'" -trimpath -o "${DREV_BIN}" ./cmd/git-drev
     )
   fi
   DREV_BIN="$(cd "$(dirname "${DREV_BIN}")" && pwd)/$(basename "${DREV_BIN}")"

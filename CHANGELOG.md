@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-22
+
 ### Added
 - Interactive and non-interactive `git-drev init` subcommand to bootstrap dedicated metadata repositories, verify remote SSH read/write access permissions, and generate `.git-drev.yaml` and `.gitignore` (`#53`, `#54`).
 - Automated Windows Scoop bucket release publication workflow (`.github/workflows/publish-scoop.yml`) (`#45`, `#46`).
@@ -14,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Comprehensive User Guide reorganization, architecture documentation, and shared read-only consumer SSH deployment patterns (`#43`, `#44`, `#49`).
-- Exclude `workdir` payload path during `git add --all` staging in `git-drev put` (`#57`).
+- Exclude `workdir` payload path during metadata staging in `git-drev put` (`#57`).
 
 ### Fixed
 - Wire `--latest` (`-l`) flag in `git-drev get` to fetch upstream commits and hard-reset the active branch prior to downloading payload (`#42`).
@@ -51,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sequence-aware optimistic concurrency control loop on `git drev put` using `--force-with-lease`.
 - Project lifecycle hooks (`.git-drev-put-hook`, `.git-drev-info-hook`) with timeout enforcement (`GIT_DREV_HOOK_TIMEOUT`).
 
-[Unreleased]: https://github.com/bvarnai/git-drev/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/bvarnai/git-drev/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/bvarnai/git-drev/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/bvarnai/git-drev/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/bvarnai/git-drev/releases/tag/v0.0.1
