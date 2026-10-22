@@ -151,7 +151,10 @@ func RunInDir(ctx context.Context, dir string, args []string, stdout, stderr io.
 
 	var appErr *errcode.AppError
 	if errors.As(err, &appErr) {
-		app.Logger.LogError(appErr)
+		app.Logger.Error("%s", appErr.Error())
+		if appErr.Hint != "" {
+			app.Logger.HintAlways("%s", appErr.Hint)
+		}
 		return errcode.ExitCode(appErr)
 	}
 

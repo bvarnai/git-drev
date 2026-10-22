@@ -14,7 +14,7 @@
   - `internal/transport/`: Generic SSH (`SSHRunner`) and rsync (`RsyncRunner`) execution engine.
   - `internal/storage/`: Remote revision storage manager (`Manager`, `Client`), directory management, baseline hardlinking, and usage discovery.
   - `internal/hook/`: Project hook runner (`.git-drev-put-hook`, `.git-drev-info-hook`) with timeout (`GIT_DREV_HOOK_TIMEOUT`, default `5m`) and `GIT_DREV_*` environment injection.
-  - `internal/term/`: Structured `stderr` logger, TTY/`NO_COLOR`/`GIT_DREV_COLOR` detection, and decoupled `Timer`.
+  - `internal/term/`: Structured `stderr` logger, TTY/`NO_COLOR`/`GIT_DREV_COLOR` detection, and decoupled `Timer`. Depends only on Go stdlib.
   - `test/integration/`: End-to-end integration tests using isolated Git repositories in `t.TempDir()`.
 - **Dependency Boundaries:** `internal/command`, `internal/config`, `internal/git`, `internal/transport`, `internal/storage`, and `internal/hook` may depend on `domain`, `errcode`, and `term`, but NEVER on `internal/cli`.
 
