@@ -118,7 +118,7 @@ func TestInitCommand_UnitTable(t *testing.T) {
 		// Verify .gitignore was written
 		ignoreData, err := os.ReadFile(filepath.Join(tempDir, ".gitignore"))
 		require.NoError(t, err)
-		assert.Contains(t, string(ignoreData), "/data/")
+		assert.Contains(t, string(ignoreData), "/data\n")
 
 		_ = initCalled
 		_ = addCalled

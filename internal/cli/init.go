@@ -313,7 +313,7 @@ func RunInit(
 		return err
 	}
 	if logger != nil {
-		logger.Infof("Configured '.gitignore' to ignore '/%s/'", strings.Trim(filepath.ToSlash(projectCfg.WorkDir), "/"))
+		logger.Infof("Configured '.gitignore' to ignore '/%s'", strings.Trim(filepath.ToSlash(projectCfg.WorkDir), "/"))
 	}
 
 	// 7. Create local workdir directory
@@ -380,7 +380,7 @@ func ensureGitIgnore(repoRoot, workDir string) error {
 	if err == nil {
 		existingContent = string(data)
 	} else if !os.IsNotExist(err) {
-		return errcode.WrapError(errcode.ErrRuntime, err, "Failed to read %s", ignorePath)
+		return errcode.WrapError(errcode.ErrRuntime, err, "Failed to read '%s'", ignorePath)
 	}
 
 	normalizedTarget := strings.Trim(filepath.ToSlash(workDir), "/")
@@ -405,10 +405,10 @@ func ensureGitIgnore(repoRoot, workDir string) error {
 		sb.WriteString("\n")
 	}
 	sb.WriteString("# git-drev working directory\n")
-	sb.WriteString("/" + normalizedTarget + "/\n")
+	sb.WriteString("/" + normalizedTarget + "\n")
 
 	if err := os.WriteFile(ignorePath, []byte(sb.String()), 0o644); err != nil {
-		return errcode.WrapError(errcode.ErrRuntime, err, "Failed to write %s", ignorePath)
+		return errcode.WrapError(errcode.ErrRuntime, err, "Failed to write '%s'", ignorePath)
 	}
 	return nil
 }

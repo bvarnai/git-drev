@@ -209,13 +209,13 @@ func TestPureGit_InitWorkflow(t *testing.T) {
 		t.Fatalf("unexpected .git-drev.yaml content: %s", string(cfgBytes))
 	}
 
-	// 4. Verify .gitignore contains /data/
+	// 4. Verify .gitignore contains /data
 	ignoreBytes, err := os.ReadFile(filepath.Join(initDir, ".gitignore"))
 	if err != nil {
 		t.Fatalf("read .gitignore: %v", err)
 	}
-	if !strings.Contains(string(ignoreBytes), "/data/") {
-		t.Fatalf("expected /data/ in .gitignore, got: %s", string(ignoreBytes))
+	if !strings.Contains(string(ignoreBytes), "/data\n") {
+		t.Fatalf("expected /data in .gitignore, got: %s", string(ignoreBytes))
 	}
 
 	// 5. Verify git-drev name works

@@ -58,14 +58,14 @@
      - If read-only, logs `Warning: Remote storage path is read-only ('get' is available, 'put' requires write access)`.
 6. **File Generation & Local Directory Preparation:**
    - Write `.git-drev.yaml` with clean, documented YAML formatting (including commented `# rsync:` examples and preserving `{repo}` template variable in the file if typed by the user).
-   - Idempotently update `.gitignore` to ignore `/<workdir>/`.
+   - Idempotently update `.gitignore` to ignore `/<workdir>`.
    - Ensure local working directory (`<workdir>/`) exists on disk (`mkdir -p`).
 7. **Initial Commit:**
    - Unless `--no-commit` is specified, prompt to commit or auto-commit when `--commit` or `-y` is passed.
    - Stages `.git-drev.yaml` and `.gitignore` and creates commit: `chore: initialize git-drev configuration` (skips if working tree clean).
 8. **Completion:**
+   - If no remote `origin` is configured in Git, log helpful hint: `Hint: Add a Git remote when ready: git remote add origin <url>`.
    - Log `git-drev repository initialization complete` to `stderr`.
-   - If no remote `origin` is configured in Git, log helpful hint: `Hint: To connect this metadata repository to a remote Git host, run 'git remote add origin <url>' and 'git push -u origin <branch>'`.
    - Exit with Exit Code `0`.
 
 ## 4. Error Handling & Exit Codes
