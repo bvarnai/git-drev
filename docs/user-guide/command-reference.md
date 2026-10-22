@@ -45,13 +45,13 @@ Initializes a dedicated `git-drev` metadata repository in the current directory.
 ---
 
 ### `git drev config`
-Inspects and prints the effective resolved configuration across the 3-tier YAML cascade (`User Global -> $GIT_DREV_CONFIG -> Repository Local`).
+Inspects and prints the effective resolved configuration across the 3-tier YAML cascade (`User Global -> $GIT_DREV_CONFIG -> Repository Local`). Running without flags prints the `# Source hierarchy:` header and the annotated YAML configuration.
 
 - **Usage:** `git drev config [--sources]`
 - **Flags:**
-  - `--sources`: Annotate each configuration key with its provenance origin (e.g., `# source: /path/to/.git-drev.yaml` or `# source: default`).
+  - `--sources`: Output only the resolved 3-tier `# Source hierarchy:` header without printing the configuration payload.
 - **Output:** Clean YAML output to `stdout`.
-- **Preconditions:** Must be run inside a valid Git repository containing a valid configuration.
+- **Preconditions:** Can be run inside a Git repository, or outside a repository if global configuration is defined.
 
 ---
 

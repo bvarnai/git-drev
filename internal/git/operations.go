@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/bvarnai/git-drev/internal/command"
@@ -137,6 +138,29 @@ func (o *Operations) StageAll(ctx context.Context, dir string) error {
 			return runErr
 		}
 		return errcode.WrapError(errcode.ErrGitExec, runErr, "Staging failed (git add --all)")
+	}
+	return nil
+}
+
+// StageMetadata stages repository metadata while strictly excluding the local data workdir.
+func (o *Operations) StageMetadata(ctx context.Context, dir, excludeWorkDir string) error {
+	if _, runErr := o.runner.Run(ctx, dir, "add", "--all"); runErr != nil {
+		if errors.Is(runErr, errcode.ErrInterrupted) || errors.Is(runErr, errcode.ErrTransport) {
+			return runErr
+		}
+		return errcode.WrapError(errcode.ErrGitExec, runErr, "Staging failed (git add --all)")
+	}
+
+	clean := filepath.ToSlash(filepath.Clean(excludeWorkDir))
+	clean = strings.TrimPrefix(clean, "./")
+	clean = strings.Trim(clean, "/")
+	if clean != "" && clean != "." && !strings.HasPrefix(clean, "..") {
+		if _, runErr := o.runner.Run(ctx, dir, "reset", "--", clean); runErr != nil {
+			if errors.Is(runErr, errcode.ErrInterrupted) || errors.Is(runErr, errcode.ErrTransport) {
+				return runErr
+			}
+			return errcode.WrapError(errcode.ErrGitExec, runErr, "Unstaging workdir failed (git reset -- %s)", clean)
+		}
 	}
 	return nil
 }

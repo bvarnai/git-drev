@@ -12,7 +12,7 @@
 
 ## 2. Prerequisites & Environment
 - **Required host binaries:** `git` (>= 2.25.0), `ssh`, `rsync` (>= 3.1.0).
-- **Environment variables read:** `GIT_DIR`, `GIT_WORK_TREE`, `GIT_PREFIX`, `GIT_DREV_CONFIG`, `GIT_DREV_SSH_COMMAND`, `GIT_DREV_HOOK_TIMEOUT` (default `5m`), `NO_COLOR`, `GIT_DREV_COLOR`.
+- **Environment variables read:** `GIT_DIR`, `GIT_WORK_TREE`, `GIT_PREFIX`, `GIT_DREV_CONFIG`, `GIT_DREV_HOOK_TIMEOUT` (default `5m`), `NO_COLOR`, `GIT_DREV_COLOR`.
 - **Environment variables injected into hook:** `GIT_DREV_VERSION`, `GIT_DREV_UUID`, `GIT_DREV_SEQ`, `GIT_DREV_BRANCH`, `GIT_DREV_WORK_DIR`, `GIT_DREV_ROOT`.
 - **Working directory requirements (GIT_PREFIX behavior):** Can be invoked from any repository subdirectory; operations are executed relative to repository root (`git rev-parse --show-toplevel`). Explicit `<source_directory>` is resolved relative to invocation `PWD`.
 - **Git state assertions:**
@@ -34,18 +34,19 @@
    - Inspect parent revision UUID on `HEAD`.
    - If a valid non-zero parent UUID exists:
      - Execute remote hardlink clone via SSH: `cp -al -- <remote.path>/<parent_uuid> <remote.path>/<uuid>`.
-     - If baseline clone succeeds, log `[git-drev] Baseline revision uuid is '<parent_uuid>'`.
-     - If baseline missing or purged: fallback to full copy and log `[git-drev] Unable to use previous revision, doing a full copy`.
-   - If unborn branch or marker commit: skip baseline clone and log `[git-drev] Unable to use previous revision, doing a full copy`.
+     - If baseline clone succeeds, log debug details.
+     - If baseline missing or purged: fallback to full copy and log `[git-drev] Unable to use previous revision, performing a full copy`.
+   - If unborn branch or marker commit: skip baseline clone and log `[git-drev] Unable to use previous revision, performing a full copy`.
 4. **Rsync Delta Upload:**
-   - Log `[git-drev] Putting directory revision to remote host (this might take a while)`.
+   - Log `[git-drev] Uploading directory revision '<short-uuid>' to host '<host>'...`.
    - Run `rsync -a --delete-during [flags] -e "ssh -T" <source_directory>/ <host>:<remote.path>/<uuid>/`.
    - Only new or modified files are transmitted over the wire.
+   - On completion, log `[git-drev] Uploaded directory revision '<short-uuid>' to host '<host>'`.
 5. **Hook Execution (`.git-drev-put-hook`):**
    - If `.git-drev-put-hook` exists in repository root, execute with injected `GIT_DREV_*` environment variables and positional args.
    - If hook fails or times out, fail with Exit Code `1`.
 6. **Commit Revision Metadata:**
-   - Log `[git-drev] Staging revision metadata` and stage changed files: `git add --all`.
+   - Log `[git-drev] Staging revision metadata` and stage metadata: `git add --all` followed by `git reset -- <workdir>` (strictly ensuring local data `workdir` is not staged into Git).
    - Log `[git-drev] Committing revision metadata`.
    - Record metadata commit: `git commit --allow-empty -m '{"uuid":"<uuid>","seq":"<sequence>"}'`.
 7. **Publish with Optimistic Concurrency Control (OCC):**

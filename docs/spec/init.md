@@ -87,6 +87,6 @@
 ## 5. Edge Cases & Behavioral Notes
 - **Dedicated Metadata Repository Guard:** `git-drev` stores revision pointers as empty Git commits and uses Git branches as data streams. It is not designed to be run inside existing source repositories. `init` defensively warns users and prevents accidental initialization in existing repositories with commits or tracked files unless explicitly overridden with `--force`.
 - **Read-Only vs. Read-Write Storage Mode:** Read access to the remote storage directory is strictly mandatory. Write access is optional: if the SSH user cannot write to the storage path, `init` issues a clear warning that the repository will operate in Consumer (read-only) mode where `get` works but `put` will fail until write permissions are granted.
-- **Idempotent `.gitignore`:** If `/<workdir>/` (or `<workdir>/`, `/<workdir>`) is already ignored in `.gitignore`, `init` will not append duplicate entries.
+- **Idempotent `.gitignore`:** If `/<workdir>` (or `<workdir>/`, `/<workdir>/`) is already ignored in `.gitignore`, `init` will not append duplicate entries. Newly added entries are formatted canonically as `/<workdir>`.
 - **Preservation of `{repo}` Template:** If a user specifies `{repo}` or `{project}` in the path (e.g. `/srv/drev/{repo}`), the probe expands it to test permissions on the actual directory, but the literal template placeholder is preserved in `.git-drev.yaml` for portability.
 - **Offline Initialization:** The `--skip-check` flag allows users or CI scripts to initialize repositories without active SSH network connectivity.

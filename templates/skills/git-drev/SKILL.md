@@ -20,6 +20,7 @@ This skill guides the AI assistant in using `git-drev` (or `git drev`) as the un
 
 | Stage | `git-drev` Command | Purpose & Behavior |
 | :--- | :--- | :--- |
+| **Repository Bootstrap** | `git drev init [-y]` | Bootstraps a dedicated metadata repository, verifies remote SSH read/write access, writes `.git-drev.yaml`, and configures `.gitignore`. |
 | **Branch Initialization** | `git drev create <branch>` | Checks out `<branch>` if it exists locally/remotely, or creates an initial marker commit (`{"uuid":"<parent-uuid>","marker":"true"}`) and pushes to `origin`. |
 | **Publish Snapshot (Producer)** | `git drev put [-s <seq>] [--stats] [<src_dir>]` | Clones parent baseline on remote via `cp -al --`, uploads diffs via `rsync`, runs `.git-drev-put-hook`, commits metadata (`{"uuid":"...","seq":"..."}`), and pushes with retry. |
 | **Select Revision (Consumer)** | `git drev select [<branch>\|<tag>\|<uuid>]` | Fetches `origin` and switches to a branch, tag, or specific commit matching an RFC 4122 UUID (defaults to `branch.default` if omitted). |

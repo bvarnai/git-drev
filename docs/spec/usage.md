@@ -9,7 +9,7 @@
 
 ## 2. Prerequisites & Environment
 - **Required host binaries:** `git` (>= 2.25.0), `ssh`.
-- **Environment variables read:** `GIT_DIR`, `GIT_WORK_TREE`, `GIT_PREFIX`, `GIT_DREV_CONFIG`, `GIT_DREV_SSH_COMMAND`, `NO_COLOR`, `GIT_DREV_COLOR`.
+- **Environment variables read:** `GIT_DIR`, `GIT_WORK_TREE`, `GIT_PREFIX`, `GIT_DREV_CONFIG`, `NO_COLOR`, `GIT_DREV_COLOR`.
 - **Working directory requirements (GIT_PREFIX behavior):** Can be invoked from any repository subdirectory; operations are executed relative to repository root (`git rev-parse --show-toplevel`).
 - **Git state assertions:**
   - Must be inside a valid, non-bare Git working tree (`git rev-parse --is-inside-work-tree` == `true`).

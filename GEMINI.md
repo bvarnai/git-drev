@@ -5,7 +5,7 @@
 - **CLI Framework:** `github.com/spf13/cobra`.
 - **Package Layout:**
   - `cmd/git-drev/main.go`: Thin entrypoint only (signal context `SIGINT`/`SIGTERM`, exit code mapping).
-  - `internal/cli/`: Root dispatcher, global flags (`-v`, `-q`, `--no-color`, `--version`, `-h`), and subcommand handlers (`create`, `get`, `put`, `select`, `update`, `info`, `name`, `usage`, `config`).
+  - `internal/cli/`: Root dispatcher, global flags (`-v`, `-q`, `--no-color`, `--version`, `-h`), and subcommand handlers (`create`, `get`, `put`, `select`, `update`, `info`, `name`, `usage`, `config`, `init`, `completion`).
   - `internal/domain/`: Pure Go value types (`ProjectConfig`, `BranchConfig`, `RemoteConfig`, `RsyncConfig`, `RevisionMeta`, `RemoteRevision`, `ZeroUUID`). Depends only on Go stdlib.
   - `internal/errcode/`: Sentinel error categories (`ErrRuntime`=1, `ErrUsage`=2, `ErrConfig`/`ErrNotRepository`=3, `ErrGitState`/`ErrDetachedHead`=4, `ErrGitExec`=5, `ErrRemoteNotFound`=6, `ErrTransport`=7, `ErrInterrupted`=130). Depends only on Go stdlib.
   - `internal/config/`: 3-tier YAML configuration loader (`loader.go`), cascading merger (`merge.go`), provenance reporter (`report.go`), and schema validator.

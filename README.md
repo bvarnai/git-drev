@@ -145,7 +145,7 @@ Across **5 consecutive daily [Eclipse SDK integration builds (`I-builds`)](https
 | **Total sync time across all 5 builds** | `123.75s` (5 full downloads) | **`13.61s`** (1 cold + 4 incremental) | **9.1x faster** |
 | **Avg. network payload per daily update** | `272.99 MiB` (full `.tar.gz`) | **`35.12 MiB`** (changed files/deltas only) | **87.1% less traffic** |
 | **Server disk space for 5 unpacked builds** | `1,530 MB` (`5 × 306 MB` unpacked) | **`483 MB`** (`cp -al` hardlinked storage) | **68.4% less storage (`3.17x` dedup)** |
-| **Server disk space vs. 5 `.tar.gz` archives** | `1,365 MB` (`5 × 273 MB` compressed) | **`483 MB`** (immediately usable directories) | **65.0% less storage than `.tar.gz`** |
+| **Server disk space vs. 5 `.tar.gz` archives** | `1,365 MB` (`5 × 273 MB` compressed) | **`483 MB`** (immediately usable directories) | **64.6% less storage than `.tar.gz`** |
 
 See [Chapter 5: Storage architecture & retention](docs/user-guide/storage-and-retention.md#6-real-world-benchmark-eclipse-sdk-builds) for the full per-build breakdown and `git drev usage -a` analysis.
 

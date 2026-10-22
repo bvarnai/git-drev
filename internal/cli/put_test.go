@@ -113,6 +113,7 @@ remote:
 				"symbolic-ref --quiet --short HEAD":                             {out: "main"},
 				"log -n 1 --format=%s HEAD --":                                  {out: `{"uuid":"11111111-1111-4111-8111-111111111111","seq":"50"}`},
 				"add --all":                                                     {out: ""},
+				"reset -- data":                                                 {out: ""},
 				"commit --allow-empty -m *":                                     {out: "[main a1b2c3d] revision"},
 				"push --force-with-lease origin refs/heads/main":                {out: "Everything up-to-date"},
 			},
@@ -132,6 +133,7 @@ remote:
 			expectedCode: errcode.ExitSuccess,
 			checkExecuted: func(t *testing.T, executed []string, storageCalls []string) {
 				assert.Contains(t, executed, "add --all")
+				assert.Contains(t, executed, "reset -- data")
 				assert.Contains(t, executed, "push --force-with-lease origin refs/heads/main")
 				var foundClone, foundUpload bool
 				for _, c := range storageCalls {
@@ -157,6 +159,7 @@ remote:
 				"symbolic-ref --quiet --short HEAD":                             {out: "feature"},
 				"log -n 1 --format=%s HEAD --":                                  {out: `{"uuid":"11111111-1111-4111-8111-111111111111","marker":"true"}`},
 				"add --all":                                                     {out: ""},
+				"reset -- data":                                                 {out: ""},
 				"commit --allow-empty -m *":                                     {out: "[feature a1b2c3d] revision"},
 				"push --force-with-lease origin refs/heads/feature":             {out: "Everything up-to-date"},
 			},
@@ -199,6 +202,7 @@ remote:
 				"symbolic-ref --quiet --short HEAD":                             {out: "main"},
 				"log -n 1 --format=%s HEAD --":                                  {out: `{"uuid":"00000000-0000-0000-0000-000000000000","marker":"true"}`},
 				"add --all":                                                     {out: ""},
+				"reset -- data":                                                 {out: ""},
 				"commit --allow-empty -m *":                                     {out: "[main a1b2c3d] revision"},
 				"push --force-with-lease origin refs/heads/main":                {out: "Everything up-to-date"},
 			},
@@ -233,6 +237,7 @@ remote:
 				"symbolic-ref --quiet --short HEAD":                             {out: "main"},
 				"log -n 1 --format=%s HEAD --":                                  {out: `{"uuid":"11111111-1111-4111-8111-111111111111","seq":"40"}`},
 				"add --all":                                                     {out: ""},
+				"reset -- data":                                                 {out: ""},
 				"commit --allow-empty -m *":                                     {out: "[main a1b2c3d] revision"},
 				"push --force-with-lease origin refs/heads/main":                {err: &command.Error{Stderr: "stale info", ExitCode: 1, Category: errcode.ErrGitExec}},
 				"config --local --get-all remote.origin.fetch":                  {out: git.WildcardFetchRefspec},
