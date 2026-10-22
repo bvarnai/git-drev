@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,13 +49,17 @@ func RunInit(
 		return errcode.NewError(errcode.ErrUsage, "Flags --commit and --no-commit cannot be used together")
 	}
 
-	timer := term.StartTimer()
 	startDir := opts.CallerDir
 	if startDir == "" {
 		startDir = "."
 	}
+	absStartDir, absErr := filepath.Abs(startDir)
+	if absErr != nil {
+		absStartDir = startDir
+	}
 
-	// 1. Resolve Git repository or initialize a fresh one
+	// 1. Resolve Git repository or prepare to initialize a fresh one
+	needsGitInit := false
 	repoRoot, _, err := checks.InsideWorkTree(ctx, insp, startDir)
 	if err != nil {
 		if !errors.Is(err, errcode.ErrNotRepository) {
@@ -75,23 +80,7 @@ func RunInit(
 					WithHint("Run inside a dedicated Git repository or confirm initialization.")
 			}
 		}
-
-		initialBranch := opts.Branch
-		if initialBranch == "" {
-			initialBranch = config.DefaultBranchName
-		}
-		if err := ops.Init(ctx, startDir, initialBranch); err != nil {
-			return err
-		}
-		if logger != nil {
-			logger.Infof("Initialized empty Git repository in %s", startDir)
-		}
-
-		recheckRoot, _, recheckErr := checks.InsideWorkTree(ctx, insp, startDir)
-		if recheckErr != nil {
-			return recheckErr
-		}
-		repoRoot = recheckRoot
+		needsGitInit = true
 	} else {
 		// Inside an existing Git repository: perform defensive source-repository check
 		hasCommits, _ := insp.HasCommits(ctx, repoRoot)
@@ -121,21 +110,23 @@ func RunInit(
 	}
 
 	// 2. Check for existing repository configuration
-	existingConfig := config.FindRepoConfigFile(repoRoot)
-	if existingConfig != "" && !opts.Force {
-		if opts.Yes {
-			return errcode.NewError(errcode.ErrConfig, "Configuration file already exists: %s", existingConfig).
-				WithHint("Pass --force to overwrite the existing configuration.")
-		}
-		if logger == nil {
-			return errcode.NewError(errcode.ErrConfig, "Configuration file already exists: %s", existingConfig)
-		}
-		overwrite, promptErr := logger.Confirm("Configuration file already exists. Overwrite? [y/N]")
-		if promptErr != nil {
-			return promptErr
-		}
-		if !overwrite {
-			return errcode.NewError(errcode.ErrConfig, "Initialization aborted by user")
+	if !needsGitInit {
+		existingConfig := config.FindRepoConfigFile(repoRoot)
+		if existingConfig != "" && !opts.Force {
+			if opts.Yes {
+				return errcode.NewError(errcode.ErrConfig, "Configuration file already exists: '%s'", existingConfig).
+					WithHint("Pass --force to overwrite the existing configuration.")
+			}
+			if logger == nil {
+				return errcode.NewError(errcode.ErrConfig, "Configuration file already exists: '%s'", existingConfig)
+			}
+			overwrite, promptErr := logger.Confirm("Configuration file already exists. Overwrite? [y/N]")
+			if promptErr != nil {
+				return promptErr
+			}
+			if !overwrite {
+				return errcode.NewError(errcode.ErrConfig, "Initialization aborted by user")
+			}
 		}
 	}
 
@@ -213,6 +204,26 @@ func RunInit(
 		}
 	}
 
+	// Perform deferred git init or update unborn branch
+	if needsGitInit {
+		if err := ops.Init(ctx, absStartDir, branch); err != nil {
+			return err
+		}
+		if logger != nil {
+			logger.Infof("Initialized empty Git repository in '%s' (branch: '%s')", absStartDir, branch)
+		}
+		recheckRoot, _, recheckErr := checks.InsideWorkTree(ctx, insp, absStartDir)
+		if recheckErr != nil {
+			return recheckErr
+		}
+		repoRoot = recheckRoot
+	} else if insp != nil && ops != nil {
+		hasCommits, _ := insp.HasCommits(ctx, repoRoot)
+		if !hasCommits {
+			_ = ops.SetHeadBranch(ctx, repoRoot, branch)
+		}
+	}
+
 	repoName := config.DetectRepoName(repoRoot)
 	expandedPath := strings.ReplaceAll(rawPath, "{repo}", repoName)
 	expandedPath = strings.ReplaceAll(expandedPath, "{project}", repoName)
@@ -241,9 +252,33 @@ func RunInit(
 		if checkErr != nil {
 			return checkErr
 		}
-		if access.Created && logger != nil {
-			logger.Infof("Created remote directory '%s' on %s", projectCfg.Remote.Path, projectCfg.Remote.Host)
+
+		if !access.Exists {
+			if !opts.Yes {
+				if logger == nil {
+					return errcode.NewError(errcode.ErrRemoteNotFound, "Remote directory '%s' does not exist on host '%s'", projectCfg.Remote.Path, projectCfg.Remote.Host)
+				}
+				createConfirmed, promptErr := logger.Confirm(fmt.Sprintf("Remote directory '%s' does not exist on host '%s'. Create it? [Y/n]", projectCfg.Remote.Path, projectCfg.Remote.Host))
+				if promptErr != nil {
+					return promptErr
+				}
+				if !createConfirmed {
+					return errcode.NewError(errcode.ErrRemoteNotFound, "Remote directory '%s' does not exist on host '%s'", projectCfg.Remote.Path, projectCfg.Remote.Host)
+				}
+			}
+			if mkErr := storageMgr.CreateDirectory(ctx, projectCfg.Remote.Host, projectCfg.Remote.Path); mkErr != nil {
+				return mkErr
+			}
+			if logger != nil {
+				logger.Infof("Created remote directory '%s' on host '%s'", projectCfg.Remote.Path, projectCfg.Remote.Host)
+			}
+			recheck, recheckErr := storageMgr.CheckAccess(ctx, projectCfg.Remote.Host, projectCfg.Remote.Path)
+			if recheckErr != nil {
+				return recheckErr
+			}
+			access = recheck
 		}
+
 		if logger != nil {
 			if access.Writable {
 				logger.Info("Remote storage verified (read-write access: Producer & Consumer ready)")
@@ -267,10 +302,10 @@ func RunInit(
 	configContent := config.FormatRepoConfig(configToWrite)
 	configPath := filepath.Join(repoRoot, ".git-drev.yaml")
 	if err := os.WriteFile(configPath, []byte(configContent), 0o644); err != nil {
-		return errcode.WrapError(errcode.ErrRuntime, err, "Failed to write %s", configPath)
+		return errcode.WrapError(errcode.ErrRuntime, err, "Failed to write '%s'", configPath)
 	}
 	if logger != nil {
-		logger.Infof("Wrote configuration to %s", configPath)
+		logger.Info("Wrote configuration to '.git-drev.yaml'")
 	}
 
 	// 6. Update .gitignore
@@ -278,17 +313,23 @@ func RunInit(
 		return err
 	}
 	if logger != nil {
-		logger.Infof("Configured .gitignore to ignore /%s", projectCfg.WorkDir)
+		logger.Infof("Configured '.gitignore' to ignore '/%s/'", strings.Trim(filepath.ToSlash(projectCfg.WorkDir), "/"))
 	}
 
-	// 7. Initial commit
+	// 7. Create local workdir directory
+	localWorkDirAbs := filepath.Join(repoRoot, projectCfg.WorkDir)
+	if err := os.MkdirAll(localWorkDirAbs, 0o755); err == nil && logger != nil {
+		logger.Infof("Created directory '%s'", projectCfg.WorkDir)
+	}
+
+	// 8. Initial commit
 	shouldCommit := false
 	if opts.NoCommit {
 		shouldCommit = false
 	} else if opts.Commit || opts.Yes {
 		shouldCommit = true
 	} else if logger != nil {
-		confirmed, promptErr := logger.Confirm("Create commit for .git-drev.yaml and .gitignore? [Y/n]")
+		confirmed, promptErr := logger.Confirm("Create commit for '.git-drev.yaml' and '.gitignore'? [Y/n]")
 		if promptErr == nil && confirmed {
 			shouldCommit = true
 		}
@@ -318,9 +359,15 @@ func RunInit(
 		}
 	}
 
+	// 9. Hint for Git remote if not configured
+	if insp != nil {
+		if _, remoteErr := insp.Runner().Run(ctx, repoRoot, "remote", "get-url", "origin"); remoteErr != nil && logger != nil {
+			logger.Hint("Add a Git remote when ready: git remote add origin <url>")
+		}
+	}
+
 	if logger != nil {
 		logger.Info("git-drev repository initialization complete")
-		logger.Info(timer.String())
 	}
 
 	return nil

@@ -16,9 +16,9 @@ import (
 
 // AccessResult represents the probed permissions and state of the remote base path.
 type AccessResult struct {
+	Exists   bool
 	Readable bool
 	Writable bool
-	Created  bool
 }
 
 // Manager defines the interface for remote storage operations.
@@ -30,6 +30,7 @@ type Manager interface {
 	Download(ctx context.Context, req TransferRequest) error
 	Upload(ctx context.Context, req TransferRequest) error
 	CheckAccess(ctx context.Context, host, basePath string) (AccessResult, error)
+	CreateDirectory(ctx context.Context, host, basePath string) error
 }
 
 // Client implements Manager using transport.SSHRunner and transport.RsyncRunner.
@@ -131,9 +132,8 @@ func (c *Client) RemoveRevision(ctx context.Context, host, basePath, uuid string
 	return errcode.NewError(errcode.ErrTransport, "SSH remove failed on host %q: %s", host, command.StderrOrError(err))
 }
 
-// CheckAccess probes the remote base path over SSH: verifies connectivity, ensures the
-// directory exists (attempting creation if needed), checks read/executable access, and
-// detects whether the directory is writable.
+// CheckAccess probes the remote base path over SSH: checks whether the directory exists,
+// whether it is readable/executable, and whether it is writable.
 func (c *Client) CheckAccess(ctx context.Context, host, basePath string) (AccessResult, error) {
 	if err := ctx.Err(); err != nil {
 		return AccessResult{}, errcode.WrapError(errcode.ErrInterrupted, err, "Operation interrupted")
@@ -142,11 +142,12 @@ func (c *Client) CheckAccess(ctx context.Context, host, basePath string) (Access
 	cleanBase := strings.TrimRight(strings.ReplaceAll(basePath, "\\", "/"), "/")
 	qBase := transport.POSIXEscape(cleanBase)
 	probeScript := fmt.Sprintf(
-		"if [ ! -d %s ]; then mkdir -p -- %s 2>/dev/null && echo 'CREATED:1'; fi; "+
-			"if [ ! -d %s ]; then echo 'ERROR:NOT_DIR' >&2; exit 42; fi; "+
+		"if [ -d %s ]; then "+
+			"echo 'EXISTS:1'; "+
 			"if [ ! -r %s ] || [ ! -x %s ]; then echo 'ERROR:NOT_READABLE' >&2; exit 43; fi; "+
-			"if [ -w %s ]; then echo 'ACCESS:rw'; else echo 'ACCESS:ro'; fi",
-		qBase, qBase, qBase, qBase, qBase, qBase,
+			"if [ -w %s ]; then echo 'ACCESS:rw'; else echo 'ACCESS:ro'; fi; "+
+			"else echo 'EXISTS:0'; fi",
+		qBase, qBase, qBase, qBase,
 	)
 
 	out, err := c.ssh.Run(ctx, host, probeScript)
@@ -154,26 +155,41 @@ func (c *Client) CheckAccess(ctx context.Context, host, basePath string) (Access
 		if ctx.Err() != nil {
 			return AccessResult{}, errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "Operation interrupted")
 		}
-		if code, ok := command.ExitCodeOf(err); ok {
-			switch code {
-			case 42:
-				return AccessResult{}, errcode.NewError(errcode.ErrTransport, "Remote directory %q does not exist and could not be created on host %q", basePath, host).
-					WithHint("Ensure the remote path exists and is accessible via SSH.")
-			case 43:
-				return AccessResult{}, errcode.NewError(errcode.ErrTransport, "Remote directory %q on host %q is not readable or accessible", basePath, host).
-					WithHint("Verify directory permissions (read and execute) for the SSH user.")
-			}
+		if code, ok := command.ExitCodeOf(err); ok && code == 43 {
+			return AccessResult{}, errcode.NewError(errcode.ErrTransport, "Remote directory '%s' on host '%s' is not readable or accessible", basePath, host).
+				WithHint("Verify directory permissions (read and execute) for the SSH user.")
 		}
-		return AccessResult{}, errcode.NewError(errcode.ErrTransport, "SSH check failed on host %q: %s", host, command.StderrOrError(err)).
-			WithHint("Verify SSH connectivity and authentication for %s.", host)
+		return AccessResult{}, errcode.NewError(errcode.ErrTransport, "SSH check failed on host '%s': %s", host, command.StderrOrError(err)).
+			WithHint("Verify SSH connectivity and authentication for '%s'.", host)
 	}
 
+	exists := strings.Contains(out, "EXISTS:1")
 	res := AccessResult{
-		Readable: true,
-		Writable: strings.Contains(out, "ACCESS:rw"),
-		Created:  strings.Contains(out, "CREATED:1"),
+		Exists:   exists,
+		Readable: exists,
+		Writable: exists && strings.Contains(out, "ACCESS:rw"),
 	}
 	return res, nil
+}
+
+// CreateDirectory creates the remote base path and its parents over SSH using `mkdir -p -- <basePath>`.
+func (c *Client) CreateDirectory(ctx context.Context, host, basePath string) error {
+	if err := ctx.Err(); err != nil {
+		return errcode.WrapError(errcode.ErrInterrupted, err, "Operation interrupted")
+	}
+
+	cleanBase := strings.TrimRight(strings.ReplaceAll(basePath, "\\", "/"), "/")
+	qBase := transport.POSIXEscape(cleanBase)
+	cmdStr := fmt.Sprintf("mkdir -p -- %s", qBase)
+	_, err := c.ssh.Run(ctx, host, cmdStr)
+	if err != nil {
+		if ctx.Err() != nil {
+			return errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "Operation interrupted")
+		}
+		return errcode.NewError(errcode.ErrTransport, "Failed to create remote directory '%s' on host '%s': %s", basePath, host, command.StderrOrError(err)).
+			WithHint("Verify parent directory write permissions for the SSH user.")
+	}
+	return nil
 }
 
 // TransferRequest configures file synchronization between local and remote storage.

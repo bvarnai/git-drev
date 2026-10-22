@@ -291,18 +291,15 @@ func (r *LocalRemoteRunner) CheckAccess(ctx context.Context, host, basePath stri
 	}
 
 	p := r.resolveBasePath(basePath)
-	created := false
 	fi, err := os.Stat(p)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			if mkErr := os.MkdirAll(p, 0o755); mkErr == nil {
-				created = true
-				fi, err = os.Stat(p)
-			}
+			return storage.AccessResult{Exists: false}, nil
 		}
+		return storage.AccessResult{}, err
 	}
-	if err != nil || !fi.IsDir() {
-		return storage.AccessResult{}, errcode.NewError(errcode.ErrTransport, "Remote directory %q does not exist and could not be created", basePath)
+	if !fi.IsDir() {
+		return storage.AccessResult{}, errcode.NewError(errcode.ErrTransport, "Remote path '%s' is not a directory", basePath)
 	}
 
 	// Test write access by writing a temporary probe file
@@ -315,8 +312,17 @@ func (r *LocalRemoteRunner) CheckAccess(ctx context.Context, host, basePath stri
 	}
 
 	return storage.AccessResult{
+		Exists:   true,
 		Readable: true,
 		Writable: writable,
-		Created:  created,
 	}, nil
+}
+
+// CreateDirectory creates the directory corresponding to basePath on local disk.
+func (r *LocalRemoteRunner) CreateDirectory(ctx context.Context, host, basePath string) error {
+	if err := ctx.Err(); err != nil {
+		return errcode.WrapError(errcode.ErrInterrupted, err, "Operation interrupted")
+	}
+	p := r.resolveBasePath(basePath)
+	return os.MkdirAll(p, 0o755)
 }

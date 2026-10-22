@@ -27,13 +27,12 @@
 1. **Argument & Context Verification:**
    - Verify no positional arguments were supplied (returns `ErrUsage` if extraneous arguments are passed).
    - Verify mutually exclusive flags (e.g. `--commit` and `--no-commit` together return `ErrUsage`).
-   - Start wall-clock timer.
 2. **Repository Bootstrap & Defensive Guard:**
    - Check if current directory is inside a Git working tree (`checks.InsideWorkTree`).
    - If not a Git repository:
      - Prompt user: `Current directory is not a Git repository. Initialize a new dedicated git-drev metadata repository with 'git init'? [Y/n]`.
-     - In non-interactive mode (`-y`), automatically run `git init -b <branch>`.
-     - Re-resolve repository root.
+     - In non-interactive mode (`-y`), record requirement to initialize Git.
+     - Note: actual `git init -b <branch>` execution is deferred until after the default branch name is chosen in step 4.
    - If inside an existing Git repository:
      - Check if the repository already contains commits (`git rev-parse --verify --quiet HEAD`) or tracked files (`git ls-files`).
      - If non-empty: emit warning that `git-drev` manages a dedicated metadata repository (not an add-on to source code repositories).
@@ -49,22 +48,25 @@
    - Collect `path`: use flag `--path`, prompt interactively with `/srv/drev/{repo}` or global default.
    - Collect `workdir`: use flag `--workdir`, prompt interactively with `data` or global default.
    - Collect `branch`: use flag `--branch`, prompt interactively with `main` or global default.
+   - If deferred `git init` is pending, run `git init -b <branch>` now so the repository HEAD matches the selected branch name. If already an unborn repo, set symbolic-ref HEAD to refs/heads/<branch>.
    - Detect repository name (`DetectRepoName`) and validate configuration schema (`NormalizeAndValidate`).
 5. **Remote Access Verification:**
    - Unless `--skip-check` is passed, probe remote SSH connectivity and permissions (`storage.Manager.CheckAccess`):
-     - Automatically creates remote path (`mkdir -p`) if missing and parent directory is writable.
-     - Verifies directory is readable and searchable (`-d`, `-r`, `-x`).
-     - Detects whether directory is writable (`-w`).
+     - Checks if remote directory exists and whether it is readable/writable (`-d`, `-r`, `-w`, `-x`).
+     - If missing: in interactive mode, prompts `Remote directory '<path>' does not exist on host '<host>'. Create it? [Y/n]`. If accepted (or in `-y` mode), runs `mkdir -p` on remote host.
      - If writable, logs `Remote storage verified (read-write access: Producer & Consumer ready)`.
      - If read-only, logs `Warning: Remote storage path is read-only (Consumer mode: 'get' is available, 'put' requires write access)`.
-6. **File Generation:**
-   - Write `.git-drev.yaml` with clean, documented YAML formatting (preserving `{repo}` template variable in the file if typed by the user).
+6. **File Generation & Local Directory Preparation:**
+   - Write `.git-drev.yaml` with clean, documented YAML formatting (including commented `# rsync:` examples and preserving `{repo}` template variable in the file if typed by the user).
    - Idempotently update `.gitignore` to ignore `/<workdir>/`.
+   - Ensure local working directory (`<workdir>/`) exists on disk (`mkdir -p`).
 7. **Initial Commit:**
    - Unless `--no-commit` is specified, prompt to commit or auto-commit when `--commit` or `-y` is passed.
    - Stages `.git-drev.yaml` and `.gitignore` and creates commit: `chore: initialize git-drev configuration` (skips if working tree clean).
 8. **Completion:**
-   - Log elapsed time summary (`[git-drev] Took X min Y sec`) to `stderr` and exit with Exit Code `0`.
+   - Log `git-drev repository initialization complete` to `stderr`.
+   - If no remote `origin` is configured in Git, log helpful hint: `Hint: To connect this metadata repository to a remote Git host, run 'git remote add origin <url>' and 'git push -u origin <branch>'`.
+   - Exit with Exit Code `0`.
 
 ## 4. Error Handling & Exit Codes
 | Exit Code | Error Category | Scenario | Emitted Stderr Pattern |

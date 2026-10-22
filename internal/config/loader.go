@@ -238,6 +238,10 @@ func FormatRepoConfig(cfg *domain.ProjectConfig) string {
 		if cfg.Remote.Rsync.Put != "" {
 			sb.WriteString(fmt.Sprintf("    put: %q\n", cfg.Remote.Rsync.Put))
 		}
+	} else {
+		sb.WriteString("  # rsync:\n")
+		sb.WriteString("  #   get: -c   # Recommended for clean builds: preserves server-side hardlinks\n")
+		sb.WriteString("  #   put: -c   # by checksumming files even when build tools update timestamps\n")
 	}
 	sb.WriteString("\n")
 

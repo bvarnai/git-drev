@@ -344,4 +344,74 @@ func TestInitCommand_UnitTable(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "node_modules\n/data/\n*.log\n", string(content))
 	})
+
+	t.Run("remote directory missing prompt declined aborts", func(t *testing.T) {
+		t.Parallel()
+		tempDir := t.TempDir()
+		var stdout, stderr bytes.Buffer
+		runner := &mockGitRunner{
+			responses: map[string]mockGitResponse{
+				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {
+					out: "true\n" + tempDir + "\n\n",
+				},
+				"rev-parse --verify --quiet HEAD": {err: errors.New("no head")},
+				"ls-files":                        {out: ""},
+			},
+		}
+		mockStorage := &storage.MockManager{
+			CheckAccessFn: func(ctx context.Context, host, basePath string) (storage.AccessResult, error) {
+				return storage.AccessResult{Exists: false, Readable: true, Writable: true}, nil
+			},
+		}
+
+		app := cli.NewApp(&stdout, &stderr, runner)
+		app.Storage = mockStorage
+		app.WorkingDir = tempDir
+		app.Logger.SetStdin(strings.NewReader("n\n"))
+		app.RootCmd.SetArgs([]string{"init", "--host", "example.com", "--path", "/srv/drev/repo", "--workdir", "data", "--branch", "main", "--no-commit"})
+
+		err := app.Execute(context.Background())
+		require.Error(t, err)
+		assert.Equal(t, errcode.ExitRemoteNotFound, errcode.ExitCode(err))
+	})
+
+	t.Run("remote directory missing prompt accepted calls CreateDirectory", func(t *testing.T) {
+		t.Parallel()
+		tempDir := t.TempDir()
+		var stdout, stderr bytes.Buffer
+		runner := &mockGitRunner{
+			responses: map[string]mockGitResponse{
+				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {
+					out: "true\n" + tempDir + "\n\n",
+				},
+				"rev-parse --verify --quiet HEAD": {err: errors.New("no head")},
+				"ls-files":                        {out: ""},
+			},
+		}
+		created := false
+		mockStorage := &storage.MockManager{
+			CheckAccessFn: func(ctx context.Context, host, basePath string) (storage.AccessResult, error) {
+				return storage.AccessResult{Exists: false, Readable: true, Writable: true}, nil
+			},
+			CreateDirectoryFn: func(ctx context.Context, host, basePath string) error {
+				created = true
+				return nil
+			},
+		}
+
+		app := cli.NewApp(&stdout, &stderr, runner)
+		app.Storage = mockStorage
+		app.WorkingDir = tempDir
+		app.Logger.SetStdin(strings.NewReader("y\n"))
+		app.RootCmd.SetArgs([]string{"init", "--host", "example.com", "--path", "/srv/drev/repo", "--workdir", "data", "--branch", "main", "--no-commit"})
+
+		err := app.Execute(context.Background())
+		require.NoError(t, err)
+		assert.True(t, created, "CreateDirectory should have been called")
+
+		// Verify local workdir directory was created
+		fi, err := os.Stat(filepath.Join(tempDir, "data"))
+		require.NoError(t, err)
+		assert.True(t, fi.IsDir())
+	})
 }

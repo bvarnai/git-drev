@@ -227,6 +227,16 @@ func (o *Operations) Init(ctx context.Context, dir, initialBranch string) error 
 	return nil
 }
 
+// SetHeadBranch sets symbolic-ref HEAD to refs/heads/<branch>.
+func (o *Operations) SetHeadBranch(ctx context.Context, dir, branch string) error {
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return nil
+	}
+	_, err := o.runner.Run(ctx, dir, "symbolic-ref", "HEAD", "refs/heads/"+branch)
+	return err
+}
+
 // StageFiles executes `git add -- <paths...>` in dir.
 func (o *Operations) StageFiles(ctx context.Context, dir string, paths ...string) error {
 	if len(paths) == 0 {
