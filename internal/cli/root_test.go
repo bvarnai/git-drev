@@ -53,5 +53,5 @@ func TestCliRunVerboseQuietConflict(t *testing.T) {
 
 	code := cli.Run(ctx, []string{"name", "-v", "-q"}, &stdout, &stderr)
 	assert.Equal(t, errcode.ExitUsage, code)
-	assert.Contains(t, stderr.String(), "flags --verbose and --quiet cannot be used together")
+	assert.Contains(t, stderr.String(), "Flags --verbose and --quiet cannot be used together")
 }

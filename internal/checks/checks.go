@@ -25,7 +25,7 @@ func InsideWorkTree(ctx context.Context, insp *git.Inspector, dir string) (root,
 // AttachedBranch ensures the repository is on a named branch and not in a detached HEAD state.
 func AttachedBranch(ctx context.Context, insp *git.Inspector, repoRoot string) (string, error) {
 	if insp == nil {
-		return "", errcode.NewError(errcode.ErrGitState, "git inspector not initialized")
+		return "", errcode.NewError(errcode.ErrGitState, "Git inspector not initialized")
 	}
 	branch, detached, err := insp.CurrentBranch(ctx, repoRoot)
 	if err != nil {
@@ -50,13 +50,13 @@ func NoIndexLock(repoRoot string) error {
 // RemoteConfigured verifies that remote host and remote path are set in the configuration.
 func RemoteConfigured(cfg *domain.ProjectConfig) error {
 	if cfg == nil {
-		return errcode.NewError(errcode.ErrConfig, "configuration is nil")
+		return errcode.NewError(errcode.ErrConfig, "Configuration is nil")
 	}
 	if cfg.Remote.Host == "" {
-		return errcode.NewError(errcode.ErrConfig, "remote host is not configured")
+		return errcode.NewError(errcode.ErrConfig, "Remote host is not configured")
 	}
 	if cfg.Remote.Path == "" {
-		return errcode.NewError(errcode.ErrConfig, "remote path is not configured")
+		return errcode.NewError(errcode.ErrConfig, "Remote path is not configured")
 	}
 	return nil
 }

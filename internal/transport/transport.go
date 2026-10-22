@@ -108,7 +108,7 @@ func TokenizeOptions(input string) ([]string, error) {
 	}
 
 	if inSingle || inDouble || escaped {
-		return nil, errcode.NewError(errcode.ErrUsage, "unclosed quote or trailing escape in options: %s", input)
+		return nil, errcode.NewError(errcode.ErrUsage, "Unclosed quote or trailing escape in options: %s", input)
 	}
 
 	if inToken {

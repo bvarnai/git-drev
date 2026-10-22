@@ -77,7 +77,7 @@ on remote SSH/rsync storage hosts, binding them to Git commit metadata and branc
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if app.Opts.Verbose && app.Opts.Quiet {
-				return errcode.NewError(errcode.ErrUsage, "flags --verbose and --quiet cannot be used together")
+				return errcode.NewError(errcode.ErrUsage, "Flags --verbose and --quiet cannot be used together")
 			}
 			app.Logger = term.New(term.Options{
 				Stdout:      stdout,

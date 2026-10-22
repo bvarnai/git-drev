@@ -73,10 +73,10 @@ func RunUsage(
 	}
 
 	if cfg.Remote.Host == "" {
-		return UsageResult{}, errcode.NewError(errcode.ErrConfig, "remote host is not configured")
+		return UsageResult{}, errcode.NewError(errcode.ErrConfig, "Remote host is not configured")
 	}
 	if cfg.Remote.Path == "" {
-		return UsageResult{}, errcode.NewError(errcode.ErrConfig, "remote path is not configured")
+		return UsageResult{}, errcode.NewError(errcode.ErrConfig, "Remote path is not configured")
 	}
 
 	if err := ops.EnsureRemoteFetchConfig(ctx, repoRoot); err != nil {

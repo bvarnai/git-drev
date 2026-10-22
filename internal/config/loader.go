@@ -69,12 +69,12 @@ func FindRepoConfigFile(workDir string) string {
 func loadConfigFile(filePath string) (*domain.ProjectConfig, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, errcode.WrapError(errcode.ErrConfig, err, "failed to read configuration file: %s", filePath)
+		return nil, errcode.WrapError(errcode.ErrConfig, err, "Failed to read configuration file: %s", filePath)
 	}
 
 	cfg := &domain.ProjectConfig{}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return nil, errcode.WrapError(errcode.ErrConfig, err, "failed to parse configuration file: %s", filePath)
+		return nil, errcode.WrapError(errcode.ErrConfig, err, "Failed to parse configuration file: %s", filePath)
 	}
 	return cfg, nil
 }
@@ -102,7 +102,7 @@ func Inspect(workDir string) (*ConfigReport, error) {
 	// Tier 2: Shared Global (GIT_DREV_CONFIG)
 	if envPath := os.Getenv("GIT_DREV_CONFIG"); envPath != "" {
 		if _, err := os.Stat(envPath); err != nil {
-			return nil, errcode.NewError(errcode.ErrConfig, "configuration file specified by GIT_DREV_CONFIG not found: %s", envPath)
+			return nil, errcode.NewError(errcode.ErrConfig, "Configuration file specified by GIT_DREV_CONFIG not found: %s", envPath)
 		}
 		report.SharedConfigPath = envPath
 		envCfg, err := loadConfigFile(envPath)
@@ -196,7 +196,7 @@ func Load(workDir string) (*domain.ProjectConfig, error) {
 // and validates all fields per docs/spec/global.md Section 5.
 func NormalizeAndValidate(cfg *domain.ProjectConfig) error {
 	if cfg == nil {
-		return errcode.NewError(errcode.ErrConfig, "configuration is nil")
+		return errcode.NewError(errcode.ErrConfig, "Configuration is nil")
 	}
 
 	// 1. Default and validate workdir.
@@ -212,26 +212,26 @@ func NormalizeAndValidate(cfg *domain.ProjectConfig) error {
 		cfg.Branch.Default = DefaultBranchName
 	}
 	if strings.HasPrefix(cfg.Branch.Default, "-") {
-		return errcode.NewError(errcode.ErrConfig, "invalid branch.default %q: must not start with '-'", cfg.Branch.Default)
+		return errcode.NewError(errcode.ErrConfig, "Invalid branch.default %q: must not start with '-'", cfg.Branch.Default)
 	}
 
 	// 3. Validate remote.host.
 	host := strings.TrimSpace(cfg.Remote.Host)
 	if host == "" {
-		return errcode.NewError(errcode.ErrConfig, "missing required configuration key 'remote.host'")
+		return errcode.NewError(errcode.ErrConfig, "Missing required configuration key 'remote.host'")
 	}
 	if strings.HasPrefix(host, "-") {
-		return errcode.NewError(errcode.ErrConfig, "invalid remote.host %q: must not start with '-'", host)
+		return errcode.NewError(errcode.ErrConfig, "Invalid remote.host %q: must not start with '-'", host)
 	}
 	if strings.ContainsAny(host, " \t\r\n\x00") {
-		return errcode.NewError(errcode.ErrConfig, "invalid remote.host %q: must not contain whitespace or control characters", host)
+		return errcode.NewError(errcode.ErrConfig, "Invalid remote.host %q: must not contain whitespace or control characters", host)
 	}
 	cfg.Remote.Host = host
 
 	// 4. Normalize and validate remote.path.
 	rawPath := strings.TrimSpace(cfg.Remote.Path)
 	if rawPath == "" {
-		return errcode.NewError(errcode.ErrConfig, "missing required configuration key 'remote.path'")
+		return errcode.NewError(errcode.ErrConfig, "Missing required configuration key 'remote.path'")
 	}
 
 	// Expand {repo} and {project} template placeholders if still unexpanded.
@@ -242,20 +242,20 @@ func NormalizeAndValidate(cfg *domain.ProjectConfig) error {
 	}
 
 	if !strings.HasPrefix(rawPath, "/") {
-		return errcode.NewError(errcode.ErrConfig, "invalid remote.path %q: must be an absolute POSIX path starting with '/'", rawPath)
+		return errcode.NewError(errcode.ErrConfig, "Invalid remote.path %q: must be an absolute POSIX path starting with '/'", rawPath)
 	}
 	if strings.ContainsAny(rawPath, "`$;&|\n\r\x00") {
-		return errcode.NewError(errcode.ErrConfig, "invalid remote.path %q: contains forbidden shell metacharacters", rawPath)
+		return errcode.NewError(errcode.ErrConfig, "Invalid remote.path %q: contains forbidden shell metacharacters", rawPath)
 	}
 
 	// Strip trailing slashes and clean POSIX path.
 	cleanedPath := strings.TrimRight(rawPath, "/")
 	if cleanedPath == "" {
-		return errcode.NewError(errcode.ErrConfig, "invalid remote.path \"/\": root directory is not allowed")
+		return errcode.NewError(errcode.ErrConfig, "Invalid remote.path \"/\": root directory is not allowed")
 	}
 	cleanedPath = path.Clean(cleanedPath)
 	if cleanedPath == "/" || cleanedPath == "." {
-		return errcode.NewError(errcode.ErrConfig, "invalid remote.path %q: root directory is not allowed", rawPath)
+		return errcode.NewError(errcode.ErrConfig, "Invalid remote.path %q: root directory is not allowed", rawPath)
 	}
 	cfg.Remote.Path = cleanedPath
 
@@ -268,18 +268,18 @@ func NormalizeAndValidate(cfg *domain.ProjectConfig) error {
 
 func validateWorkDir(workDir string) error {
 	if strings.ContainsRune(workDir, '\x00') {
-		return errcode.NewError(errcode.ErrConfig, "invalid workdir: contains NUL byte")
+		return errcode.NewError(errcode.ErrConfig, "Invalid workdir: contains NUL byte")
 	}
 	if filepath.IsAbs(workDir) || strings.HasPrefix(workDir, "/") || strings.HasPrefix(workDir, `\`) {
-		return errcode.NewError(errcode.ErrConfig, "invalid workdir %q: must be a relative path within the repository root", workDir)
+		return errcode.NewError(errcode.ErrConfig, "Invalid workdir %q: must be a relative path within the repository root", workDir)
 	}
 	normalized := filepath.Clean(filepath.FromSlash(workDir))
 	if normalized == "." || normalized == ".." ||
 		strings.HasPrefix(normalized, ".."+string(filepath.Separator)) {
-		return errcode.NewError(errcode.ErrConfig, "invalid workdir %q: must not escape repository root or equal '.'", workDir)
+		return errcode.NewError(errcode.ErrConfig, "Invalid workdir %q: must not escape repository root or equal '.'", workDir)
 	}
 	if normalized == ".git" || strings.HasPrefix(normalized, ".git"+string(filepath.Separator)) {
-		return errcode.NewError(errcode.ErrConfig, "invalid workdir %q: must not point inside .git directory", workDir)
+		return errcode.NewError(errcode.ErrConfig, "Invalid workdir %q: must not point inside .git directory", workDir)
 	}
 	return nil
 }

@@ -118,7 +118,7 @@ func ResolveTimeout(envLookup func(string) (string, bool)) (time.Duration, error
 	}
 	d, err := time.ParseDuration(strings.TrimSpace(val))
 	if err != nil || d <= 0 {
-		return 0, errcode.NewError(errcode.ErrUsage, "invalid %s %q: must be a positive duration", EnvTimeout, val)
+		return 0, errcode.NewError(errcode.ErrUsage, "Invalid %s %q: must be a positive duration", EnvTimeout, val)
 	}
 	return d, nil
 }
@@ -126,7 +126,7 @@ func ResolveTimeout(envLookup func(string) (string, bool)) (time.Duration, error
 // Run executes the project hook requested in req, enforcing timeouts and environment isolation.
 func (r *ExecRunner) Run(ctx context.Context, req RunRequest) error {
 	if err := ctx.Err(); err != nil {
-		return errcode.WrapError(errcode.ErrInterrupted, err, "operation interrupted")
+		return errcode.WrapError(errcode.ErrInterrupted, err, "Operation interrupted")
 	}
 
 	hookBase := filepath.Base(req.Path)
@@ -140,7 +140,7 @@ func (r *ExecRunner) Run(ctx context.Context, req RunRequest) error {
 			}
 			return fs.ErrNotExist
 		}
-		return errcode.WrapError(errcode.ErrRuntime, err, "failed to stat %s hook %q", req.Kind, hookBase)
+		return errcode.WrapError(errcode.ErrRuntime, err, "Failed to stat %s hook %q", req.Kind, hookBase)
 	}
 
 	if fi.IsDir() {
@@ -197,7 +197,7 @@ func (r *ExecRunner) Run(ctx context.Context, req RunRequest) error {
 	}
 
 	if ctx.Err() != nil {
-		return errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "operation interrupted")
+		return errcode.WrapError(errcode.ErrInterrupted, ctx.Err(), "Operation interrupted")
 	}
 
 	var exitErr *exec.ExitError

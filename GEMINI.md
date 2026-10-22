@@ -36,6 +36,7 @@ In accordance with the [Google Go Style Guide](https://google.github.io/stylegui
 - **Error Handling:**
   - Never call `log.Fatal()`, `panic()`, or `os.Exit()` inside `internal/`. Return explicit `error` values up to `main.go`.
   - Construct categorized errors with `errcode.NewError(category, ...)` / `errcode.WrapError(category, err, ...)` and optional `.WithHint(...)` for deterministic exit code mapping at the CLI boundary.
+  - Capitalize user-facing `errcode.NewError` and `errcode.WrapError` messages (rendered after `[git-drev] Error: `); use lowercase for internal `fmt.Errorf` / `errors.New` errors (rendered as wrapped suffixes after `: `).
 - **Libraries & Dependencies:**
   - Use the Go standard library (`encoding/json`, `crypto/rand`, `time`, `os`, `path/filepath`, `regexp`, `strings`, `context`)—never shell out to legacy utilities (`jq`, `uuidgen`, `sed`, `awk`, `grep`, `du`, `stat`, `rm`).
   - Allowed third-party dependencies: `github.com/spf13/cobra`, `github.com/stretchr/testify`, `gopkg.in/yaml.v3`. Do NOT import heavyweight Git libraries (`go-git`).
