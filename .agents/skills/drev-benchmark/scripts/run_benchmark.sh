@@ -506,7 +506,12 @@ def main() -> None:
         cfg_path = os.path.join(producer_dir, ".git-drev.yaml")
         with open(cfg_path, "r", encoding="utf-8") as f:
             cfg_text = f.read()
-        cfg_text = cfg_text.replace("  # rsync:\n  #   get: -c\n  #   put: -c", "  rsync:\n    get: -c\n    put: -c")
+        cfg_text = re.sub(
+            r"#\s*rsync:\s*\n\s*#\s*get:\s*-c[^\n]*\n\s*#\s*put:\s*-c[^\n]*",
+            "rsync:\n    get: -c\n    put: -c",
+            cfg_text,
+        )
+        assert "rsync:\n    get: -c\n    put: -c" in cfg_text, "Failed to enable rsync -c in .git-drev.yaml"
         with open(cfg_path, "w", encoding="utf-8") as f:
             f.write(cfg_text)
 
