@@ -245,7 +245,7 @@ func RunPut(
 
 	// 9. Stage revision metadata
 	if logger != nil {
-		logger.Info("Staging revision metadata")
+		logger.Debug("Staging revision metadata")
 	}
 	if err := ops.StageMetadata(ctx, repoRoot, cfg.WorkDir); err != nil {
 		return nil, err
@@ -282,7 +282,7 @@ func RunPut(
 
 	// 11. Optimistic concurrency push loop
 	if logger != nil {
-		logger.Infof("Pushing revision metadata to 'origin/%s'", branch)
+		logger.Debugf("Pushing revision metadata to 'origin/%s'", branch)
 	}
 
 	for attempt := 1; attempt <= MaxPushRetries; attempt++ {
@@ -291,6 +291,7 @@ func RunPut(
 			// Succeeded! Disarm cleanup
 			stagedRemote = false
 			if logger != nil {
+				logger.Infof("Pushed revision metadata to 'origin/%s'", branch)
 				logger.Info(timer.String())
 			}
 			return &PutResult{

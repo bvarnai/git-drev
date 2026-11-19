@@ -40,6 +40,7 @@ remote:
 		expectedCode  int
 		errSubstr     string
 		checkExecuted func(t *testing.T, executed []string)
+		checkStderr   func(t *testing.T, stderr string)
 	}{
 		{
 			name:         "excess arguments returns usage error",
@@ -69,6 +70,10 @@ remote:
 			checkExecuted: func(t *testing.T, executed []string) {
 				assert.Contains(t, executed, "-c advice.detachedHead=false checkout trunk")
 			},
+			checkStderr: func(t *testing.T, stderr string) {
+				assert.NotContains(t, stderr, "[git-drev] Selecting 'trunk' branch by default")
+				assert.Contains(t, stderr, "[git-drev] Selected 'trunk' (default)\n")
+			},
 		},
 		{
 			name: "branch target checks out branch ref",
@@ -82,6 +87,9 @@ remote:
 			expectedCode: errcode.ExitSuccess,
 			checkExecuted: func(t *testing.T, executed []string) {
 				assert.Contains(t, executed, "-c advice.detachedHead=false checkout feature/my-feat")
+			},
+			checkStderr: func(t *testing.T, stderr string) {
+				assert.Contains(t, stderr, "[git-drev] Selected 'feature/my-feat'\n")
 			},
 		},
 		{
@@ -99,6 +107,11 @@ remote:
 			expectedCode: errcode.ExitSuccess,
 			checkExecuted: func(t *testing.T, executed []string) {
 				assert.Contains(t, executed, "-c advice.detachedHead=false checkout 3333333333333333333333333333333333333333")
+			},
+			checkStderr: func(t *testing.T, stderr string) {
+				assert.NotContains(t, stderr, "[git-drev] Searching for commit with UUID")
+				assert.Contains(t, stderr, "[git-drev] Found commit '3333333333333333333333333333333333333333'\n")
+				assert.Contains(t, stderr, "[git-drev] Selected '"+validUUID+"'\n")
 			},
 		},
 		{
@@ -146,6 +159,9 @@ remote:
 				require.NoError(t, err)
 				if tt.checkExecuted != nil {
 					tt.checkExecuted(t, runner.executed)
+				}
+				if tt.checkStderr != nil {
+					tt.checkStderr(t, stderr.String())
 				}
 			} else {
 				require.Error(t, err)

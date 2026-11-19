@@ -96,7 +96,7 @@ func RunGet(
 		}
 
 		if logger != nil {
-			logger.Infof("Updating branch '%s' to 'origin/%s' before getting revision", branch, branch)
+			logger.Debugf("Updating branch '%s' to 'origin/%s' before getting revision", branch, branch)
 		}
 
 		if err := ops.FetchAll(ctx, repoRoot, opts.Quiet && !opts.Verbose); err != nil {
@@ -114,6 +114,9 @@ func RunGet(
 		upstreamRef := "refs/remotes/origin/" + branch
 		if err := ops.ResetHard(ctx, repoRoot, upstreamRef); err != nil {
 			return nil, err
+		}
+		if logger != nil {
+			logger.Infof("Updated branch '%s' to 'origin/%s'", branch, branch)
 		}
 		updatedBranch = branch
 	}

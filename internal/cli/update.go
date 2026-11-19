@@ -63,7 +63,7 @@ func RunUpdate(
 	}
 
 	if logger != nil {
-		logger.Infof("Updating branch '%s' to 'origin/%s'", branch, branch)
+		logger.Debugf("Updating branch '%s' to 'origin/%s'", branch, branch)
 	}
 
 	if err := ops.FetchAll(ctx, repoRoot, opts.Quiet && !opts.Verbose); err != nil {
@@ -88,6 +88,7 @@ func RunUpdate(
 	}
 
 	if logger != nil {
+		logger.Infof("Updated branch '%s' to 'origin/%s'", branch, branch)
 		logger.Info(timer.String())
 	}
 

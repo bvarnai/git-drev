@@ -77,7 +77,7 @@ func RunCreate(
 
 	// 1. Check if branch exists locally
 	if logger != nil {
-		logger.Info("Checking for existing branch (local)")
+		logger.Debug("Checking for existing branch (local)")
 	}
 	existsLocal, err := insp.LocalBranchExists(ctx, repoRoot, opts.Branch)
 	if err != nil {
@@ -94,17 +94,18 @@ func RunCreate(
 			return nil, err
 		}
 		if logger != nil {
+			logger.Infof("Switched to branch '%s'", opts.Branch)
 			logger.Info(timer.String())
 		}
 		return &CreateResult{Branch: opts.Branch, Action: CreateActionCheckedOutLocal}, nil
 	}
 	if logger != nil {
-		logger.Infof("No branch '%s' found (local)", opts.Branch)
+		logger.Debugf("No branch '%s' found (local)", opts.Branch)
 	}
 
 	// 2. Check if branch exists on origin
 	if logger != nil {
-		logger.Info("Checking for existing branch (remote)")
+		logger.Debug("Checking for existing branch (remote)")
 	}
 	existsRemote, err := insp.RemoteBranchExists(ctx, repoRoot, opts.Branch)
 	if err != nil {
@@ -121,12 +122,13 @@ func RunCreate(
 			return nil, err
 		}
 		if logger != nil {
+			logger.Infof("Switched to branch '%s'", opts.Branch)
 			logger.Info(timer.String())
 		}
 		return &CreateResult{Branch: opts.Branch, Action: CreateActionSwitchedRemote}, nil
 	}
 	if logger != nil {
-		logger.Infof("No branch '%s' found (remote)", opts.Branch)
+		logger.Debugf("No branch '%s' found (remote)", opts.Branch)
 	}
 
 	// 3. Resolve parent revision UUID from current HEAD
@@ -163,25 +165,31 @@ func RunCreate(
 
 	// 4. Create new local branch
 	if logger != nil {
-		logger.Infof("Creating new revision branch '%s'", opts.Branch)
+		logger.Debugf("Creating new revision branch '%s'", opts.Branch)
 	}
 	if err := ops.CheckoutNewBranch(ctx, repoRoot, opts.Branch); err != nil {
 		return nil, err
 	}
 	branchCreatedLocally = true
+	if logger != nil {
+		logger.Infof("Created new revision branch '%s'", opts.Branch)
+	}
 
 	// 5. Commit empty revision marker
 	if logger != nil {
-		logger.Info("Committing empty revision marker")
+		logger.Debug("Committing empty revision marker")
 	}
 	markerJSON := fmt.Sprintf(`{"uuid":%q,"marker":"true"}`, parentUUID)
 	if err := ops.CommitAllowEmpty(ctx, repoRoot, markerJSON); err != nil {
 		return nil, err
 	}
+	if logger != nil {
+		logger.Info("Committed empty revision marker")
+	}
 
 	// 6. Push new branch to origin
 	if logger != nil {
-		logger.Infof("Pushing new revision branch '%s'", opts.Branch)
+		logger.Debugf("Pushing new revision branch '%s'", opts.Branch)
 	}
 	upstream, _ := insp.BranchUpstream(ctx, repoRoot, opts.Branch)
 	hasUpstream := upstream != ""
@@ -193,6 +201,7 @@ func RunCreate(
 	branchCreatedLocally = false
 
 	if logger != nil {
+		logger.Infof("Pushed new revision branch '%s'", opts.Branch)
 		logger.Info(timer.String())
 	}
 

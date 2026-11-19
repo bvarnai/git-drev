@@ -28,29 +28,33 @@
    - If present:
      - Log `[git-drev] Branch '<branch>' found (local)`.
      - Fetch updates (`git fetch --all --prune`) and switch to branch (`git checkout <branch>`).
+     - Log `[git-drev] Switched to branch '<branch>'`.
      - Emit elapsed time and exit cleanly with Exit Code `0`.
 4. **Remote Branch Check (Idempotent Tracking):**
    - Check if `<branch>` exists on `origin` (`git ls-remote --exit-code --heads origin refs/heads/<branch>`).
    - If present:
      - Log `[git-drev] Branch '<branch>' found (remote)`.
      - Fetch remotes (`git fetch --all --prune`) and switch (`git switch <branch>`).
+     - Log `[git-drev] Switched to branch '<branch>'`.
      - Emit elapsed time and exit cleanly with Exit Code `0`.
 5. **Parent UUID Resolution:**
    - Inspect current `HEAD` commit subject (`git log -1 --format=%s HEAD`).
    - If valid JSON containing a 36-char RFC 4122 UUID, set `parentUUID` to that UUID.
    - Otherwise (unborn `HEAD` or non-JSON commit message), set `parentUUID` to `domain.ZeroUUID` (`00000000-0000-0000-0000-000000000000`).
 6. **Branch Creation & Marker Commit:**
-   - Create and check out new local branch: `git checkout -b <branch>`.
+   - Create and check out new local branch: `git checkout -b <branch>` and log `[git-drev] Created new revision branch '<branch>'`.
    - Record previous HEAD ref/hash for rollback safety.
    - Commit empty revision marker:
      ```bash
      git commit --allow-empty -m '{"uuid":"<parentUUID>","marker":"true"}'
      ```
+     and log `[git-drev] Committed empty revision marker`.
 7. **Publish to Remote Origin:**
    - Push branch and configure tracking upstream:
      ```bash
      git push --set-upstream --force-with-lease origin refs/heads/<branch>
      ```
+   - When push succeeds, log `[git-drev] Pushed new revision branch '<branch>'`.
    - If push fails, trigger deferred rollback: checkout original ref and delete unpushed local branch (`git branch -D <branch>`).
 8. **Completion:**
    - Log elapsed time summary (`[git-drev] Took X min Y sec`) to `stderr` and exit with Exit Code `0`.

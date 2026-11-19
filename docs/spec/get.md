@@ -29,8 +29,10 @@
 3. **Optional Branch Synchronization (`--latest`):**
    - If `--latest` is enabled:
      - Verify `HEAD` is attached (`git symbolic-ref --quiet --short HEAD`). If detached, fail with Exit Code `4`.
+     - Log `[git-drev] Debug: Updating branch '<branch>' to 'origin/<branch>' before getting revision` in verbose mode.
      - Fetch all remotes: `git fetch --all --prune`.
      - Hard-reset active branch to upstream: `git reset --hard refs/remotes/origin/<branch> --`.
+     - Log `[git-drev] Updated branch '<branch>' to 'origin/<branch>'`.
 4. **Metadata Extraction:**
    - Read `HEAD` commit subject (`git log -1 --format=%s HEAD`).
    - If commit is a branch marker (`"marker":"true"` or `domain.ZeroUUID`), fail with Exit Code `4` (`No directory revision available yet on current branch`).

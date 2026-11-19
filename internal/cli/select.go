@@ -84,14 +84,14 @@ func RunSelect(
 		resolvedRef = requested
 		kind = SelectTargetDefault
 		if logger != nil {
-			logger.Infof("Selecting '%s' branch by default", requested)
+			logger.Debugf("Selecting '%s' branch by default", requested)
 		}
 	} else if domain.IsValidUUID(opts.Target) {
 		targetUUID, _ := domain.ParseUUID(opts.Target)
 		requested = opts.Target
 		kind = SelectTargetUUID
 		if logger != nil {
-			logger.Infof("Searching for commit with UUID '%s'", opts.Target)
+			logger.Debugf("Searching for commit with UUID '%s'", opts.Target)
 		}
 		commitHash, findErr := insp.FindCommitByUUID(ctx, repoRoot, targetUUID)
 		if findErr != nil {
@@ -127,6 +127,14 @@ func RunSelect(
 			}
 		}
 		return SelectResult{}, err
+	}
+
+	if logger != nil {
+		if kind == SelectTargetDefault {
+			logger.Infof("Selected '%s' (default)", requested)
+		} else {
+			logger.Infof("Selected '%s'", requested)
+		}
 	}
 
 	return SelectResult{
