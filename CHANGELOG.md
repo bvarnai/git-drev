@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-19
+
 ### Added
 - Sort remote revisions in `git-drev usage -a` in reverse-chronological order (newest first) (`#61`, `#66`).
 
@@ -64,7 +66,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sequence-aware optimistic concurrency control loop on `git drev put` using `--force-with-lease`.
 - Project lifecycle hooks (`.git-drev-put-hook`, `.git-drev-info-hook`) with timeout enforcement (`GIT_DREV_HOOK_TIMEOUT`).
 
-[Unreleased]: https://github.com/bvarnai/git-drev/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/bvarnai/git-drev/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/bvarnai/git-drev/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/bvarnai/git-drev/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/bvarnai/git-drev/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/bvarnai/git-drev/releases/tag/v0.0.1
