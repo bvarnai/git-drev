@@ -271,6 +271,17 @@ func TestUsageCommand_ProgressSpinnerFormatsShortUUIDWithEllipsis(t *testing.T) 
 			require.Len(t, opts, 1)
 			require.NotNil(t, opts[0].OnProgress)
 
+			assert.True(t, stderr.WaitFor("Connecting to host 'backup.example.com'", 2*time.Second),
+				"expected initial spinner output without trailing ellipsis, got: %s", stderr.String())
+
+			opts[0].OnProgress(0, 18, "")
+			assert.True(t, stderr.WaitFor("Calculating total storage usage across 18 revision(s)", 2*time.Second),
+				"expected calculating spinner output without trailing ellipsis, got: %s", stderr.String())
+
+			opts[0].OnProgress(0, 0, "")
+			assert.True(t, stderr.WaitFor("Calculating total storage usage", 2*time.Second),
+				"expected fallback calculating spinner output without trailing ellipsis, got: %s", stderr.String())
+
 			opts[0].OnProgress(1, 18, "df195066-4b75-49ff-bf02-c303eb6c6033")
 			assert.True(t, stderr.WaitFor("Scanning revision 1/18 (df195066-4b75...)", 2*time.Second),
 				"expected spinner output to contain ellipsized two-segment UUID, got: %s", stderr.String())
@@ -291,6 +302,12 @@ func TestUsageCommand_ProgressSpinnerFormatsShortUUIDWithEllipsis(t *testing.T) 
 		CallerDir: tempDir,
 	})
 	require.NoError(t, err)
+	assert.False(t, strings.Contains(stderr.String(), "Connecting to host 'backup.example.com'..."),
+		"connecting spinner must not have trailing ellipsis")
+	assert.False(t, strings.Contains(stderr.String(), "revision(s)..."),
+		"calculating spinner must not have trailing ellipsis")
+	assert.False(t, strings.Contains(stderr.String(), "Calculating total storage usage..."),
+		"calculating spinner must not have trailing ellipsis")
 	assert.False(t, strings.Contains(stderr.String(), "(short12345678...)"),
 		"UUID of length <=13 must not have ellipsis appended")
 	assert.False(t, strings.Contains(stderr.String(), ")..."),

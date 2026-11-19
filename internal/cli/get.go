@@ -139,7 +139,7 @@ func RunGet(
 	// 4. Verify remote directory exists
 	var checkSpinner *term.Spinner
 	if logger != nil && logger.IsTTY() {
-		checkSpinner = logger.StartSpinner(fmt.Sprintf("Connecting to host '%s'...", cfg.Remote.Host))
+		checkSpinner = logger.StartSpinner(fmt.Sprintf("Connecting to host '%s'", cfg.Remote.Host))
 	}
 	exists, checkErr := stor.HasRevision(ctx, cfg.Remote.Host, cfg.Remote.Path, uuid)
 	if checkSpinner != nil {

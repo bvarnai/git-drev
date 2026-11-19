@@ -246,7 +246,7 @@ func RunInit(
 	// 4. Remote access verification
 	if !opts.SkipCheck && storageMgr != nil {
 		if logger != nil {
-			logger.Infof("Verifying remote storage access on '%s:%s'...", projectCfg.Remote.Host, projectCfg.Remote.Path)
+			logger.Infof("Verifying remote storage access on '%s:%s'", projectCfg.Remote.Host, projectCfg.Remote.Path)
 		}
 		access, checkErr := storageMgr.CheckAccess(ctx, projectCfg.Remote.Host, projectCfg.Remote.Path)
 		if checkErr != nil {
