@@ -27,7 +27,7 @@ This skill guides the AI assistant in using `git-drev` (or `git drev`) as the un
 | **Download payload (Consumer)** | `git drev get [-l\|--latest] [--stats] [<dst_dir>]` | Optionally updates branch (`-l`), then downloads `<remote.path>/<uuid>/` into `workdir` (or `<dst_dir>`) via `rsync`. |
 | **Update metadata only** | `git drev update` | Fetches `origin` and hard-resets the active local branch to `origin/<branch>` without downloading the directory payload. |
 | **Revision info** | `git drev info` | Injects `GIT_DREV_*` environment variables and runs `<repo-root>/.git-drev-info-hook`. |
-| **Active branch name** | `git drev name` | Prints the current attached local branch name to `stdout` (or fails with exit code `4` if `HEAD` is detached). |
+| **Active branch name** | `git drev name` | Prints the current local branch name (or `No branch (detached HEAD state)`) to `stdout`. |
 | **Storage footprint** | `git drev usage [-a]` | Displays remote storage consumption summary, or detailed per-revision breakdown table (sorted newest-first) when `-a`/`--all` is passed. |
 | **Configuration audit** | `git drev config [--sources]` | Prints the merged 3-tier YAML configuration (`User Global -> $GIT_DREV_CONFIG -> .git-drev.yaml`), optionally annotated with provenance comments. |
 

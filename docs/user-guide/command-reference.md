@@ -96,11 +96,11 @@ Executes the project's `.git-drev-info-hook` script to display custom revision m
 ---
 
 ### `git drev name`
-Outputs the short name of the current local Git branch to `stdout`, or fails if `HEAD` is detached.
+Outputs the short name of the current local Git branch (or `No branch (detached HEAD state)` if `HEAD` is detached) to `stdout`.
 
 - **Usage:** `git drev name`
 - **Arguments:** None
-- **Output:** Exact branch name string (e.g., `main\n`) to `stdout`; exits with code `4` (`ErrDetachedHead`) if `HEAD` is detached.
+- **Output:** Exact branch name string (e.g., `main\n`) or `No branch (detached HEAD state)\n` to `stdout` with exit code `0`.
 
 ---
 

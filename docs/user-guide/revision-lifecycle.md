@@ -160,7 +160,7 @@ git drev info
 If no `.git-drev-info-hook` is present in the repository root, `git drev info` logs `[git-drev] No info hook found` to `stderr` and exits `0`.
 
 ### Current branch name (`name`)
-Prints the current branch name to `stdout` (or fails with exit code `4` if `HEAD` is detached):
+Prints the current branch name (or `No branch (detached HEAD state)` if `HEAD` is detached) to `stdout`:
 ```bash
 git drev name
 # release/2.0

@@ -1,14 +1,14 @@
 # Contributing to git-drev
 
-Thank you for your interest in contributing to `git-drev`! We welcome bug reports, documentation enhancements, and pull requests that adhere to our architectural standards and workflow rules.
+Bug reports, documentation updates, and pull requests are welcome. This document covers the architectural rules, local build/test commands, and branch workflow used in `git-drev`.
 
 ---
 
 ## 🎯 Guiding principles
 
-Before proposing new features or modifying existing code, please review our core architectural rules:
+Review these core architectural rules before proposing new features or modifying code:
 
-1. **Spec-driven parity:** All subcommands and CLI flags must strictly adhere to the technical specifications in [`docs/spec/`](docs/spec/global.md). Any change in CLI behavior must be accompanied by updates to the corresponding spec files.
+1. **Spec-driven parity:** All subcommands and CLI flags must match the technical specifications in [`docs/spec/`](docs/spec/global.md). Update the corresponding spec files whenever CLI behavior changes.
 2. **Deterministic plumbing over porcelain:** External `git` invocations must use deterministic plumbing commands (`rev-parse`, `symbolic-ref`, `show-ref`, `for-each-ref -z`, `log -z`) rather than high-level porcelain commands.
 3. **Stream separation:**
    - `stdout` is strictly reserved for primary command results, machine-parseable porcelain (`name`, `info`, `usage` tables, `config`), and `--help`/`--version`.
@@ -42,7 +42,7 @@ go build -o ./bin/git-drev ./cmd/git-drev
 
 ## 🧪 Testing guidelines
 
-We enforce rigorous test coverage across all subcommands and internal packages:
+Run the test suite and static checks before opening a pull request:
 
 1. **Run all unit & integration tests:**
    ```bash
@@ -61,7 +61,7 @@ We enforce rigorous test coverage across all subcommands and internal packages:
    go vet ./...
 
    # Shell script static analysis
-   shellcheck scripts/*.sh
+   shellcheck scripts/*.sh .agents/skills/drev-benchmark/scripts/*.sh
    ```
 
 3. **Integration tests:**
