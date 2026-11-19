@@ -161,3 +161,71 @@ func TestCleanupScript(t *testing.T) {
 	assert.DirExists(t, filepath.Join(storageDir, uuidRecentCommit2), "revision within --commits window must be retained")
 	assert.DirExists(t, filepath.Join(storageDir, nonUUIDDir), "non-UUID directory must be untouched")
 }
+
+func TestCleanupScript_ShallowRepositoryGuard(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("server-side retention script (cleanup.sh) requires a Linux host environment")
+	}
+	t.Parallel()
+
+	f := NewRepoFixture(t)
+	storageDir := filepath.Join(f.BaseDir, "remote-storage-shallow")
+
+	uuidOld := "aaaaaaaa-1111-4111-8111-111111111111"
+	uuidLatest := "bbbbbbbb-2222-4222-8222-222222222222"
+	require.NoError(t, os.MkdirAll(filepath.Join(storageDir, uuidOld), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(storageDir, uuidLatest), 0o755))
+
+	now := time.Now()
+	commitWithDate(t, f, `{"uuid":"`+uuidOld+`","seq":"1"}`, now.AddDate(0, 0, -2))
+	commitWithDate(t, f, `{"uuid":"`+uuidLatest+`","seq":"2"}`, now.AddDate(0, 0, -1))
+	f.MustGit(f.WorkDir, "push", "origin", "main")
+
+	// Create a bare shallow clone using file:// URL so Git enforces --depth 1.
+	shallowBareDir := filepath.Join(f.BaseDir, "shallow-origin.git")
+	f.MustGit(f.BaseDir, "clone", "--bare", "--depth", "1", "file://"+filepath.ToSlash(f.OriginDir), shallowBareDir)
+	require.Equal(t, "true", f.MustGit(shallowBareDir, "rev-parse", "--is-shallow-repository"))
+
+	// 1. Default invocation must abort with exit code 1 and keep all directories intact.
+	_, stderr, err := runCleanupScript(
+		t,
+		f.Env,
+		"--days", "30",
+		"--commits", "5",
+		filepath.ToSlash(shallowBareDir),
+		filepath.ToSlash(storageDir),
+	)
+	require.Error(t, err, "expected cleanup.sh to fail on shallow repository without --allow-shallow")
+	assert.Contains(t, stderr, "shallow")
+	assert.Contains(t, stderr, "--allow-shallow")
+	assert.DirExists(t, filepath.Join(storageDir, uuidOld), "aborted shallow run must not delete directories")
+	assert.DirExists(t, filepath.Join(storageDir, uuidLatest))
+
+	// 2. --dry-run must also abort on shallow repository without --allow-shallow.
+	_, stderr, err = runCleanupScript(
+		t,
+		f.Env,
+		"--dry-run",
+		"--days", "30",
+		"--commits", "5",
+		filepath.ToSlash(shallowBareDir),
+		filepath.ToSlash(storageDir),
+	)
+	require.Error(t, err, "expected cleanup.sh --dry-run to fail on shallow repository without --allow-shallow")
+	assert.Contains(t, stderr, "shallow")
+
+	// 3. Passing --allow-shallow explicitly bypasses the guard and proceeds.
+	stdout, stderr, err := runCleanupScript(
+		t,
+		f.Env,
+		"--allow-shallow",
+		"--days", "30",
+		"--commits", "5",
+		filepath.ToSlash(shallowBareDir),
+		filepath.ToSlash(storageDir),
+	)
+	require.NoError(t, err, "expected --allow-shallow to succeed, stderr: %s", stderr)
+	assert.Contains(t, stdout, "Cleanup complete: 1 revisions deleted, 1 kept.")
+	assert.NoDirExists(t, filepath.Join(storageDir, uuidOld))
+	assert.DirExists(t, filepath.Join(storageDir, uuidLatest))
+}

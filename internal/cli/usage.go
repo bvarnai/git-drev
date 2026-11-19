@@ -248,7 +248,7 @@ func formatRefs(refs []string) string {
 		r = strings.TrimPrefix(r, "HEAD -> ")
 		r = strings.TrimPrefix(r, "tag: ")
 		r = strings.TrimSpace(r)
-		if r == "" || r == "origin/HEAD" {
+		if r == "" || r == "origin/HEAD" || r == "grafted" {
 			continue
 		}
 		clean = append(clean, r)

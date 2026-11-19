@@ -153,7 +153,11 @@ The script inspects a bare clone of your Git metadata repository on the storage 
 | `-n`, `--dry-run` | `false` | Preview which revision directories would be deleted without modifying the filesystem. |
 | `-d`, `--days <N>` | `30` | Retain all commits from the last `<N>` days on open branches (`0` to disable time window). |
 | `-c`, `--commits <N>` | `5` | Retain the latest `<N>` commits on each open branch (`0` to disable commit count window). |
+| `--allow-shallow` | `false` | Bypass the shallow-repository safety guard (unsafe: truncated history can misclassify retained revisions as orphaned). |
 | `-h`, `--help` | - | Display usage and cron configuration instructions. |
+
+> [!WARNING]
+> **Full history required:** `cleanup.sh` aborts if `<git-dir>` is a shallow clone, because missing older commits would cause retained revision directories to be treated as orphaned and deleted. Always use a full `git clone --bare` (or run `git fetch --unshallow`) on the storage server.
 
 ---
 

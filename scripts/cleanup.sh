@@ -34,6 +34,7 @@ Options:
   -n, --dry-run      Show what would be deleted without deleting anything.
   -d, --days <N>     Number of days of commits to keep on open branches (default: 30).
   -c, --commits <N>  Number of latest commits per open branch to keep (default: 5).
+  --allow-shallow    Allow cleanup on a shallow Git repository (unsafe: may delete valid revisions).
   -h, --help         Show this help message.
 
 Integration with Cron (e.g., for GitHub-hosted metadata):
@@ -46,6 +47,7 @@ EOF
 
 main() {
   local dry_run="false"
+  local allow_shallow="false"
   local days=30
   local commits=5
 
@@ -54,6 +56,10 @@ main() {
     case "$1" in
       -n|--dry-run)
         dry_run="true"
+        shift
+        ;;
+      --allow-shallow)
+        allow_shallow="true"
         shift
         ;;
       -d|--days)
@@ -109,6 +115,16 @@ main() {
   if ! command -v git >/dev/null 2>&1; then
     echo "Error: 'git' command not found." >&2
     exit 1
+  fi
+
+  local is_shallow
+  is_shallow=$(git --git-dir="${git_dir}" rev-parse --is-shallow-repository 2>/dev/null || true)
+  if [[ "${is_shallow}" == "true" || -s "${git_dir}/shallow" ]]; then
+    if [[ "${allow_shallow}" != "true" ]]; then
+      echo "Error: Git repository '${git_dir}' is a shallow clone; retention cleanup requires full history to avoid deleting valid revisions." >&2
+      echo "Hint: Unshallow the repository ('git --git-dir=${git_dir} fetch --unshallow'), re-clone with 'git clone --bare', or pass --allow-shallow to override." >&2
+      exit 1
+    fi
   fi
 
   echo "Scanning Git repository history to resolve commit UUIDs..."
