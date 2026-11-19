@@ -143,6 +143,10 @@ The script inspects a bare clone of your Git metadata repository on the storage 
 4. **Branch marker baselines:** If a newly created branch (`git drev create`) only has an initial marker commit (`{"uuid":"<parent_uuid>","marker":"true"}`), the script protects `<parent_uuid>` so the branch's server-side baseline is never deleted before its first `git drev put`.
 5. **Deleted branches & orphans:** Once a branch is deleted in Git, its commits are automatically dropped from the keep list and purged on the next cleanup run (unless retained by another active branch or tag).
 
+> [!TIP]
+> **Reclaiming topic-branch storage quickly (delete vs. merge):**
+> If you use a branch for temporary feature or PR builds, prefer deleting the branch directly (`git push origin --delete <branch>`) once a fresh build is published on `main`, rather than running `git merge`. If you merge a topic branch into `main`, all of its intermediate commits become reachable from `main` and are retained until they age out of `main`'s `--days` and `--commits` window. Deleting the branch without merging orphans its intermediate snapshots immediately so they are cleaned up on the next `cleanup.sh` run.
+
 ### CLI usage
 ```bash
 ./scripts/cleanup.sh [options] <git-dir> <storage-dir>

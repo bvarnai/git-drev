@@ -46,6 +46,10 @@ git drev create release/2.0
 * (main) [Revision: {"uuid":"4a123f89-...","seq":"1729348200"}]
 ```
 
+> [!TIP]
+> **Finishing a temporary build branch (delete vs. merge):**
+> When a temporary feature or PR build branch is no longer needed, you generally do not need to `git merge` it into `main`. Instead, switch to `main` (`git drev select main`), publish the new build there (`git drev put`), and delete the temporary branch (`git push origin --delete <branch>`). Deleting the branch without merging orphans its intermediate revisions immediately so [`scripts/cleanup.sh`](../../scripts/cleanup.sh) can reclaim their disk space on the next run. If you do merge a branch into `main`, nothing breaks—its intermediate revisions simply become part of `main`'s history and are kept until they age out of `main`'s `--days` / `--commits` retention window.
+
 ---
 
 ## 3. Publishing revisions (`put`)
