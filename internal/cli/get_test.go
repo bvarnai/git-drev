@@ -152,6 +152,10 @@ remote:
 				assert.Contains(t, executed, "fetch --all --prune")
 				assert.Contains(t, executed, "reset --hard refs/remotes/origin/main --")
 			},
+			checkStderr: func(t *testing.T, stderr string) {
+				assert.NotContains(t, stderr, "[git-drev] Updating branch 'main' to 'origin/main' before getting revision")
+				assert.Contains(t, stderr, "[git-drev] Updated branch 'main' to 'origin/main'\n")
+			},
 		},
 	}
 

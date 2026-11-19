@@ -36,6 +36,7 @@ remote:
 		expectedCode  int
 		errSubstr     string
 		checkExecuted func(t *testing.T, executed []string)
+		checkStderr   func(t *testing.T, stderr string)
 	}{
 		{
 			name:         "excess arguments returns usage error",
@@ -82,6 +83,10 @@ remote:
 				assert.Contains(t, executed, "fetch --all --prune")
 				assert.Contains(t, executed, "reset --hard refs/remotes/origin/feature/foo --")
 			},
+			checkStderr: func(t *testing.T, stderr string) {
+				assert.NotContains(t, stderr, "[git-drev] Updating branch 'feature/foo' to 'origin/feature/foo'")
+				assert.Contains(t, stderr, "[git-drev] Updated branch 'feature/foo' to 'origin/feature/foo'\n")
+			},
 		},
 	}
 
@@ -100,6 +105,9 @@ remote:
 				require.NoError(t, err)
 				if tt.checkExecuted != nil {
 					tt.checkExecuted(t, runner.executed)
+				}
+				if tt.checkStderr != nil {
+					tt.checkStderr(t, stderr.String())
 				}
 			} else {
 				require.Error(t, err)

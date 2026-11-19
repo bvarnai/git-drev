@@ -36,6 +36,7 @@ remote:
 		expectedCode  int
 		errSubstr     string
 		checkExecuted func(t *testing.T, executed []string)
+		checkStderr   func(t *testing.T, stderr string)
 	}{
 		{
 			name:         "missing branch argument returns usage error",
@@ -73,6 +74,11 @@ remote:
 			checkExecuted: func(t *testing.T, executed []string) {
 				assert.Contains(t, executed, "-c advice.detachedHead=false checkout feature/local")
 			},
+			checkStderr: func(t *testing.T, stderr string) {
+				assert.NotContains(t, stderr, "[git-drev] Checking for existing branch")
+				assert.Contains(t, stderr, "[git-drev] Branch 'feature/local' found (local)\n")
+				assert.Contains(t, stderr, "[git-drev] Switched to branch 'feature/local'\n")
+			},
 		},
 		{
 			name: "branch exists remotely switches to branch",
@@ -89,6 +95,12 @@ remote:
 			expectedCode: errcode.ExitSuccess,
 			checkExecuted: func(t *testing.T, executed []string) {
 				assert.Contains(t, executed, "switch feature/remote")
+			},
+			checkStderr: func(t *testing.T, stderr string) {
+				assert.NotContains(t, stderr, "[git-drev] Checking for existing branch")
+				assert.NotContains(t, stderr, "[git-drev] No branch 'feature/remote' found (local)")
+				assert.Contains(t, stderr, "[git-drev] Branch 'feature/remote' found (remote)\n")
+				assert.Contains(t, stderr, "[git-drev] Switched to branch 'feature/remote'\n")
 			},
 		},
 		{
@@ -112,6 +124,16 @@ remote:
 			checkExecuted: func(t *testing.T, executed []string) {
 				assert.Contains(t, executed, "checkout -b feature/brand-new")
 				assert.Contains(t, executed, "push --set-upstream --force-with-lease origin refs/heads/feature/brand-new")
+			},
+			checkStderr: func(t *testing.T, stderr string) {
+				assert.NotContains(t, stderr, "[git-drev] Checking for existing branch")
+				assert.NotContains(t, stderr, "[git-drev] No branch 'feature/brand-new' found")
+				assert.NotContains(t, stderr, "[git-drev] Creating new revision branch")
+				assert.NotContains(t, stderr, "[git-drev] Committing empty revision marker")
+				assert.NotContains(t, stderr, "[git-drev] Pushing new revision branch")
+				assert.Contains(t, stderr, "[git-drev] Created new revision branch 'feature/brand-new'\n")
+				assert.Contains(t, stderr, "[git-drev] Committed empty revision marker\n")
+				assert.Contains(t, stderr, "[git-drev] Pushed new revision branch 'feature/brand-new'\n")
 			},
 		},
 		{
@@ -156,6 +178,9 @@ remote:
 				require.NoError(t, err)
 				if tt.checkExecuted != nil {
 					tt.checkExecuted(t, runner.executed)
+				}
+				if tt.checkStderr != nil {
+					tt.checkStderr(t, stderr.String())
 				}
 			} else {
 				require.Error(t, err)

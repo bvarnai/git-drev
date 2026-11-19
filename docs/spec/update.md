@@ -25,7 +25,7 @@
 2. **Fetch Refspec Assertion:**
    - Ensure `remote.origin.fetch` contains `+refs/heads/*:refs/remotes/origin/*`, adding it if absent.
 3. **Fetch & Prune Remotes:**
-   - Log `[git-drev] Updating branch '<branch>' to origin/<branch>` (unless quiet).
+   - Log `[git-drev] Debug: Updating branch '<branch>' to 'origin/<branch>'` in verbose mode.
    - Execute `git fetch --all --prune`.
 4. **Remote Tracking Ref Assertion:**
    - Verify `refs/remotes/origin/<branch>` exists (`git show-ref --verify --quiet refs/remotes/origin/<branch>`).
@@ -34,6 +34,7 @@
    - Execute `git reset --hard refs/remotes/origin/<branch> --`.
    - Any local uncommitted changes to tracked metadata files are discarded to match origin.
    - Untracked files and gitignored `workdir` remain untouched.
+   - Log `[git-drev] Updated branch '<branch>' to 'origin/<branch>'` (unless quiet).
 6. **Completion:**
    - Exit cleanly with Exit Code `0`.
 
