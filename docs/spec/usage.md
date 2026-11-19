@@ -64,4 +64,5 @@
 ## 5. Edge Cases & Behavioral Notes
 - **Orphan Detection:** Revisions that exist on the remote storage host but have no corresponding commit in local Git history (e.g., deleted branches or test builds) are labeled as `[orphaned]` in the table, enabling automated retention scripts to prune unreferenced storage.
 - **Marker Commit Filtering:** Marker commits created by `git drev create` are skipped during correlation so they do not shadow actual payload revision commits.
+- **Shallow Clone Decoration Filtering:** Synthetic `grafted` decorations emitted by Git on shallow clone boundaries are stripped from the `Branch/Tag` column alongside `origin/HEAD` so commits with no real refs render as `-`.
 - **Zero Local Mutation:** `usage` makes zero mutations to local Git refs or remote storage directories.
