@@ -89,7 +89,7 @@ func RunUsage(
 
 	var spinner *term.Spinner
 	if logger != nil {
-		spinner = logger.StartSpinner(fmt.Sprintf("Connecting to host '%s'...", cfg.Remote.Host))
+		spinner = logger.StartSpinner(fmt.Sprintf("Connecting to host '%s'", cfg.Remote.Host))
 		defer spinner.Stop()
 	}
 
@@ -107,9 +107,9 @@ func RunUsage(
 			}
 			if current == 0 {
 				if total > 0 {
-					spinner.Update(fmt.Sprintf("Calculating total storage usage across %d revision(s)...", total))
+					spinner.Update(fmt.Sprintf("Calculating total storage usage across %d revision(s)", total))
 				} else {
-					spinner.Update("Calculating total storage usage...")
+					spinner.Update("Calculating total storage usage")
 				}
 				return
 			}

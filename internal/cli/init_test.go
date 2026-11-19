@@ -240,6 +240,7 @@ func TestInitCommand_UnitTable(t *testing.T) {
 
 		err := app.Execute(context.Background())
 		require.NoError(t, err)
+		assert.Contains(t, stderr.String(), "[git-drev] Verifying remote storage access on 'example.com:/srv/drev/repo'\n")
 		assert.Contains(t, stderr.String(), "Warning: Remote storage path is read-only ('get' is available, 'put' requires write access)")
 	})
 

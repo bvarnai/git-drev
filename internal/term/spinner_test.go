@@ -36,14 +36,14 @@ func TestSpinner_NonTTY(t *testing.T) {
 		Quiet:  false,
 	})
 
-	sp := logger.StartSpinner("Connecting to server...")
-	sp.Update("Still connecting...")
+	sp := logger.StartSpinner("Connecting to server")
+	sp.Update("Still connecting")
 	sp.Stop()
 
 	out := stderr.String()
-	assert.Contains(t, out, "[git-drev] Connecting to server...")
+	assert.Contains(t, out, "[git-drev] Connecting to server")
 	assert.NotContains(t, out, "\r\x1b[K")
-	assert.NotContains(t, out, "Still connecting...")
+	assert.NotContains(t, out, "Still connecting")
 }
 
 func TestSpinner_Quiet(t *testing.T) {
@@ -54,8 +54,8 @@ func TestSpinner_Quiet(t *testing.T) {
 		Quiet:  true,
 	})
 
-	sp := logger.StartSpinner("Connecting to server...")
-	sp.Update("Update...")
+	sp := logger.StartSpinner("Connecting to server")
+	sp.Update("Update")
 	sp.Stop()
 
 	assert.Empty(t, stderr.String())
