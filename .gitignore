@@ -34,5 +34,5 @@ go.work.sum
 # .idea/
 # .vscode/
 
-# Prompts
-.prompts/
+# Issue draft
+.issue-draft.md
