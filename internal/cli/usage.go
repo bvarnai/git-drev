@@ -1,11 +1,15 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bvarnai/git-drev/internal/config"
 	"github.com/bvarnai/git-drev/internal/domain"
@@ -169,7 +173,7 @@ func RunUsage(
 		}
 	}
 
-	var rows []UsageRevisionRow
+	sortableRows := make([]sortableUsageRow, 0, len(revisions))
 	activeCount := 0
 	orphanedCount := 0
 	for _, rev := range revisions {
@@ -183,6 +187,9 @@ func RunUsage(
 
 		var commitStr, branchTagStr, msgStr string
 		var orphaned bool
+		var seqRaw string
+		var seqNum int64
+		var hasSeq, seqIsNum bool
 
 		if found {
 			activeCount++
@@ -191,6 +198,12 @@ func RunUsage(
 			branchTagStr = formatRefs(rec.Refs)
 			if rec.Meta != nil && rec.Meta.Seq != "" {
 				msgStr = "seq: " + rec.Meta.Seq
+				hasSeq = true
+				seqRaw = rec.Meta.Seq
+				if parsedSeq, parseErr := strconv.ParseInt(rec.Meta.Seq, 10, 64); parseErr == nil {
+					seqIsNum = true
+					seqNum = parsedSeq
+				}
 			} else {
 				msgStr = rec.Subject
 				if msgStr == "" {
@@ -205,15 +218,34 @@ func RunUsage(
 			msgStr = "-"
 		}
 
-		rows = append(rows, UsageRevisionRow{
-			UUID:      normUUID,
-			SizeHuman: rev.SizeHuman,
-			Created:   created,
-			Commit:    commitStr,
-			BranchTag: branchTagStr,
-			Message:   msgStr,
-			Orphaned:  orphaned,
+		sortTime := rev.ModTime
+		if sortTime.IsZero() && found && rec.Timestamp > 0 {
+			sortTime = time.Unix(rec.Timestamp, 0)
+		}
+
+		sortableRows = append(sortableRows, sortableUsageRow{
+			row: UsageRevisionRow{
+				UUID:      normUUID,
+				SizeHuman: rev.SizeHuman,
+				Created:   created,
+				Commit:    commitStr,
+				BranchTag: branchTagStr,
+				Message:   msgStr,
+				Orphaned:  orphaned,
+			},
+			sortTime: sortTime,
+			seqRaw:   seqRaw,
+			seqNum:   seqNum,
+			hasSeq:   hasSeq,
+			seqIsNum: seqIsNum,
 		})
+	}
+
+	slices.SortStableFunc(sortableRows, compareSortableUsageRows)
+
+	rows := make([]UsageRevisionRow, len(sortableRows))
+	for i, s := range sortableRows {
+		rows[i] = s.row
 	}
 
 	if logger != nil {
@@ -239,6 +271,57 @@ func RunUsage(
 	}
 
 	return res, nil
+}
+
+type sortableUsageRow struct {
+	row      UsageRevisionRow
+	sortTime time.Time
+	seqRaw   string
+	seqNum   int64
+	hasSeq   bool
+	seqIsNum bool
+}
+
+func compareSortableUsageRows(a, b sortableUsageRow) int {
+	// 1. Effective timestamp descending; zero/missing timestamps sort last.
+	aZero := a.sortTime.IsZero()
+	bZero := b.sortTime.IsZero()
+	if aZero != bZero {
+		if aZero {
+			return 1
+		}
+		return -1
+	}
+	if !aZero {
+		if c := b.sortTime.Compare(a.sortTime); c != 0 {
+			return c
+		}
+	}
+
+	// 2. Sequence number descending; rows with seq precede rows without seq.
+	if a.hasSeq != b.hasSeq {
+		if a.hasSeq {
+			return -1
+		}
+		return 1
+	}
+	if a.hasSeq {
+		if a.seqIsNum && b.seqIsNum {
+			if c := cmp.Compare(b.seqNum, a.seqNum); c != 0 {
+				return c
+			}
+		} else if a.seqIsNum != b.seqIsNum {
+			if a.seqIsNum {
+				return -1
+			}
+			return 1
+		} else if c := strings.Compare(b.seqRaw, a.seqRaw); c != 0 {
+			return c
+		}
+	}
+
+	// 3. Normalized lowercase UUID descending.
+	return strings.Compare(b.row.UUID, a.row.UUID)
 }
 
 func formatRefs(refs []string) string {
