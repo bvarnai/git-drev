@@ -89,7 +89,6 @@ We follow the opinionated branch workflow managed by `git-brx`:
    ```
 5. **Clean up after merge:**
    ```bash
-   git brx select main
-   git brx update
    git brx delete issue/<number>
+   git brx update
    ```
