@@ -40,7 +40,7 @@ git drev create release/2.0
    - Creates an empty marker commit (`{"uuid":"<parent-uuid>","marker":"true"}`) on the new branch.
    - Pushes the new branch and marker commit to `origin`.
 
-```
+```text
 * (release/2.0) [Marker Commit: {"uuid":"4a123f89-...","marker":"true"}]
 |
 * (main) [Revision: {"uuid":"4a123f89-...","seq":"1729348200"}]
@@ -105,7 +105,7 @@ git drev select 4a123f89-8d7b-4b10-8f6a-49321ef19b12
 ### Typo suggestions
 If you make a typo when entering a branch or tag name, `git-drev` computes the Levenshtein distance against existing branches and tags and suggests the closest candidate:
 
-```
+```text
 $ git drev select featrue/login
 [git-drev] Error: Checkout failed (git checkout featrue/login)
 [git-drev] Hint: Did you mean 'feature/login'?
@@ -171,7 +171,7 @@ Queries the remote storage host via SSH (`du -sh`) to report total disk space co
 ```bash
 git drev usage
 ```
-Add `-a` (`--all`) to correlate all remote UUID directories against local Git history, revealing active versus `[orphaned]` snapshots:
+Add `-a` (`--all`) to correlate all remote UUID directories against local Git history and print a breakdown table sorted newest-first, revealing active versus `[orphaned]` snapshots:
 ```bash
 git drev usage -a
 ```

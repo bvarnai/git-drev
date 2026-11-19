@@ -9,12 +9,12 @@ This chapter addresses common operational questions, edge cases, and diagnostic 
 ### 1. SSH authentication failure (`Permission denied (publickey)`)
 
 **Symptom:**
-```
+```text
 [git-drev] Error: SSH command failed: Permission denied (publickey).
 [git-drev] Hint: Verify SSH access to 'storage-server' using 'ssh -Tv storage-server'.
 ```
 
-**Diagnosis & Remediation:**
+**Diagnosis & remediation:**
 1. Test SSH connectivity directly using verbose mode:
    ```bash
    ssh -Tv storage-server
@@ -38,7 +38,7 @@ This chapter addresses common operational questions, edge cases, and diagnostic 
 ### 2. Detached HEAD state (`HEAD is detached`)
 
 **Symptom:**
-```
+```text
 [git-drev] Error: Detached HEAD state detected, aborting
 [git-drev] Hint: Use "git-drev select <branch>" to select a branch first.
 ```
@@ -61,7 +61,7 @@ Mutating commands like `put` and `update` require an attached branch so that new
 ### 3. Git index lock error (`.git/index.lock exists`)
 
 **Symptom:**
-```
+```text
 [git-drev] Error: Git index is locked ('.git/index.lock' exists)
 ```
 
@@ -100,7 +100,7 @@ Multiple builders pushed a revision to the same branch at almost the exact same 
 **Resolution:**
 `git-drev` features automatic sequence-aware optimistic concurrency control (up to 5 attempts). When `git push --force-with-lease` is rejected due to a concurrent push:
 1. `git-drev` logs:
-   ```
+   ```text
    [git-drev] Stale info detected, trying to resolve
    ```
 2. Fetches upstream changes (`git fetch --all --prune`) and compares sequence numbers (`seq`) unless `--no-sequence-check` is set:

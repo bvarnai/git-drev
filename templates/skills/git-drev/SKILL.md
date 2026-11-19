@@ -7,7 +7,7 @@ description: >-
   large directory artifacts, CI build snapshots, or git-drev workflows.
 ---
 
-# `git-drev` Directory Revision Runbook
+# `git-drev` directory revision runbook
 
 This skill guides the AI assistant in using `git-drev` (or `git drev`) as the unified CLI for directory revision lifecycle management.
 
@@ -16,26 +16,26 @@ This skill guides the AI assistant in using `git-drev` (or `git drev`) as the un
 
 ---
 
-## 1. Quick Reference & Command Matrix
+## 1. Quick reference & command matrix
 
-| Stage | `git-drev` Command | Purpose & Behavior |
+| Stage | `git-drev` command | Purpose & behavior |
 | :--- | :--- | :--- |
-| **Repository Bootstrap** | `git drev init [-y]` | Bootstraps a dedicated metadata repository, verifies remote SSH read/write access, writes `.git-drev.yaml`, and configures `.gitignore`. |
-| **Branch Initialization** | `git drev create <branch>` | Checks out `<branch>` if it exists locally/remotely, or creates an initial marker commit (`{"uuid":"<parent-uuid>","marker":"true"}`) and pushes to `origin`. |
-| **Publish Snapshot (Producer)** | `git drev put [-s <seq>] [--stats] [<src_dir>]` | Clones parent baseline on remote via `cp -al --`, uploads diffs via `rsync`, runs `.git-drev-put-hook`, commits metadata (`{"uuid":"...","seq":"..."}`), and pushes with retry. |
-| **Select Revision (Consumer)** | `git drev select [<branch>\|<tag>\|<uuid>]` | Fetches `origin` and switches to a branch, tag, or specific commit matching an RFC 4122 UUID (defaults to `branch.default` if omitted). |
-| **Download Payload (Consumer)** | `git drev get [-l\|--latest] [--stats] [<dst_dir>]` | Optionally updates branch (`-l`), then downloads `<remote.path>/<uuid>/` into `workdir` (or `<dst_dir>`) via `rsync`. |
-| **Update Metadata Only** | `git drev update` | Fetches `origin` and hard-resets the active local branch to `origin/<branch>` without downloading the directory payload. |
-| **Revision Info** | `git drev info` | Injects `GIT_DREV_*` environment variables and runs `<repo-root>/.git-drev-info-hook`. |
-| **Active Branch Name** | `git drev name` | Prints the current attached local branch name to `stdout` (or fails with exit code `4` if `HEAD` is detached). |
-| **Storage Footprint** | `git drev usage [-a]` | Displays remote storage consumption summary, or detailed per-revision breakdown table when `-a`/`--all` is passed. |
-| **Configuration Audit** | `git drev config [--sources]` | Prints the merged 3-tier YAML configuration (`User Global -> $GIT_DREV_CONFIG -> .git-drev.yaml`), optionally annotated with provenance comments. |
+| **Repository bootstrap** | `git drev init [-y]` | Bootstraps a dedicated metadata repository, verifies remote SSH read/write access, writes `.git-drev.yaml`, and configures `.gitignore`. |
+| **Branch initialization** | `git drev create <branch>` | Checks out `<branch>` if it exists locally/remotely, or creates an initial marker commit (`{"uuid":"<parent-uuid>","marker":"true"}`) and pushes to `origin`. |
+| **Publish snapshot (Producer)** | `git drev put [-s <seq>] [--stats] [<src_dir>]` | Clones parent baseline on remote via `cp -al --`, uploads diffs via `rsync`, runs `.git-drev-put-hook`, commits metadata (`{"uuid":"...","seq":"..."}`), and pushes with retry. |
+| **Select revision (Consumer)** | `git drev select [<branch>\|<tag>\|<uuid>]` | Fetches `origin` and switches to a branch, tag, or specific commit matching an RFC 4122 UUID (defaults to `branch.default` if omitted). |
+| **Download payload (Consumer)** | `git drev get [-l\|--latest] [--stats] [<dst_dir>]` | Optionally updates branch (`-l`), then downloads `<remote.path>/<uuid>/` into `workdir` (or `<dst_dir>`) via `rsync`. |
+| **Update metadata only** | `git drev update` | Fetches `origin` and hard-resets the active local branch to `origin/<branch>` without downloading the directory payload. |
+| **Revision info** | `git drev info` | Injects `GIT_DREV_*` environment variables and runs `<repo-root>/.git-drev-info-hook`. |
+| **Active branch name** | `git drev name` | Prints the current attached local branch name to `stdout` (or fails with exit code `4` if `HEAD` is detached). |
+| **Storage footprint** | `git drev usage [-a]` | Displays remote storage consumption summary, or detailed per-revision breakdown table (sorted newest-first) when `-a`/`--all` is passed. |
+| **Configuration audit** | `git drev config [--sources]` | Prints the merged 3-tier YAML configuration (`User Global -> $GIT_DREV_CONFIG -> .git-drev.yaml`), optionally annotated with provenance comments. |
 
 ---
 
-## 2. Standard Producer & Consumer Workflows
+## 2. Standard Producer & Consumer workflows
 
-### Producer Workflow (CI/CD or Release Engineer)
+### Producer workflow (CI/CD or release engineer)
 
 1. **Initialize or switch to a target revision branch:**
    ```bash
@@ -53,7 +53,7 @@ This skill guides the AI assistant in using `git-drev` (or `git drev`) as the un
    ```
    - If a concurrent CI job pushes while `rsync` is running, `put` automatically fetches `origin/<branch>`, compares sequence numbers (`seq`), and either drops the older build (`remoteSeq > localSeq`) or rebases (`--strategy-option=theirs`) up to 5 attempts.
 
-### Consumer Workflow (Developer or Test Environment)
+### Consumer workflow (developer or test environment)
 
 1. **Switch to the desired branch, tag, or historical UUID:**
    ```bash
@@ -77,7 +77,7 @@ This skill guides the AI assistant in using `git-drev` (or `git drev`) as the un
 
 ---
 
-## 3. Hook Environment Contract
+## 3. Hook environment contract
 
 When `.git-drev-put-hook` or `.git-drev-info-hook` is present at `<repo-root>/`, `git-drev` executes it with a configurable timeout (`GIT_DREV_HOOK_TIMEOUT`, default `5m`) and injects:
 
@@ -90,7 +90,7 @@ When `.git-drev-put-hook` or `.git-drev-info-hook` is present at `<repo-root>/`,
 
 ---
 
-## 4. Automation & Diagnostic Exit Codes
+## 4. Automation & diagnostic exit codes
 
 Check exit codes to diagnose failures programmatically:
 - `0`: Success

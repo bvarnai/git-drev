@@ -11,7 +11,7 @@
 | Hook script | Trigger point | Execution context | Common use cases |
 | :--- | :--- | :--- | :--- |
 | `.git-drev-put-hook` | Immediately after `rsync` upload succeeds during `git drev put`, before metadata staging and `git commit` | Invoked in repository root. Subprocess environment receives revision metadata | Injecting CI build URLs, commit hashes, build logs, or generating checksum manifest files |
-| `.git-drev-info-hook` | Triggered when `git drev info` is executed | Invoked in repository root. Output is streamed directly to `stdout` | Displaying linked CI build numbers, test results, or download metrics |
+| `.git-drev-info-hook` | Runs when you execute `git drev info` | Invoked in repository root. Output is streamed directly to `stdout` | Displaying linked CI build numbers, test results, or download metrics |
 
 ---
 
