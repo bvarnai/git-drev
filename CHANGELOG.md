@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Harmonize operational `Info` logs to past-tense milestones across `put`, `get`, `update`, `select`, `create`, and `init` (`#73`, `#74`).
+- Remove literal `Debug: ` prefix from verbose (`-v`) log lines on `stderr` (`#75`, `#76`).
+
+### Fixed
+- Remove trailing ellipses from spinner and operational messages, reserving `...` strictly for truncated 13-character UUID prefixes (`#71`, `#72`).
+- Align `git drev name` detached `HEAD` documentation in user guide and skill template with specification (`#77`, `#78`).
+- Add topic-branch deletion vs. merge retention tip to User Guide Chapter 5 (`2fd891f`, `5f13526`).
+- Add explicit `run-name` headers to release and Scoop publication workflows (`cea7c4d`).
+
 ## [0.2.1] - 2026-11-19
 
 ### Added
