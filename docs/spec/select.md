@@ -24,10 +24,10 @@
    - Ensure `remote.origin.fetch` includes `+refs/heads/*:refs/remotes/origin/*`.
    - Fetch remote updates: `git fetch --all --prune`.
 3. **Target Reference Resolution:**
-   - **Case A (Omitted Target):** Default to `cfg.Branch.Default` (default: `"main"`). Log `[git-drev] Debug: Selecting '<target>' branch by default` in verbose mode.
+   - **Case A (Omitted Target):** Default to `cfg.Branch.Default` (default: `"main"`). Log `[git-drev] Selecting '<target>' branch by default` in verbose mode.
    - **Case B (UUID Target):**
      - Matches 36-char RFC 4122 UUID pattern (optional braces stripped, case-insensitive).
-     - Log `[git-drev] Debug: Searching for commit with UUID '<uuid>'` in verbose mode.
+     - Log `[git-drev] Searching for commit with UUID '<uuid>'` in verbose mode.
      - Stream commits matching UUID via `git log --all -z -F -i --grep=<uuid> --format=%H%x00%s`.
      - Parse JSON commit metadata and select the latest non-marker revision commit (`!meta.IsMarker()`).
      - If no matching revision commit exists, log `[git-drev] Error: No commit was found with uuid '<uuid>'` and fail with Exit Code `4`.

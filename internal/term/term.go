@@ -229,7 +229,7 @@ func (l *Logger) Infof(format string, args ...any) {
 	l.Info(format, args...)
 }
 
-// Debug emits `[git-drev] Debug: <msg>` to stderr if verbose mode is enabled.
+// Debug emits `[git-drev] <msg>` to stderr if verbose mode is enabled.
 func (l *Logger) Debug(format string, args ...any) {
 	if !l.verbose {
 		return
@@ -239,13 +239,13 @@ func (l *Logger) Debug(format string, args ...any) {
 		msg = fmt.Sprintf(format, args...)
 	}
 	if l.useColor {
-		l.writeLine(fmt.Sprintf("%s %sDebug: %s%s", Prefix, ansiMagenta, msg, ansiReset))
+		l.writeLine(fmt.Sprintf("%s %s%s%s", Prefix, ansiMagenta, msg, ansiReset))
 		return
 	}
-	l.writeLine(fmt.Sprintf("%s Debug: %s", Prefix, msg))
+	l.writeLine(fmt.Sprintf("%s %s", Prefix, msg))
 }
 
-// Debugf emits a formatted `[git-drev] Debug: <msg>` line to stderr if verbose mode is enabled.
+// Debugf emits a formatted `[git-drev] <msg>` line to stderr if verbose mode is enabled.
 func (l *Logger) Debugf(format string, args ...any) {
 	l.Debug(format, args...)
 }

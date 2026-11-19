@@ -47,11 +47,11 @@
    - If `.git-drev-put-hook` exists in repository root, execute with injected `GIT_DREV_*` environment variables and positional args.
    - If hook fails or times out, fail with Exit Code `1`.
 6. **Commit Revision Metadata:**
-   - Log `[git-drev] Debug: Staging revision metadata` in verbose mode and stage metadata: `git add --all` followed by `git reset -- <workdir>` (strictly ensuring local data `workdir` is not staged into Git).
-   - Log `[git-drev] Debug: Committing revision metadata` in verbose mode and record metadata commit: `git commit --allow-empty -m '{"uuid":"<uuid>","seq":"<sequence>"}'`.
+   - Log `[git-drev] Staging revision metadata` in verbose mode and stage metadata: `git add --all` followed by `git reset -- <workdir>` (strictly ensuring local data `workdir` is not staged into Git).
+   - Log `[git-drev] Committing revision metadata` in verbose mode and record metadata commit: `git commit --allow-empty -m '{"uuid":"<uuid>","seq":"<sequence>"}'`.
    - Resolve the new `HEAD` commit hash abbreviated to 7 characters (`git rev-parse --verify --quiet HEAD^{commit}`) and log `[git-drev] Committed revision metadata '<short-commit>'` (falling back to `[git-drev] Committed revision metadata` if unavailable).
 7. **Publish with Optimistic Concurrency Control (OCC):**
-   - Log `[git-drev] Debug: Pushing revision metadata to 'origin/<branch>'` in verbose mode and push commit to remote: `git push --force-with-lease origin refs/heads/<branch>`.
+   - Log `[git-drev] Pushing revision metadata to 'origin/<branch>'` in verbose mode and push commit to remote: `git push --force-with-lease origin refs/heads/<branch>`.
    - If push succeeds: log `[git-drev] Pushed revision metadata to 'origin/<branch>'` and proceed to completion.
    - If push rejected due to stale reference (concurrent push):
      - Log `[git-drev] Stale info detected, trying to resolve`.

@@ -118,7 +118,7 @@ func TestRemoteLifecycle_PutGetUsageWorkflow(t *testing.T) {
 	if strings.Contains(usageSummaryOut, "Revisions breakdown:") {
 		t.Fatalf("usage -v without -a unexpectedly contained detailed revisions breakdown:\n%s", usageSummaryOut)
 	}
-	if !strings.Contains(stderr.String(), "Debug:") {
+	if !strings.Contains(stderr.String(), "Querying remote storage on host") {
 		t.Fatalf("usage -v expected debug logs on stderr:\n%s", stderr.String())
 	}
 

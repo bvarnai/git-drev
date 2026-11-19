@@ -122,7 +122,7 @@ func TestLoggerOutputFormatsAndQuiet(t *testing.T) {
 		lines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 		wantLines := []string{
 			"[git-drev] Checking branch 'main'",
-			"[git-drev] Debug: Resolved target SHA 'abcdef1'",
+			"[git-drev] Resolved target SHA 'abcdef1'",
 			"[git-drev] Warning: Something minor",
 			"[git-drev] Hint: Use -v for details",
 			"[git-drev] Error: Detached HEAD state detected, aborting",
@@ -198,7 +198,7 @@ func TestLoggerOutputFormatsAndQuiet(t *testing.T) {
 		})
 
 		logger.Debug("colored debug message")
-		want := "[git-drev] \x1b[35mDebug: colored debug message\x1b[0m\n"
+		want := "[git-drev] \x1b[35mcolored debug message\x1b[0m\n"
 		if buf.String() != want {
 			t.Errorf("colored debug output = %q, want %q", buf.String(), want)
 		}
@@ -319,7 +319,7 @@ func TestLogger_VariadicAndStreams(t *testing.T) {
 	out := stderr.String()
 	wantLines := []string{
 		"[git-drev] info formatted: test 42",
-		"[git-drev] Debug: debug formatted: verbose",
+		"[git-drev] debug formatted: verbose",
 		"[git-drev] Warning: warn formatted: caution",
 		"[git-drev] Hint: hint formatted: tip",
 		"[git-drev] Error: error formatted: failure",
