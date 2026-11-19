@@ -41,13 +41,13 @@ When executing a hook, `git-drev` sanitizes the environment (`LC_ALL=C`, `LANG=C
    - `git drev put` immediately halts execution.
    - The pending Git commit is aborted.
    - The remote staging directory is removed so half-published snapshots are not left on the storage host.
-4. **Background processes & file descriptors:** If your hook script forks background or asynchronous tasks (e.g., reporting metrics or triggering webhook daemons), you must explicitly decouple all standard streams:
+4. **Background processes & file descriptors:** If your hook script spawns background tasks (e.g., reporting metrics or triggering webhooks), redirect `stdin`, `stdout`, and `stderr` away from the parent pipes:
    ```bash
    # Decouple standard streams when backgrounding tasks
    nohup /path/to/notifier >/dev/null 2>&1 </dev/null &
    ```
    > [!TIP]
-   > Subprocess execution in `git-drev` enforces process group management and a 3-second grace period on standard stream closure. Background jobs that retain inherited file descriptors will prevent clean stream teardown until the grace timer forces a termination.
+   > `git-drev` waits up to 3 seconds for child streams to close after a hook exits before terminating the process group. Background processes that keep inherited `stdout`/`stderr` descriptors open will block hook completion until the 3-second grace timer expires.
 
 ---
 
