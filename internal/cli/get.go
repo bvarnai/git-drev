@@ -168,16 +168,13 @@ func RunGet(
 	}
 
 	// 6. Download payload via rsync
-	shortUUID := uuid
-	if len(shortUUID) > 8 {
-		shortUUID = shortUUID[:8]
-	}
+	shortUUID := formatShortUUID(uuid)
 	var getSpinner *term.Spinner
 	if !opts.Verbose && !opts.Stats && logger != nil {
-		getSpinner = logger.StartSpinner(fmt.Sprintf("Downloading directory revision '%s' from host '%s'...", shortUUID, cfg.Remote.Host))
+		getSpinner = logger.StartSpinner(fmt.Sprintf("Downloading directory revision '%s' from host '%s'", shortUUID, cfg.Remote.Host))
 		defer getSpinner.Stop()
 	} else if logger != nil {
-		logger.Infof("Downloading directory revision '%s' from host '%s'...", shortUUID, cfg.Remote.Host)
+		logger.Infof("Downloading directory revision '%s' from host '%s'", shortUUID, cfg.Remote.Host)
 	}
 
 	syncReq := storage.TransferRequest{
@@ -202,7 +199,7 @@ func RunGet(
 		getSpinner.Stop()
 	}
 	if logger != nil {
-		logger.Infof("Retrieved directory revision '%s' from host '%s'", shortUUID, cfg.Remote.Host)
+		logger.Infof("Downloaded directory revision '%s' from host '%s'", shortUUID, cfg.Remote.Host)
 	}
 
 	if logger != nil {

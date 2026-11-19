@@ -6,13 +6,19 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/bvarnai/git-drev/internal/cli"
 	"github.com/bvarnai/git-drev/internal/command"
+	"github.com/bvarnai/git-drev/internal/domain"
 	"github.com/bvarnai/git-drev/internal/errcode"
 	"github.com/bvarnai/git-drev/internal/git"
 	"github.com/bvarnai/git-drev/internal/storage"
+	"github.com/bvarnai/git-drev/internal/term"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,6 +50,7 @@ remote:
 		expectedCode  int
 		errSubstr     string
 		checkExecuted func(t *testing.T, executed []string, storageCalls []string)
+		checkStderr   func(t *testing.T, stderr string)
 	}{
 		{
 			name:         "excess arguments returns usage error",
@@ -115,6 +122,7 @@ remote:
 				"add --all":                                                     {out: ""},
 				"reset -- data":                                                 {out: ""},
 				"commit --allow-empty -m *":                                     {out: "[main a1b2c3d] revision"},
+				"rev-parse --verify --quiet HEAD^{commit}":                      {out: "84bb88d1234567890abcdef1234567890abcdef1"},
 				"push --force-with-lease origin refs/heads/main":                {out: "Everything up-to-date"},
 			},
 			mockStorage: &storage.MockManager{
@@ -146,6 +154,38 @@ remote:
 				}
 				assert.True(t, foundClone, "expected CloneBaseline call")
 				assert.True(t, foundUpload, "expected Upload call")
+			},
+			checkStderr: func(t *testing.T, stderr string) {
+				assert.Regexp(t, regexp.MustCompile(`\[git-drev\] Uploading directory revision '[0-9a-f]{8}-[0-9a-f]{4}\.\.\.' to host 'backup\.example\.com'\n`), stderr)
+				assert.Regexp(t, regexp.MustCompile(`\[git-drev\] Uploaded directory revision '[0-9a-f]{8}-[0-9a-f]{4}\.\.\.' to host 'backup\.example\.com'\n`), stderr)
+				assert.NotContains(t, stderr, "[git-drev] Committing revision metadata")
+				assert.Contains(t, stderr, "[git-drev] Committed revision metadata '84bb88d'")
+			},
+		},
+		{
+			name: "put falls back to plain committed log when HEAD hash is unavailable",
+			args: []string{"put", "-s", "100", "-v"},
+			setupFS: func(t *testing.T, dir string) {
+				_ = os.Remove(filepath.Join(dir, ".git", "index.lock"))
+			},
+			mockGit: map[string]mockGitResponse{
+				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
+				"symbolic-ref --quiet --short HEAD":                             {out: "main"},
+				"log -n 1 --format=%s HEAD --":                                  {out: `{"uuid":"00000000-0000-0000-0000-000000000000","marker":"true"}`},
+				"add --all":                                                     {out: ""},
+				"reset -- data":                                                 {out: ""},
+				"commit --allow-empty -m *":                                     {out: "[main a1b2c3d] revision"},
+				"rev-parse --verify --quiet HEAD^{commit}":                      {err: &command.Error{ExitCode: 1, Category: errcode.ErrGitExec}},
+				"push --force-with-lease origin refs/heads/main":                {out: "Everything up-to-date"},
+			},
+			mockStorage:  &storage.MockManager{},
+			expectedCode: errcode.ExitSuccess,
+			checkStderr: func(t *testing.T, stderr string) {
+				assert.Regexp(t, regexp.MustCompile(`\[git-drev\] Uploading directory revision '[0-9a-f]{8}-[0-9a-f]{4}\.\.\.' to host 'backup\.example\.com'\n`), stderr)
+				assert.Regexp(t, regexp.MustCompile(`\[git-drev\] Uploaded directory revision '[0-9a-f]{8}-[0-9a-f]{4}\.\.\.' to host 'backup\.example\.com'\n`), stderr)
+				assert.Contains(t, stderr, "[git-drev] Debug: Committing revision metadata")
+				assert.Contains(t, stderr, "[git-drev] Committed revision metadata\n")
+				assert.NotContains(t, stderr, "[git-drev] Committed revision metadata '")
 			},
 		},
 		{
@@ -282,6 +322,9 @@ remote:
 					}
 					tt.checkExecuted(t, gitRunner.executed, storageCalls)
 				}
+				if tt.checkStderr != nil {
+					tt.checkStderr(t, stderr.String())
+				}
 			} else {
 				require.Error(t, err)
 				var appErr *errcode.AppError
@@ -293,4 +336,103 @@ remote:
 			}
 		})
 	}
+}
+
+type watchBuffer struct {
+	mu     sync.Mutex
+	buf    bytes.Buffer
+	notify chan struct{}
+}
+
+func newWatchBuffer() *watchBuffer {
+	return &watchBuffer{
+		notify: make(chan struct{}, 1),
+	}
+}
+
+func (w *watchBuffer) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	n, err := w.buf.Write(p)
+	w.mu.Unlock()
+	select {
+	case w.notify <- struct{}{}:
+	default:
+	}
+	return n, err
+}
+
+func (w *watchBuffer) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.String()
+}
+
+func (w *watchBuffer) WaitFor(substr string, timeout time.Duration) bool {
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	for {
+		if strings.Contains(w.String(), substr) {
+			return true
+		}
+		select {
+		case <-w.notify:
+		case <-deadline.C:
+			return strings.Contains(w.String(), substr)
+		}
+	}
+}
+
+func TestPutCommand_TTYBaselineSpinnerFormatsShortUUIDWithEllipsis(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	dataDir := filepath.Join(tempDir, "data")
+	require.NoError(t, os.MkdirAll(dataDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "file.txt"), []byte("hello"), 0o644))
+
+	cfg := &domain.ProjectConfig{
+		WorkDir: "data",
+		Remote: domain.RemoteConfig{
+			Host: "backup.example.com",
+			Path: "/storage/myrepo",
+		},
+	}
+
+	gitRunner := &mockGitRunner{
+		responses: map[string]mockGitResponse{
+			"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
+			"symbolic-ref --quiet --short HEAD":                             {out: "main"},
+			"log -n 1 --format=%s HEAD --":                                  {out: `{"uuid":"1afec2ea-4b75-49ff-bf02-c303eb6c6033","seq":"50"}`},
+			"add --all":                                                     {out: ""},
+			"reset -- data":                                                 {out: ""},
+			"commit --allow-empty -m *":                                     {out: "[main 84bb88d] revision"},
+			"rev-parse --verify --quiet HEAD^{commit}":                      {out: "84bb88d1234567890abcdef1234567890abcdef1"},
+			"push --force-with-lease origin refs/heads/main":                {out: "Everything up-to-date"},
+		},
+	}
+	insp := git.NewInspector(gitRunner)
+	ops := git.NewOperations(gitRunner)
+
+	stderr := newWatchBuffer()
+	logger := term.New(term.Options{
+		Stderr:      stderr,
+		IsTTY:       true,
+		NoColorFlag: true,
+	})
+
+	stor := &storage.MockManager{
+		CloneBaselineFn: func(ctx context.Context, host, basePath, srcUUID, dstUUID string) error {
+			assert.True(t, stderr.WaitFor("Cloning baseline revision '1afec2ea-4b75...' on host 'backup.example.com' (", 2*time.Second),
+				"expected baseline clone spinner with ellipsized two-segment UUID and no trailing ellipsis, got: %s", stderr.String())
+			return nil
+		},
+	}
+
+	var stdout bytes.Buffer
+	_, err := cli.RunPut(context.Background(), insp, ops, stor, nil, cfg, logger, &stdout, stderr, cli.PutOptions{
+		Sequence:  "100",
+		CallerDir: tempDir,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stderr.String(), "[git-drev] Committed revision metadata '84bb88d'")
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/bvarnai/git-drev/internal/errcode"
 	"github.com/bvarnai/git-drev/internal/git"
 	"github.com/bvarnai/git-drev/internal/storage"
+	"github.com/bvarnai/git-drev/internal/term"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -208,4 +210,63 @@ remote:
 			}
 		})
 	}
+}
+
+func TestUsageCommand_ProgressSpinnerFormatsShortUUIDWithEllipsis(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	cfg := &domain.ProjectConfig{
+		WorkDir: "data",
+		Remote: domain.RemoteConfig{
+			Host: "backup.example.com",
+			Path: "/storage/myrepo",
+		},
+	}
+
+	gitRunner := &mockGitRunner{
+		responses: map[string]mockGitResponse{
+			"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
+			"config --local --get-all remote.origin.fetch":                  {out: git.WildcardFetchRefspec},
+		},
+	}
+	insp := git.NewInspector(gitRunner)
+	ops := git.NewOperations(gitRunner)
+
+	stderr := newWatchBuffer()
+	logger := term.New(term.Options{
+		Stderr:      stderr,
+		IsTTY:       true,
+		NoColorFlag: true,
+	})
+
+	stor := &storage.MockManager{
+		QueryUsageFn: func(ctx context.Context, host, basePath string, opts ...storage.QueryUsageOptions) (string, []domain.RemoteRevision, error) {
+			require.Len(t, opts, 1)
+			require.NotNil(t, opts[0].OnProgress)
+
+			opts[0].OnProgress(1, 18, "df195066-4b75-49ff-bf02-c303eb6c6033")
+			assert.True(t, stderr.WaitFor("Scanning revision 1/18 (df195066-4b75...)", 2*time.Second),
+				"expected spinner output to contain ellipsized two-segment UUID, got: %s", stderr.String())
+
+			opts[0].OnProgress(2, 18, "short12345678")
+			assert.True(t, stderr.WaitFor("Scanning revision 2/18 (short12345678)", 2*time.Second),
+				"expected spinner output to keep <=13-char UUID without ellipsis, got: %s", stderr.String())
+
+			return "1.0G", []domain.RemoteRevision{
+				{UUID: "df195066-4b75-49ff-bf02-c303eb6c6033", SizeHuman: "1.0G"},
+			}, nil
+		},
+	}
+
+	var stdout bytes.Buffer
+	_, err := cli.RunUsage(context.Background(), insp, ops, stor, cfg, logger, &stdout, cli.UsageOptions{
+		All:       false,
+		CallerDir: tempDir,
+	})
+	require.NoError(t, err)
+	assert.False(t, strings.Contains(stderr.String(), "(short12345678...)"),
+		"UUID of length <=13 must not have ellipsis appended")
+	assert.False(t, strings.Contains(stderr.String(), ")..."),
+		"spinner must not stutter with trailing ellipsis after closing parenthesis")
 }
