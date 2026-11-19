@@ -8,7 +8,7 @@ This chapter explains how `git-drev` structures files on the remote storage host
 
 On the remote storage host specified in `.git-drev.yaml` (`remote.host` and `remote.path`), revisions are stored in flat subdirectories named after their respective RFC 4122 UUIDs:
 
-```
+```text
 /srv/drev/my-project/
 ├── 4a123f89-8d7b-4b10-8f6a-49321ef19b12/   # Revision UUID (release/1.0, seq 1)
 │   ├── bin/
@@ -95,7 +95,7 @@ To check storage consumption, run:
 ```bash
 git drev usage
 ```
-This queries the remote host via `ssh` and prints the summary of disk space utilized by `<remote.path>`:
+This queries the remote host via `ssh` and prints the summary of disk space used by `<remote.path>`:
 ```text
 Summary:
   Remote storage:    storage-server:/srv/drev/my-project
@@ -106,7 +106,7 @@ Summary:
 ### Correlating active vs. orphaned revisions (`-a`)
 When developers delete old Git branches, drop older concurrent builds, or delete tags, some remote UUID directories may no longer be referenced by any Git commit in repository history. These are **orphaned revisions**.
 
-Running `git drev usage -a` (`--all`) scans your Git commit history (`git log --all`) and correlates every known UUID against directories on the remote host:
+Running `git drev usage -a` (`--all`) scans your Git commit history (`git log --all`), correlates every known UUID against directories on the remote host, and sorts the breakdown table in reverse-chronological order (newest first):
 
 ```bash
 git drev usage -a
@@ -217,7 +217,7 @@ Then add a nightly job to `crontab -e`:
 ```
 
 > [!TIP]
-> **Why Separate SSH Keys Matter:** Clients connect to the storage server using their SSH keys in `authorized_keys`, while the storage server connects outbound to GitHub using its read-only deploy key (`github_drev_readonly`). Rotating or revoking a developer's SSH key on the storage server never disrupts automated retention cleanup.
+> **Why separate SSH keys matter:** Clients connect to the storage server using their SSH keys in `authorized_keys`, while the storage server connects outbound to GitHub using its read-only deploy key (`github_drev_readonly`). Rotating or revoking a developer's SSH key on the storage server never disrupts automated retention cleanup.
 
 ---
 
@@ -240,14 +240,14 @@ To measure end-to-end transfer speed and server-side storage deduplication on re
 
 ### Per-build breakdown
 
-| Build ID | Unpacked size (files) | Baseline: Download + Extract | Producer: `git drev put` (sent) | Consumer: `git drev select` + `get` (received) | Consumer speedup |
+| Build ID | Unpacked size (files) | Baseline: download + extract | Producer: `git drev put` (sent) | Consumer: `git drev select` + `get` (received) | Consumer speedup |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `I20261015-2300` *(Cold)* | `302.7 MiB` (1,368) | `19.10s` + `0.98s` = **`20.08s`** | `5.77s` (`302.9 MiB`, 1,368 files) | **`4.84s`** (`302.9 MiB`, 1,368 files) | **4.1x faster** |
 | `I20261016-2300` *(Delta)* | `302.7 MiB` (1,368) | `34.89s` + `1.01s` = **`35.90s`** | `2.40s` (`31.7 MiB`, 272 files) | **`2.15s`** (`31.7 MiB`, 272 files) | **16.7x faster** |
 | `I20261017-2300` *(Delta)* | `302.7 MiB` (1,368) | `14.68s` + `0.99s` = **`15.67s`** | `2.41s` (`33.5 MiB`, 260 files) | **`2.16s`** (`33.5 MiB`, 260 files) | **7.3x faster** |
 | `I20261018-2300` *(Delta)* | `302.7 MiB` (1,368) | `37.41s` + `0.99s` = **`38.40s`** | `2.17s` (`19.1 MiB`, 244 files) | **`2.03s`** (`19.1 MiB`, 244 files) | **18.9x faster** |
 | `I20261019-2300` *(Delta)* | `302.7 MiB` (1,368) | `12.74s` + `0.97s` = **`13.71s`** | `2.71s` (`56.3 MiB`, 277 files) | **`2.43s`** (`56.2 MiB`, 277 files) | **5.6x faster** |
-| **Total / Cumulative** | **`1,513.4 MiB`** (6,840) | **`123.75s`** (`1,364.9 MiB` `.tar.gz`) | **`15.47s`** (`443.5 MiB` total sent) | **`13.61s`** (`443.4 MiB` total received) | **9.1x faster** |
+| **Total / cumulative** | **`1,513.4 MiB`** (6,840) | **`123.75s`** (`1,364.9 MiB` `.tar.gz`) | **`15.47s`** (`443.5 MiB` total sent) | **`13.61s`** (`443.4 MiB` total received) | **9.1x faster** |
 
 ### Remote storage deduplication (`git drev usage -a`)
 
@@ -263,9 +263,9 @@ Summary:
 Revisions breakdown:
 UUID                                      Size  Created              Commit      Branch/Tag            Message
 ------------------------------------  --------  -------------------  ----------  --------------------  ----------------------
-0f6d2793-d87d-4dcc-9dd3-eec67425cdcf      306M  2026-10-17 01:13:29  58000a4     -                     seq: 2
 62ec298a-ed76-449b-b922-76be5f584e86      306M  2026-10-20 01:12:34  4d1b2c9     main, origin/main     seq: 5
 79aeba02-49df-48d9-85a1-208c3b78db77      306M  2026-10-19 01:12:05  aa5a9b9     -                     seq: 4
-c5e956ec-cfcd-48e2-88f7-c7fa8f85eb8c      306M  2026-10-16 01:14:04  d78f5e8     -                     seq: 1
 fe6453a6-6ba5-49c4-9821-baed6b995c18      306M  2026-10-18 01:12:36  ffc680b     -                     seq: 3
+0f6d2793-d87d-4dcc-9dd3-eec67425cdcf      306M  2026-10-17 01:13:29  58000a4     -                     seq: 2
+c5e956ec-cfcd-48e2-88f7-c7fa8f85eb8c      306M  2026-10-16 01:14:04  d78f5e8     -                     seq: 1
 ```

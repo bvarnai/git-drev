@@ -149,7 +149,7 @@ Queries the remote storage host via SSH to inspect storage consumption and optio
 
 - **Usage:** `git drev usage [-a|--all]`
 - **Flags:**
-  - `-a`, `--all`: Scans local Git history (`git log --all`) to correlate remote UUID directories against commits, branches, and tags, printing a 6-column table (`UUID`, `Size`, `Created`, `Commit`, `Branch/Tag`, `Message`) where unreferenced directories show `[orphaned]` in the `Commit` column.
+  - `-a`, `--all`: Scans local Git history (`git log --all`) to correlate remote UUID directories against commits, branches, and tags, printing a 6-column table (`UUID`, `Size`, `Created`, `Commit`, `Branch/Tag`, `Message`) sorted in reverse-chronological order (newest first), where unreferenced directories show `[orphaned]` in the `Commit` column.
 
 ---
 
@@ -169,7 +169,7 @@ Generates shell autocompletion scripts for supported interactive shells.
 
 `git-drev` adheres to standardized semantic exit codes:
 
-| Exit Code | Category | Description |
+| Exit code | Category | Description |
 | :---: | :--- | :--- |
 | `0` | Success | Command completed successfully. |
 | `1` | `ErrRuntime` | General unexpected runtime error. |
