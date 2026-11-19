@@ -24,11 +24,12 @@ import (
 // MaxPushRetries defines the maximum optimistic concurrency push attempts.
 const MaxPushRetries = 5
 
-// formatShortUUID returns an 8-character UUID prefix with a trailing ellipsis
-// when uuid exceeds 8 characters, distinguishing it from Git commit hashes.
+// formatShortUUID returns the first two UUID segments (13 characters, e.g.
+// "df195066-4b75") with a trailing ellipsis when uuid exceeds 13 characters,
+// visually distinguishing it from 7-character Git commit hashes.
 func formatShortUUID(uuid string) string {
-	if len(uuid) > 8 {
-		return uuid[:8] + "..."
+	if len(uuid) > 13 {
+		return uuid[:13] + "..."
 	}
 	return uuid
 }
@@ -137,7 +138,7 @@ func RunPut(
 		shortPrev := formatShortUUID(lastMeta.UUID)
 		var cloneSpinner *term.Spinner
 		if logger != nil && logger.IsTTY() {
-			cloneSpinner = logger.StartSpinner(fmt.Sprintf("Cloning baseline revision '%s' on host '%s'...", shortPrev, cfg.Remote.Host))
+			cloneSpinner = logger.StartSpinner(fmt.Sprintf("Cloning baseline revision '%s' on host '%s'", shortPrev, cfg.Remote.Host))
 		}
 		cloneErr := stor.CloneBaseline(ctx, cfg.Remote.Host, cfg.Remote.Path, lastMeta.UUID, newUUID)
 		if cloneSpinner != nil {
@@ -175,10 +176,10 @@ func RunPut(
 	shortNew := formatShortUUID(newUUID)
 	var putSpinner *term.Spinner
 	if !opts.Verbose && !opts.Stats && logger != nil {
-		putSpinner = logger.StartSpinner(fmt.Sprintf("Uploading directory revision '%s' to host '%s'...", shortNew, cfg.Remote.Host))
+		putSpinner = logger.StartSpinner(fmt.Sprintf("Uploading directory revision '%s' to host '%s'", shortNew, cfg.Remote.Host))
 		defer putSpinner.Stop()
 	} else if logger != nil {
-		logger.Infof("Uploading directory revision '%s' to host '%s'...", shortNew, cfg.Remote.Host)
+		logger.Infof("Uploading directory revision '%s' to host '%s'", shortNew, cfg.Remote.Host)
 	}
 
 	syncReq := storage.TransferRequest{
@@ -252,7 +253,7 @@ func RunPut(
 
 	// 10. Commit revision metadata
 	if logger != nil {
-		logger.Info("Committing revision metadata")
+		logger.Debug("Committing revision metadata")
 	}
 	meta := domain.RevisionMeta{
 		UUID: newUUID,

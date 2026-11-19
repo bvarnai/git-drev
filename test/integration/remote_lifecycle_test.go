@@ -45,13 +45,16 @@ func TestRemoteLifecycle_PutGetUsageWorkflow(t *testing.T) {
 		t.Fatalf("expected seq 100, got %q", meta.Seq)
 	}
 
-	shortUUID := meta.UUID[:8] + "..."
+	shortUUID := meta.UUID[:13] + "..."
 	shortSHA := strings.TrimSpace(f.MustGit(f.WorkDir, "rev-parse", "--short=7", "HEAD"))
 	if !strings.Contains(putStderr, "Uploading directory revision '"+shortUUID+"' to host '") {
 		t.Fatalf("expected put stderr to contain uploading short UUID with ellipsis %q, got:\n%s", shortUUID, putStderr)
 	}
 	if !strings.Contains(putStderr, "Uploaded directory revision '"+shortUUID+"' to host '") {
 		t.Fatalf("expected put stderr to contain uploaded short UUID with ellipsis %q, got:\n%s", shortUUID, putStderr)
+	}
+	if strings.Contains(putStderr, "[git-drev] Committing revision metadata") {
+		t.Fatalf("expected put stderr to omit pre-commit info line, got:\n%s", putStderr)
 	}
 	if !strings.Contains(putStderr, "[git-drev] Committed revision metadata '"+shortSHA+"'") {
 		t.Fatalf("expected put stderr to contain committed revision metadata SHA %q, got:\n%s", shortSHA, putStderr)
@@ -92,8 +95,8 @@ func TestRemoteLifecycle_PutGetUsageWorkflow(t *testing.T) {
 	if !strings.Contains(getStderr, "Downloading directory revision '"+shortUUID+"' from host '") {
 		t.Fatalf("expected get stderr to contain downloading short UUID with ellipsis %q, got:\n%s", shortUUID, getStderr)
 	}
-	if !strings.Contains(getStderr, "Retrieved directory revision '"+shortUUID+"' from host '") {
-		t.Fatalf("expected get stderr to contain retrieved short UUID with ellipsis %q, got:\n%s", shortUUID, getStderr)
+	if !strings.Contains(getStderr, "Downloaded directory revision '"+shortUUID+"' from host '") {
+		t.Fatalf("expected get stderr to contain downloaded short UUID with ellipsis %q, got:\n%s", shortUUID, getStderr)
 	}
 
 	// Verify files arrived in replica/data

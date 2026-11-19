@@ -108,8 +108,8 @@ remote:
 				assert.Contains(t, storageCalls, "Download backup.example.com /storage/myrepo "+validUUID)
 			},
 			checkStderr: func(t *testing.T, stderr string) {
-				assert.Contains(t, stderr, "[git-drev] Downloading directory revision '550e8400...' from host 'backup.example.com'...")
-				assert.Contains(t, stderr, "[git-drev] Retrieved directory revision '550e8400...' from host 'backup.example.com'")
+				assert.Contains(t, stderr, "[git-drev] Downloading directory revision '550e8400-e29b...' from host 'backup.example.com'\n")
+				assert.Contains(t, stderr, "[git-drev] Downloaded directory revision '550e8400-e29b...' from host 'backup.example.com'\n")
 			},
 		},
 		{
@@ -126,8 +126,8 @@ remote:
 			},
 			expectedCode: errcode.ExitSuccess,
 			checkStderr: func(t *testing.T, stderr string) {
-				assert.Contains(t, stderr, "[git-drev] Downloading directory revision '550e8400...' from host 'backup.example.com'...")
-				assert.Contains(t, stderr, "[git-drev] Retrieved directory revision '550e8400...' from host 'backup.example.com'")
+				assert.Contains(t, stderr, "[git-drev] Downloading directory revision '550e8400-e29b...' from host 'backup.example.com'\n")
+				assert.Contains(t, stderr, "[git-drev] Downloaded directory revision '550e8400-e29b...' from host 'backup.example.com'\n")
 			},
 		},
 		{

@@ -156,8 +156,9 @@ remote:
 				assert.True(t, foundUpload, "expected Upload call")
 			},
 			checkStderr: func(t *testing.T, stderr string) {
-				assert.Regexp(t, regexp.MustCompile(`\[git-drev\] Uploading directory revision '[0-9a-f]{8}\.\.\.' to host 'backup\.example\.com'\.\.\.`), stderr)
-				assert.Regexp(t, regexp.MustCompile(`\[git-drev\] Uploaded directory revision '[0-9a-f]{8}\.\.\.' to host 'backup\.example\.com'`), stderr)
+				assert.Regexp(t, regexp.MustCompile(`\[git-drev\] Uploading directory revision '[0-9a-f]{8}-[0-9a-f]{4}\.\.\.' to host 'backup\.example\.com'\n`), stderr)
+				assert.Regexp(t, regexp.MustCompile(`\[git-drev\] Uploaded directory revision '[0-9a-f]{8}-[0-9a-f]{4}\.\.\.' to host 'backup\.example\.com'\n`), stderr)
+				assert.NotContains(t, stderr, "[git-drev] Committing revision metadata")
 				assert.Contains(t, stderr, "[git-drev] Committed revision metadata '84bb88d'")
 			},
 		},
@@ -180,8 +181,9 @@ remote:
 			mockStorage:  &storage.MockManager{},
 			expectedCode: errcode.ExitSuccess,
 			checkStderr: func(t *testing.T, stderr string) {
-				assert.Regexp(t, regexp.MustCompile(`\[git-drev\] Uploading directory revision '[0-9a-f]{8}\.\.\.' to host 'backup\.example\.com'\.\.\.`), stderr)
-				assert.Regexp(t, regexp.MustCompile(`\[git-drev\] Uploaded directory revision '[0-9a-f]{8}\.\.\.' to host 'backup\.example\.com'`), stderr)
+				assert.Regexp(t, regexp.MustCompile(`\[git-drev\] Uploading directory revision '[0-9a-f]{8}-[0-9a-f]{4}\.\.\.' to host 'backup\.example\.com'\n`), stderr)
+				assert.Regexp(t, regexp.MustCompile(`\[git-drev\] Uploaded directory revision '[0-9a-f]{8}-[0-9a-f]{4}\.\.\.' to host 'backup\.example\.com'\n`), stderr)
+				assert.Contains(t, stderr, "[git-drev] Debug: Committing revision metadata")
 				assert.Contains(t, stderr, "[git-drev] Committed revision metadata\n")
 				assert.NotContains(t, stderr, "[git-drev] Committed revision metadata '")
 			},
@@ -420,8 +422,8 @@ func TestPutCommand_TTYBaselineSpinnerFormatsShortUUIDWithEllipsis(t *testing.T)
 
 	stor := &storage.MockManager{
 		CloneBaselineFn: func(ctx context.Context, host, basePath, srcUUID, dstUUID string) error {
-			assert.True(t, stderr.WaitFor("Cloning baseline revision '1afec2ea...' on host 'backup.example.com'...", 2*time.Second),
-				"expected baseline clone spinner with ellipsized UUID, got: %s", stderr.String())
+			assert.True(t, stderr.WaitFor("Cloning baseline revision '1afec2ea-4b75...' on host 'backup.example.com' (", 2*time.Second),
+				"expected baseline clone spinner with ellipsized two-segment UUID and no trailing ellipsis, got: %s", stderr.String())
 			return nil
 		},
 	}

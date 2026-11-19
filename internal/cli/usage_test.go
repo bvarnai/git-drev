@@ -246,12 +246,12 @@ func TestUsageCommand_ProgressSpinnerFormatsShortUUIDWithEllipsis(t *testing.T) 
 			require.NotNil(t, opts[0].OnProgress)
 
 			opts[0].OnProgress(1, 18, "df195066-4b75-49ff-bf02-c303eb6c6033")
-			assert.True(t, stderr.WaitFor("Scanning revision 1/18 (df195066...)...", 2*time.Second),
-				"expected spinner output to contain ellipsized UUID, got: %s", stderr.String())
+			assert.True(t, stderr.WaitFor("Scanning revision 1/18 (df195066-4b75...)", 2*time.Second),
+				"expected spinner output to contain ellipsized two-segment UUID, got: %s", stderr.String())
 
-			opts[0].OnProgress(2, 18, "short123")
-			assert.True(t, stderr.WaitFor("Scanning revision 2/18 (short123)...", 2*time.Second),
-				"expected spinner output to keep <=8-char UUID without ellipsis, got: %s", stderr.String())
+			opts[0].OnProgress(2, 18, "short12345678")
+			assert.True(t, stderr.WaitFor("Scanning revision 2/18 (short12345678)", 2*time.Second),
+				"expected spinner output to keep <=13-char UUID without ellipsis, got: %s", stderr.String())
 
 			return "1.0G", []domain.RemoteRevision{
 				{UUID: "df195066-4b75-49ff-bf02-c303eb6c6033", SizeHuman: "1.0G"},
@@ -265,6 +265,8 @@ func TestUsageCommand_ProgressSpinnerFormatsShortUUIDWithEllipsis(t *testing.T) 
 		CallerDir: tempDir,
 	})
 	require.NoError(t, err)
-	assert.False(t, strings.Contains(stderr.String(), "(short123...)"),
-		"UUID of length 8 must not have ellipsis appended")
+	assert.False(t, strings.Contains(stderr.String(), "(short12345678...)"),
+		"UUID of length <=13 must not have ellipsis appended")
+	assert.False(t, strings.Contains(stderr.String(), ")..."),
+		"spinner must not stutter with trailing ellipsis after closing parenthesis")
 }

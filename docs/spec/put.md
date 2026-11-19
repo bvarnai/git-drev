@@ -33,13 +33,13 @@
 3. **Remote Baseline Cloning (Copy-on-Write Optimization):**
    - Inspect parent revision UUID on `HEAD`.
    - If a valid non-zero parent UUID exists:
-     - Display TTY spinner `Cloning baseline revision '<short-uuid>...' on host '<host>'...` (where `<short-uuid>` is the 8-character UUID prefix).
+     - Display TTY spinner `Cloning baseline revision '<short-uuid>...' on host '<host>'` (where `<short-uuid>` is the 13-character two-segment UUID prefix, e.g. `1afec2ea-4b75`).
      - Execute remote hardlink clone via SSH: `cp -al -- <remote.path>/<parent_uuid> <remote.path>/<uuid>`.
      - If baseline clone succeeds, log debug details.
      - If baseline missing or purged: fallback to full copy and log `[git-drev] Unable to use previous revision, performing a full copy`.
    - If unborn branch or marker commit: skip baseline clone and log `[git-drev] Unable to use previous revision, performing a full copy`.
 4. **Rsync Delta Upload:**
-   - Log `[git-drev] Uploading directory revision '<short-uuid>...' to host '<host>'...`.
+   - Log `[git-drev] Uploading directory revision '<short-uuid>...' to host '<host>'`.
    - Run `rsync -a --delete-during [flags] -e "ssh -T" <source_directory>/ <host>:<remote.path>/<uuid>/`.
    - Only new or modified files are transmitted over the wire.
    - On completion, log `[git-drev] Uploaded directory revision '<short-uuid>...' to host '<host>'`.
@@ -48,8 +48,7 @@
    - If hook fails or times out, fail with Exit Code `1`.
 6. **Commit Revision Metadata:**
    - Log `[git-drev] Staging revision metadata` and stage metadata: `git add --all` followed by `git reset -- <workdir>` (strictly ensuring local data `workdir` is not staged into Git).
-   - Log `[git-drev] Committing revision metadata`.
-   - Record metadata commit: `git commit --allow-empty -m '{"uuid":"<uuid>","seq":"<sequence>"}'`.
+   - Log `[git-drev] Debug: Committing revision metadata` in verbose mode and record metadata commit: `git commit --allow-empty -m '{"uuid":"<uuid>","seq":"<sequence>"}'`.
    - Resolve the new `HEAD` commit hash abbreviated to 7 characters (`git rev-parse --verify --quiet HEAD^{commit}`) and log `[git-drev] Committed revision metadata '<short-commit>'` (falling back to `[git-drev] Committed revision metadata` if unavailable).
 7. **Publish with Optimistic Concurrency Control (OCC):**
    - Push commit to remote: `git push --force-with-lease origin refs/heads/<branch>`.
