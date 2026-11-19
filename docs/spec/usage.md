@@ -45,6 +45,10 @@
    - Match discovered remote UUID directories against commit subjects:
      - If matched: display commit short SHA, cleaned branch/tag refs, and commit sequence message.
      - If unmatched: display commit as `[orphaned]`, branch as `-`, message as `-`.
+   - Sort breakdown rows in-memory in reverse-chronological order (newest first) using deterministic precedence:
+     1. Effective timestamp descending: remote directory `ModTime`, falling back to the correlated Git commit author timestamp when `ModTime` is zero; rows with neither timestamp sort last.
+     2. Sequence number (`seq`) descending: rows with a sequence precede rows without one; numeric sequences compare numerically descending, falling back to reverse lexical order if non-numeric.
+     3. Normalized lowercase UUID descending.
    - Render aligned breakdown table to `stdout`.
 6. **Completion:**
    - Exit cleanly with Exit Code `0`.
@@ -65,4 +69,5 @@
 - **Orphan Detection:** Revisions that exist on the remote storage host but have no corresponding commit in local Git history (e.g., deleted branches or test builds) are labeled as `[orphaned]` in the table, enabling automated retention scripts to prune unreferenced storage.
 - **Marker Commit Filtering:** Marker commits created by `git drev create` are skipped during correlation so they do not shadow actual payload revision commits.
 - **Shallow Clone Decoration Filtering:** Synthetic `grafted` decorations emitted by Git on shallow clone boundaries are stripped from the `Branch/Tag` column alongside `origin/HEAD` so commits with no real refs render as `-`.
+- **Chronological Breakdown Ordering:** `usage --all` sorts both `UsageResult.Revisions` and the rendered `Revisions breakdown:` table newest-first in memory without extra SSH or Git calls. Remote `ModTime` is the primary sort key; when `ModTime` is zero, the correlated Git commit author timestamp is used for ordering while the `Created` column continues to render `-`. Orphaned revisions with valid `ModTime` interleave chronologically alongside active revisions; orphaned revisions with zero `ModTime` sort to the end of the table.
 - **Zero Local Mutation:** `usage` makes zero mutations to local Git refs or remote storage directories.

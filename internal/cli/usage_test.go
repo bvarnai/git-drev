@@ -296,3 +296,153 @@ func TestUsageCommand_ProgressSpinnerFormatsShortUUIDWithEllipsis(t *testing.T) 
 	assert.False(t, strings.Contains(stderr.String(), ")..."),
 		"spinner must not stutter with trailing ellipsis after closing parenthesis")
 }
+
+func TestRunUsage_BreakdownSorting(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	cfg := &domain.ProjectConfig{
+		WorkDir: "data",
+		Remote: domain.RemoteConfig{
+			Host: "backup.example.com",
+			Path: "/storage/myrepo",
+		},
+	}
+
+	extractBreakdownUUIDs := func(stdout string) []string {
+		lines := strings.Split(strings.TrimSpace(stdout), "\n")
+		var uuids []string
+		inRows := false
+		for _, line := range lines {
+			if strings.HasPrefix(line, "------------------------------------") {
+				inRows = true
+				continue
+			}
+			if !inRows || strings.TrimSpace(line) == "" {
+				continue
+			}
+			fields := strings.Fields(line)
+			if len(fields) > 0 {
+				uuids = append(uuids, fields[0])
+			}
+		}
+		return uuids
+	}
+
+	tests := []struct {
+		name            string
+		gitLogOut       string
+		revisions       []domain.RemoteRevision
+		expectedOrder   []string
+		expectedCreated map[string]string
+	}{
+		{
+			name: "out-of-order ModTime sorts newest first with interleaved orphaned revisions",
+			gitLogOut: "1111111111111111111111111111111111111111\x001111111\x001700000100\x00main\x00" + `{"uuid":"11111111-1111-4111-8111-111111111111","seq":"1"}` + "\x00" +
+				"3333333333333333333333333333333333333333\x003333333\x001700000300\x00HEAD -> main\x00" + `{"uuid":"33333333-3333-4333-8333-333333333333","seq":"3"}` + "\x00",
+			revisions: []domain.RemoteRevision{
+				{UUID: "11111111-1111-4111-8111-111111111111", SizeHuman: "1.0G", ModTime: time.Unix(1700000100, 0)},
+				{UUID: "44444444-4444-4444-8444-444444444444", SizeHuman: "500M", ModTime: time.Unix(1700000400, 0)}, // orphaned, newest
+				{UUID: "22222222-2222-4222-8222-222222222222", SizeHuman: "750M", ModTime: time.Unix(1700000200, 0)}, // orphaned, middle
+				{UUID: "33333333-3333-4333-8333-333333333333", SizeHuman: "1.2G", ModTime: time.Unix(1700000300, 0)},
+			},
+			expectedOrder: []string{
+				"44444444-4444-4444-8444-444444444444",
+				"33333333-3333-4333-8333-333333333333",
+				"22222222-2222-4222-8222-222222222222",
+				"11111111-1111-4111-8111-111111111111",
+			},
+		},
+		{
+			name: "equal timestamps tie-break by numeric seq descending then UUID descending",
+			gitLogOut: "1111111111111111111111111111111111111111\x001111111\x001700000500\x00main\x00" + `{"uuid":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","seq":"2"}` + "\x00" +
+				"2222222222222222222222222222222222222222\x002222222\x001700000500\x00main\x00" + `{"uuid":"11111111-1111-4111-8111-111111111111","seq":"10"}` + "\x00" +
+				"3333333333333333333333333333333333333333\x003333333\x001700000500\x00main\x00" + `{"uuid":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","seq":"10"}` + "\x00" +
+				"4444444444444444444444444444444444444444\x004444444\x001700000500\x00main\x00" + `{"uuid":"55555555-5555-4555-8555-555555555555","seq":"alpha"}` + "\x00" +
+				"5555555555555555555555555555555555555555\x005555555\x001700000500\x00main\x00" + `{"uuid":"44444444-4444-4444-8444-444444444444","seq":"beta"}` + "\x00",
+			revisions: []domain.RemoteRevision{
+				{UUID: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", SizeHuman: "100M", ModTime: time.Unix(1700000500, 0)}, // orphaned (no seq)
+				{UUID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", SizeHuman: "100M", ModTime: time.Unix(1700000500, 0)}, // seq 2
+				{UUID: "11111111-1111-4111-8111-111111111111", SizeHuman: "100M", ModTime: time.Unix(1700000500, 0)}, // seq 10
+				{UUID: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", SizeHuman: "100M", ModTime: time.Unix(1700000500, 0)}, // orphaned (no seq)
+				{UUID: "55555555-5555-4555-8555-555555555555", SizeHuman: "100M", ModTime: time.Unix(1700000500, 0)}, // seq alpha
+				{UUID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", SizeHuman: "100M", ModTime: time.Unix(1700000500, 0)}, // seq 10
+				{UUID: "44444444-4444-4444-8444-444444444444", SizeHuman: "100M", ModTime: time.Unix(1700000500, 0)}, // seq beta
+			},
+			expectedOrder: []string{
+				"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", // seq 10, higher UUID
+				"11111111-1111-4111-8111-111111111111", // seq 10, lower UUID
+				"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", // seq 2 (numeric < 10)
+				"44444444-4444-4444-8444-444444444444", // non-numeric seq beta
+				"55555555-5555-4555-8555-555555555555", // non-numeric seq alpha
+				"dddddddd-dddd-4ddd-8ddd-dddddddddddd", // no seq, higher UUID
+				"cccccccc-cccc-4ccc-8ccc-cccccccccccc", // no seq, lower UUID
+			},
+		},
+		{
+			name: "zero ModTime falls back to Git commit timestamp and missing timestamps sort last",
+			gitLogOut: "1111111111111111111111111111111111111111\x001111111\x001700000250\x00main\x00" + `{"uuid":"22222222-2222-4222-8222-222222222222","seq":"5"}` + "\x00" +
+				"2222222222222222222222222222222222222222\x002222222\x000\x00main\x00" + `{"uuid":"44444444-4444-4444-8444-444444444444","seq":"9"}` + "\x00",
+			revisions: []domain.RemoteRevision{
+				{UUID: "55555555-5555-4555-8555-555555555555", SizeHuman: "100M"},                                    // orphaned, zero ModTime -> last (no seq)
+				{UUID: "11111111-1111-4111-8111-111111111111", SizeHuman: "100M", ModTime: time.Unix(1700000100, 0)}, // older ModTime
+				{UUID: "22222222-2222-4222-8222-222222222222", SizeHuman: "100M"},                                    // zero ModTime, commit ts 1700000250
+				{UUID: "44444444-4444-4444-8444-444444444444", SizeHuman: "100M"},                                    // zero ModTime, commit ts 0 -> untimestamped (with seq 9)
+				{UUID: "33333333-3333-4333-8333-333333333333", SizeHuman: "100M", ModTime: time.Unix(1700000300, 0)}, // newest ModTime
+			},
+			expectedOrder: []string{
+				"33333333-3333-4333-8333-333333333333", // ModTime 1700000300
+				"22222222-2222-4222-8222-222222222222", // fallback commit ts 1700000250
+				"11111111-1111-4111-8111-111111111111", // ModTime 1700000100
+				"44444444-4444-4444-8444-444444444444", // untimestamped, has seq 9
+				"55555555-5555-4555-8555-555555555555", // untimestamped, orphaned
+			},
+			expectedCreated: map[string]string{
+				"22222222-2222-4222-8222-222222222222": "-",
+				"44444444-4444-4444-8444-444444444444": "-",
+				"55555555-5555-4555-8555-555555555555": "-",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			gitRunner := &mockGitRunner{
+				responses: map[string]mockGitResponse{
+					"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
+					"config --local --get-all remote.origin.fetch":                  {out: git.WildcardFetchRefspec},
+					"log --all -z --format=%H%x00%h%x00%ad%x00%D%x00%s --date=unix": {out: tt.gitLogOut},
+				},
+			}
+			insp := git.NewInspector(gitRunner)
+			ops := git.NewOperations(gitRunner)
+
+			stor := &storage.MockManager{
+				QueryUsageFn: func(ctx context.Context, host, basePath string, opts ...storage.QueryUsageOptions) (string, []domain.RemoteRevision, error) {
+					return "2.0G", tt.revisions, nil
+				},
+			}
+
+			var stdout bytes.Buffer
+			res, err := cli.RunUsage(context.Background(), insp, ops, stor, cfg, nil, &stdout, cli.UsageOptions{
+				All:       true,
+				CallerDir: tempDir,
+			})
+			require.NoError(t, err)
+			require.Len(t, res.Revisions, len(tt.expectedOrder))
+
+			gotResultOrder := make([]string, len(res.Revisions))
+			for i, row := range res.Revisions {
+				gotResultOrder[i] = row.UUID
+				if wantCreated, ok := tt.expectedCreated[row.UUID]; ok {
+					assert.Equal(t, wantCreated, row.Created, "unexpected Created value for %s", row.UUID)
+				}
+			}
+			assert.Equal(t, tt.expectedOrder, gotResultOrder, "UsageResult.Revisions order mismatch")
+			assert.Equal(t, tt.expectedOrder, extractBreakdownUUIDs(stdout.String()), "stdout breakdown table order mismatch")
+		})
+	}
+}
