@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Sort remote revisions in `git-drev usage -a` in reverse-chronological order (newest first) (`#61`, `#66`).
+
+### Changed
+- Disambiguate revision UUID vs. metadata commit hash in `put` and `get` logs and harmonize 13-character two-segment short UUID prefixes across transfer and spinner messages (`#59`, `#64`).
+- Synchronize `git-drev usage -a` breakdown tables in user guide and normalize Markdown headings and labels to sentence case (`#67`, `#68`).
+
+### Fixed
+- Guard `scripts/cleanup.sh` against shallow Git repositories to prevent false-positive orphan deletions and filter synthetic `grafted` decorations from `git-drev usage -a` (`#60`, `#65`).
+- Tolerate inline comments when enabling `rsync -c` in `.git-drev.yaml` during benchmark execution (`4f697b7`).
+
 ## [0.2.0] - 2026-10-22
 
 ### Added

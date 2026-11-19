@@ -351,10 +351,10 @@ All subcommands are dispatched from the single `git-drev` binary:
 | `create` | `internal/cli` (`create.go`) | Creates a new revision metadata branch with an initial marker commit (or switches to it if it already exists locally/remotely) and pushes it to `origin`. |
 | `get` | `internal/cli` (`get.go`) | Synchronizes the local working directory (or `<target_directory>`) with the remote directory revision referenced by `HEAD` (optionally updating to `--latest` first). |
 | `put` | `internal/cli` (`put.go`) | Uploads local directory contents to a new remote UUID directory (cloning the previous revision as a server-side baseline when possible), runs `.git-drev-put-hook`, commits metadata with sequence number, and pushes with optimistic concurrency retry. |
-| `select` | `internal/cli` (`selectcmd.go`) | Selects and checks out a target branch, tag, or specific revision commit resolved by UUID (falling back to `branch.default` when omitted). |
+| `select` | `internal/cli` (`select.go`) | Selects and checks out a target branch, tag, or specific revision commit resolved by UUID (falling back to `branch.default` when omitted). |
 | `update` | `internal/cli` (`update.go`) | Fetches all remote changes and hard-resets the current active branch to `origin/<branch>`. |
 | `info` | `internal/cli` (`info.go`) | Executes the repository's `.git-drev-info-hook` to display project-specific revision metadata. |
 | `name` | `internal/cli` (`name.go`) | Prints the current local branch name (or detached `HEAD` status) to `stdout`. |
-| `usage` | `internal/cli` (`usage.go`) | Queries the remote host via SSH for total storage consumption and (`-a` / `-v`) correlates remote UUID directories against local Git history to display active vs. `[orphaned]` revisions. |
+| `usage` | `internal/cli` (`usage.go`) | Queries the remote host via SSH for total storage consumption and (`-a` / `--all`) correlates remote UUID directories against local Git history to display active vs. `[orphaned]` revisions. |
 | `config` | `internal/cli` (`config.go`) | Prints the effective resolved cascading configuration and source provenance in YAML format. |
 | `completion` | `internal/cli` (`completion.go`) | Generates shell autocompletion scripts for `bash`, `zsh`, `fish`, and `powershell` with dynamic branch/tag completion. |

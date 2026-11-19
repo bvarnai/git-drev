@@ -53,6 +53,10 @@ jobs:
       - name: Run Go Vet
         run: go vet ./...
 
+      - name: Run ShellCheck
+        if: runner.os == 'Linux'
+        run: shellcheck scripts/*.sh .agents/skills/drev-benchmark/scripts/*.sh
+
       - name: Run Tests (with Race Detector & Coverage)
         run: go test -v -race -covermode=atomic -coverprofile=coverage.txt ./...
 
