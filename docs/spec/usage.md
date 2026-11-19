@@ -29,7 +29,7 @@
      - Computes total directory usage via `du -sh -- "$1"`.
      - Scans immediate child entries matching the 36-character RFC 4122 UUID regex.
      - In fast mode (`!opts.All`): emits `REV:<uuid>:-:0`.
-     - In detailed mode (`opts.All`): emits `COUNT:<total>`, followed by per-directory size `du -sh -- "$d"` and modification time (`stat -c %Y` or `stat -f %m`).
+     - In detailed mode (`opts.All`): emits `COUNT:<total>`, followed by per-directory size `du -sh -- "$d"` and modification time (`stat -c %Y` or `stat -f %m`). On interactive TTYs, updates the progress spinner with `Scanning revision <current>/<total> (<short-uuid>...)...` (where `<short-uuid>` is the 8-character UUID prefix).
 4. **Summary Rendering:**
    - Output storage summary block to `stdout`:
      ```text

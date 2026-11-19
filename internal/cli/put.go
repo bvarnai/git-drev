@@ -24,6 +24,15 @@ import (
 // MaxPushRetries defines the maximum optimistic concurrency push attempts.
 const MaxPushRetries = 5
 
+// formatShortUUID returns an 8-character UUID prefix with a trailing ellipsis
+// when uuid exceeds 8 characters, distinguishing it from Git commit hashes.
+func formatShortUUID(uuid string) string {
+	if len(uuid) > 8 {
+		return uuid[:8] + "..."
+	}
+	return uuid
+}
+
 // PutOptions encapsulates inputs for `git-drev put`.
 type PutOptions struct {
 	SourceDir       string
@@ -125,10 +134,7 @@ func RunPut(
 	if lastMeta, headErr := insp.HeadCommitMeta(ctx, repoRoot); headErr == nil &&
 		domain.IsValidUUID(lastMeta.UUID) && lastMeta.UUID != domain.ZeroUUID {
 
-		shortPrev := lastMeta.UUID
-		if len(shortPrev) > 8 {
-			shortPrev = shortPrev[:8]
-		}
+		shortPrev := formatShortUUID(lastMeta.UUID)
 		var cloneSpinner *term.Spinner
 		if logger != nil && logger.IsTTY() {
 			cloneSpinner = logger.StartSpinner(fmt.Sprintf("Cloning baseline revision '%s' on host '%s'...", shortPrev, cfg.Remote.Host))
@@ -166,10 +172,7 @@ func RunPut(
 	}()
 
 	// 7. Upload directory payload via rsync
-	shortNew := newUUID
-	if len(shortNew) > 8 {
-		shortNew = shortNew[:8]
-	}
+	shortNew := formatShortUUID(newUUID)
 	var putSpinner *term.Spinner
 	if !opts.Verbose && !opts.Stats && logger != nil {
 		putSpinner = logger.StartSpinner(fmt.Sprintf("Uploading directory revision '%s' to host '%s'...", shortNew, cfg.Remote.Host))
@@ -262,6 +265,18 @@ func RunPut(
 
 	if err := ops.CommitAllowEmpty(ctx, repoRoot, commitJSON); err != nil {
 		return nil, err
+	}
+	if logger != nil {
+		headHash, headErr := insp.HeadHash(ctx, repoRoot)
+		if headErr == nil && headHash != "" {
+			shortSHA := headHash
+			if len(shortSHA) > 7 {
+				shortSHA = shortSHA[:7]
+			}
+			logger.Infof("Committed revision metadata '%s'", shortSHA)
+		} else {
+			logger.Info("Committed revision metadata")
+		}
 	}
 
 	// 11. Optimistic concurrency push loop

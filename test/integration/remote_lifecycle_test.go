@@ -30,6 +30,7 @@ func TestRemoteLifecycle_PutGetUsageWorkflow(t *testing.T) {
 	if err := f.RunDrev(&stdout, &stderr, "put", "--sequence", "100"); err != nil {
 		t.Fatalf("put failed: %v\nstderr: %s", err, stderr.String())
 	}
+	putStderr := stderr.String()
 
 	// Parse the commit metadata on feature/dataset
 	logSubject := f.MustGit(f.WorkDir, "log", "-1", "--format=%s")
@@ -42,6 +43,18 @@ func TestRemoteLifecycle_PutGetUsageWorkflow(t *testing.T) {
 	}
 	if meta.Seq != "100" {
 		t.Fatalf("expected seq 100, got %q", meta.Seq)
+	}
+
+	shortUUID := meta.UUID[:8] + "..."
+	shortSHA := strings.TrimSpace(f.MustGit(f.WorkDir, "rev-parse", "--short=7", "HEAD"))
+	if !strings.Contains(putStderr, "Uploading directory revision '"+shortUUID+"' to host '") {
+		t.Fatalf("expected put stderr to contain uploading short UUID with ellipsis %q, got:\n%s", shortUUID, putStderr)
+	}
+	if !strings.Contains(putStderr, "Uploaded directory revision '"+shortUUID+"' to host '") {
+		t.Fatalf("expected put stderr to contain uploaded short UUID with ellipsis %q, got:\n%s", shortUUID, putStderr)
+	}
+	if !strings.Contains(putStderr, "[git-drev] Committed revision metadata '"+shortSHA+"'") {
+		t.Fatalf("expected put stderr to contain committed revision metadata SHA %q, got:\n%s", shortSHA, putStderr)
 	}
 
 	// Verify remote storage received files under f.StorageDir/<uuid>/
@@ -74,6 +87,13 @@ func TestRemoteLifecycle_PutGetUsageWorkflow(t *testing.T) {
 	stderr.Reset()
 	if err := replica.RunDrev(&stdout, &stderr, "get"); err != nil {
 		t.Fatalf("replica get failed: %v\nstderr: %s", err, stderr.String())
+	}
+	getStderr := stderr.String()
+	if !strings.Contains(getStderr, "Downloading directory revision '"+shortUUID+"' from host '") {
+		t.Fatalf("expected get stderr to contain downloading short UUID with ellipsis %q, got:\n%s", shortUUID, getStderr)
+	}
+	if !strings.Contains(getStderr, "Retrieved directory revision '"+shortUUID+"' from host '") {
+		t.Fatalf("expected get stderr to contain retrieved short UUID with ellipsis %q, got:\n%s", shortUUID, getStderr)
 	}
 
 	// Verify files arrived in replica/data

@@ -109,10 +109,7 @@ func RunUsage(
 				}
 				return
 			}
-			shortUUID := uuid
-			if len(shortUUID) > 8 {
-				shortUUID = shortUUID[:8]
-			}
+			shortUUID := formatShortUUID(uuid)
 			spinner.Update(fmt.Sprintf("Scanning revision %d/%d (%s)...", current, total, shortUUID))
 		},
 	})

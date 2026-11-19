@@ -40,6 +40,7 @@ remote:
 		expectedCode  int
 		errSubstr     string
 		checkExecuted func(t *testing.T, executed []string, storageCalls []string)
+		checkStderr   func(t *testing.T, stderr string)
 	}{
 		{
 			name:         "excess arguments returns usage error",
@@ -106,6 +107,28 @@ remote:
 				assert.Contains(t, storageCalls, "HasRevision backup.example.com /storage/myrepo "+validUUID)
 				assert.Contains(t, storageCalls, "Download backup.example.com /storage/myrepo "+validUUID)
 			},
+			checkStderr: func(t *testing.T, stderr string) {
+				assert.Contains(t, stderr, "[git-drev] Downloading directory revision '550e8400...' from host 'backup.example.com'...")
+				assert.Contains(t, stderr, "[git-drev] Retrieved directory revision '550e8400...' from host 'backup.example.com'")
+			},
+		},
+		{
+			name: "verbose get logs short UUID with ellipsis",
+			args: []string{"get", "-v"},
+			mockGit: map[string]mockGitResponse{
+				"rev-parse --is-inside-work-tree --show-toplevel --show-prefix": {out: "true\n" + tempDir + "\n"},
+				"log -n 1 --format=%s HEAD --":                                  {out: `{"uuid":"` + validUUID + `","seq":"10"}`},
+			},
+			mockStorage: &storage.MockManager{
+				HasRevisionFn: func(ctx context.Context, host, basePath, uuid string) (bool, error) {
+					return true, nil
+				},
+			},
+			expectedCode: errcode.ExitSuccess,
+			checkStderr: func(t *testing.T, stderr string) {
+				assert.Contains(t, stderr, "[git-drev] Downloading directory revision '550e8400...' from host 'backup.example.com'...")
+				assert.Contains(t, stderr, "[git-drev] Retrieved directory revision '550e8400...' from host 'backup.example.com'")
+			},
 		},
 		{
 			name: "successful get with --latest updates branch first",
@@ -153,6 +176,9 @@ remote:
 						storageCalls = tt.mockStorage.Calls
 					}
 					tt.checkExecuted(t, gitRunner.executed, storageCalls)
+				}
+				if tt.checkStderr != nil {
+					tt.checkStderr(t, stderr.String())
 				}
 			} else {
 				require.Error(t, err)

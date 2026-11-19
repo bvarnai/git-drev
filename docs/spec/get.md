@@ -42,11 +42,13 @@
 6. **Local Target Directory Preparation:**
    - Inspect local destination path. If missing, create directory via `os.MkdirAll(path, 0755)`. (Probe before creation prevents orphaned empty directories).
 7. **Rsync Transfer Execution:**
+   - Log `[git-drev] Downloading directory revision '<short-uuid>...' from host '<host>'...` (where `<short-uuid>` is the 8-character UUID prefix).
    - Synchronize remote payload to local target directory:
      ```bash
      rsync -a --delete-during [user-flags] -e "ssh -T" <host>:<remote.path>/<uuid>/ <target_directory>/
      ```
    - Extraneous local files in `<target_directory>` not present in the remote snapshot are deleted.
+   - On completion, log `[git-drev] Retrieved directory revision '<short-uuid>...' from host '<host>'`.
 8. **Completion:**
    - Log elapsed time summary (`[git-drev] Took X min Y sec`) to `stderr` and exit cleanly with Exit Code `0`.
 
