@@ -148,8 +148,8 @@ remote:
 				assert.Contains(t, stdout, "Total space used:  2.0G")
 				assert.Contains(t, stdout, "Revisions found:   2")
 				assert.NotContains(t, stdout, "Revisions breakdown:")
-				assert.Contains(t, stderr, "[git-drev] Debug: Querying remote storage on host 'backup.example.com'")
-				assert.Contains(t, stderr, "[git-drev] Debug: Storage discovery completed: 2 revision(s) found")
+				assert.Contains(t, stderr, "[git-drev] Querying remote storage on host 'backup.example.com'")
+				assert.Contains(t, stderr, "[git-drev] Storage discovery completed: 2 revision(s) found")
 			},
 		},
 		{
@@ -202,7 +202,7 @@ remote:
 				assert.Contains(t, stdout, "Revisions breakdown:")
 				assert.Contains(t, stdout, "550e8400-e29b-41d4-a716-446655440000")
 				assert.Contains(t, stdout, "[orphaned]")
-				assert.Contains(t, stderr, "[git-drev] Debug: Querying remote storage on host 'backup.example.com'")
+				assert.Contains(t, stderr, "[git-drev] Querying remote storage on host 'backup.example.com'")
 			},
 		},
 	}

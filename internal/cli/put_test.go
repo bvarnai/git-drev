@@ -186,9 +186,9 @@ remote:
 			checkStderr: func(t *testing.T, stderr string) {
 				assert.Regexp(t, regexp.MustCompile(`\[git-drev\] Uploading directory revision '[0-9a-f]{8}-[0-9a-f]{4}\.\.\.' to host 'backup\.example\.com'\n`), stderr)
 				assert.Regexp(t, regexp.MustCompile(`\[git-drev\] Uploaded directory revision '[0-9a-f]{8}-[0-9a-f]{4}\.\.\.' to host 'backup\.example\.com'\n`), stderr)
-				assert.Contains(t, stderr, "[git-drev] Debug: Staging revision metadata\n")
-				assert.Contains(t, stderr, "[git-drev] Debug: Committing revision metadata\n")
-				assert.Contains(t, stderr, "[git-drev] Debug: Pushing revision metadata to 'origin/main'\n")
+				assert.Contains(t, stderr, "[git-drev] Staging revision metadata\n")
+				assert.Contains(t, stderr, "[git-drev] Committing revision metadata\n")
+				assert.Contains(t, stderr, "[git-drev] Pushing revision metadata to 'origin/main'\n")
 				assert.Contains(t, stderr, "[git-drev] Committed revision metadata\n")
 				assert.NotContains(t, stderr, "[git-drev] Committed revision metadata '")
 				assert.Contains(t, stderr, "[git-drev] Pushed revision metadata to 'origin/main'\n")
