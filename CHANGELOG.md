@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-19
+
 ### Changed
 - Harmonize operational `Info` logs to past-tense milestones across `put`, `get`, `update`, `select`, `create`, and `init` (`#73`, `#74`).
 - Remove literal `Debug: ` prefix from verbose (`-v`) log lines on `stderr` (`#75`, `#76`).
@@ -76,7 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sequence-aware optimistic concurrency control loop on `git drev put` using `--force-with-lease`.
 - Project lifecycle hooks (`.git-drev-put-hook`, `.git-drev-info-hook`) with timeout enforcement (`GIT_DREV_HOOK_TIMEOUT`).
 
-[Unreleased]: https://github.com/bvarnai/git-drev/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/bvarnai/git-drev/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/bvarnai/git-drev/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/bvarnai/git-drev/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/bvarnai/git-drev/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/bvarnai/git-drev/compare/v0.0.1...v0.1.0
